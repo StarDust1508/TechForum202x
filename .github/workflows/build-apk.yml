@@ -47,11 +47,26 @@ jobs:
           NODE_ENV=production
           VITE_API_BASE_URL=http://72.56.9.90:3100/api/v1
           VITE_WS_BASE_URL=ws://72.56.9.90:3100
-          VITE_ENABLE_LOCAL_FALLBACK=false
+          VITE_ENABLE_LOCAL_FALLBACK=true
           EOF
 
-      - name: Build Vite bundle
-        run: npm run build
+      - name: Verify env file written
+        run: cat .env.production
+
+      # BUG_FIX_CONTEXT: vite.config.ts вызывает loadEnv но не подмешивает envPrefix
+      # явно, и в предыдущих сборках VITE_API_BASE_URL не попадал в bundle (искали
+      # литерал "72.56.9.90" в собранном JS — отсутствовал). Передаём ENV напрямую
+      # в process.env для процесса vite build И добавляем --mode production явно.
+      - name: Build Vite bundle (with explicit env)
+        env:
+          NODE_ENV: production
+          VITE_API_BASE_URL: http://72.56.9.90:3100/api/v1
+          VITE_WS_BASE_URL: ws://72.56.9.90:3100
+          VITE_ENABLE_LOCAL_FALLBACK: 'true'
+        run: |
+          npx vite build --mode production
+          echo "--- bundle env check ---"
+          grep -r "72.56.9.90" dist/assets/ | head -3 || echo "WARNING: API URL not baked into bundle"
 
       - name: Capacitor sync (Android)
         run: npx cap sync android
