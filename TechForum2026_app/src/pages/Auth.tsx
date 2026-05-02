@@ -78,11 +78,15 @@ export default function Auth({ onSuccess }: AuthProps) {
   const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40';
 
   return (
-    <div className="relative flex-1 min-h-full overflow-hidden bg-[#04020f]">
-      {/* BUG_FIX_CONTEXT: Заменили AI-сгенерированный SVG-фон с условными "схемами"
-          и "светящимся чипом" (был в SplashScreen) на реальный постер форума.
-          Постер показывается с пониженной непрозрачностью + два затемняющих слоя
-          сверху для читаемости форм. Файл лежит в public/conference-bg.jpg. */}
+    // BUG_FIX_CONTEXT: На Samsung S25 / OnePlus 9R под формой была видна
+    // чёрная пустая зона ~1/3 экрана: фон-постер не растягивался, потому что
+    // Auth root имел только `flex-1 min-h-full` без явной высоты в условиях
+    // когда родитель не задавал ему 100% (зависело от App.tsx flex-структуры).
+    // Сейчас явно minHeight: 100dvh — постер всегда заполняет весь viewport.
+    <div
+      className="relative overflow-hidden bg-[#04020f]"
+      style={{ minHeight: '100dvh' }}
+    >
       <img
         src="/conference-bg.jpg"
         alt=""
@@ -90,16 +94,16 @@ export default function Auth({ onSuccess }: AuthProps) {
         className="absolute inset-0 h-full w-full object-cover scale-[1.25] opacity-85"
         style={{ objectPosition: 'center 42%', filter: 'blur(3px) saturate(1.15)' }}
       />
-      {/* Затемнение: сильное сверху и снизу (читаемость заголовка и кнопки),
-          умеренное в средней части (виден силуэт шестерёнок и бирюзовый цвет постера).
-          Постер слегка заблюрен (3px) — текстовые блоки нечитаемы, но шестерёнки
-          и общий "чертёжный" вайб остаются. */}
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,0.78)_0%,rgba(4,2,15,0.32)_22%,rgba(4,2,15,0.42)_72%,rgba(4,2,15,0.92)_100%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)]" />
 
       <div
-        className="relative z-10 flex flex-col justify-center min-h-full px-7 pb-10"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
+        className="relative z-10 flex flex-col justify-center px-7"
+        style={{
+          minHeight: '100dvh',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
+        }}
       >
         {/* TechForum 2026 — выделенный заголовок (единый бренд во всём приложении).
             BUG_FIX_CONTEXT: По требованию заказчика подзаголовок
