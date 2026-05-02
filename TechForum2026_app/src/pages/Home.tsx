@@ -84,27 +84,31 @@ export default function Home() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
       }}
     >
+        {/* STICKY_HEADER: остаётся видимым при scroll вниз. Полупрозрачный
+            тёмный фон + backdrop-blur (как в ChatGPT). 5мм (≈20px) padding
+            снизу/сверху. Заголовок "TechForum / 2026" в две строки — как
+            на главном экране. */}
         <header
-          className="sticky top-0 z-20 -mx-5 px-5 pb-3 text-center bg-[#04020f]/70 backdrop-blur-xl border-b border-white/[0.04] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.6)]"
+          className="sticky top-0 z-20 -mx-5 px-5 pb-5 text-center bg-[#04020f]/70 backdrop-blur-xl border-b border-white/[0.06] shadow-[0_12px_32px_-14px_rgba(0,0,0,0.7)]"
           style={{
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
           }}
         >
           <h1
             className="font-elite font-bold tracking-[0.03em] text-[#ccfbf1] drop-shadow-[0_10px_34px_rgba(13,148,136,0.55)]"
             style={{
-              fontSize: 'clamp(28px, 9vw, 44px)',
+              fontSize: 'clamp(36px, 12vw, 56px)',
               lineHeight: 0.95,
             }}
           >
             TechForum
-            <span className="ml-2">2026</span>
+            <span className="block mt-1">2026</span>
           </h1>
 
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.22em] text-white/75 backdrop-blur-sm hover:border-accent/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
+            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[13px] font-semibold uppercase tracking-[0.22em] text-white/75 backdrop-blur-sm hover:border-accent/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
             aria-label="О форуме: 20–21 мая 2026, Саратов"
           >
             <CalendarDays className="h-4 w-4 text-accent" />
@@ -116,7 +120,7 @@ export default function Home() {
         </header>
 
         <section>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-9 mt-8">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-9 mt-10">
             {menuItems.map(({ label, icon: Icon, to }) => (
               <Link
                 key={label}

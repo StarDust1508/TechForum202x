@@ -40,8 +40,16 @@ function useHardwareBack() {
 
     let unsubscribe: (() => void) | undefined;
     const listenerPromise = CapApp.addListener('backButton', () => {
+      // BUG_FIX_CONTEXT: navigate(-1) ничего не делает если history.length === 1
+      // (Capacitor cold-start / deep-link / restore из background). В таких
+      // случаях Android default-handler закрывал приложение даже на не-главной
+      // странице. Добавили явный fallback navigate('/') когда стека истории нет.
       if (window.location.pathname !== '/') {
-        navigate(-1);
+        if (window.history.length > 1) {
+          navigate(-1);
+        } else {
+          navigate('/');
+        }
         return;
       }
       // На главном экране — double-tap to exit
