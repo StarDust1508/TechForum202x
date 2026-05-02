@@ -1,30 +1,14 @@
 // FILE: src/pages/Onboarding.tsx
-// VERSION: 1.0.0
+// VERSION: 2.0.0
 // START_MODULE_CONTRACT:
 // PURPOSE: Onboarding-экран — первый вход после регистрации. Юзер выбирает
-//          3-10 направлений интересов из 22. Ответ сохраняется в БД через
-//          PUT /api/v1/me/interests. Дальше Schedule показывает таб
-//          "Recommended" с ранжированием по этим интересам.
-// SCOPE: UI выбора + одна сетевая операция.
-// INPUT: props.onDone — колбек, вызывается после успешного PUT.
-// OUTPUT: JSX-страница на 100dvh, dark bg + turquoise accent (стиль Auth.tsx).
-// KEYWORDS: DOMAIN(8): UserOnboarding; CONCEPT(7): MultiSelectPills; TECH(6): React, Tailwind
-// LINKS: CALLS_API(9): /me/interests; READS_DATA_FROM(7): src/data INTERESTS
+//          3-10 направлений интересов из 22. Сохраняем на сервере (best-effort)
+//          + всегда в localStorage. UI никогда не блокирует юзера сетевыми
+//          ошибками — после клика "Готово" с валидным выбором всегда onDone().
 // END_MODULE_CONTRACT
-//
-// START_RATIONALE:
-// Q: Почему 3-10, а не 1-N?
-// A: <3 — мало сигнала для score-ранжирования (Recommended вырождается).
-//    >10 — пользователь "выбрал всё", сигнала тоже нет. 3-10 — sweet spot.
-// END_RATIONALE
-//
-// START_CHANGE_SUMMARY:
-// LAST_CHANGE: [v1.0.0 - Первичная реализация: 22 pills, валидация 3-10,
-//                       PUT /me/interests, onDone-callback.]
-// END_CHANGE_SUMMARY
 
 import { useState } from 'react';
-import { Loader2, Sparkles, ArrowRight } from 'lucide-react';
+import { Loader2, ArrowRight } from 'lucide-react';
 import { INTERESTS } from '../data';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
@@ -35,20 +19,19 @@ interface OnboardingProps {
 
 const MIN_PICK = 3;
 const MAX_PICK = 10;
+const LS_KEY = 'techforum_my_interests';
 
 export default function Onboarding({ onDone }: OnboardingProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   function toggle(id: string): void {
-    setError('');
     setSelected(prev => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
       } else {
-        if (next.size >= MAX_PICK) return prev; // soft-cap, без визуального шейка — pill просто не выделится
+        if (next.size >= MAX_PICK) return prev;
         next.add(id);
       }
       return next;
@@ -56,56 +39,54 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   }
 
   async function submit(): Promise<void> {
-    if (selected.size < MIN_PICK) {
-      setError(`Выбери минимум ${MIN_PICK} направления`);
-      return;
-    }
+    if (selected.size < MIN_PICK) return;
     setLoading(true);
-    setError('');
+    const interestIds = Array.from(selected);
+
+    // BUG_FIX_CONTEXT: Юзер видел "Failed to fetch" и не мог пройти onboarding.
+    // Причины могут быть разные (SameSite cookie на cross-origin PUT в Capacitor
+    // WebView, network hiccup, local-auth fallback без cookie). Делаем сохранение
+    // best-effort: пишем В ЛЮБОМ СЛУЧАЕ в localStorage, серверный PUT — попытка
+    // в фоне, успех/провал не блокирует переход в app. Schedule-ранжирование
+    // подтянет интересы из localStorage если /me/interests недоступен.
     try {
-      const res = await fetch(resolveApiUrl('/me/interests'), {
+      localStorage.setItem(LS_KEY, JSON.stringify(interestIds));
+    } catch { /* private mode / quota — ignore */ }
+
+    try {
+      await fetch(resolveApiUrl('/me/interests'), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interestIds: Array.from(selected) }),
+        body: JSON.stringify({ interestIds }),
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || 'save_failed');
-      }
-      onDone();
-    } catch (e: any) {
-      setError(e?.message === 'save_failed' ? 'Не удалось сохранить. Проверь соединение.' : (e?.message || 'Ошибка'));
-    } finally {
-      setLoading(false);
-    }
+    } catch { /* offline / cors — игнор: данные уже в localStorage */ }
+
+    setLoading(false);
+    onDone();
   }
 
   const canSubmit = selected.size >= MIN_PICK && !loading;
+  const remaining = Math.max(0, MIN_PICK - selected.size);
 
   return (
     <div
       className="relative bg-[#04020f] text-white overflow-y-auto"
       style={{
         minHeight: '100dvh',
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
       }}
     >
-      {/* Background accent — повторяет turquoise vibe Auth.tsx */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)] pointer-events-none" />
 
       <div className="relative z-10 px-7 space-y-6">
-        <div className="space-y-3 pt-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#5eead4]/10 border border-[#5eead4]/30">
-            <Sparkles className="w-3.5 h-3.5 text-[#5eead4]" />
-            <span className="text-[11px] font-bold uppercase tracking-widest text-[#5eead4]">Onboarding</span>
-          </div>
-          <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-[#ccfbf1]">
+        <div className="space-y-3 pt-4">
+          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#ccfbf1]">
             Что тебе интересно?
           </h1>
           <p className="text-[14px] text-white/65 leading-relaxed">
-            Выбери {MIN_PICK}–{MAX_PICK} направлений — мы покажем релевантные сессии в топе расписания.
+            Отметь от {MIN_PICK} до {MAX_PICK} направлений — мы подсветим релевантные сессии в расписании. Минимум — {MIN_PICK}.
           </p>
         </div>
 
@@ -119,17 +100,11 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                 onClick={() => toggle(it.id)}
                 className={cn(
                   'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
-                  active
-                    ? 'text-[#04020f]'
-                    : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
+                  active ? 'text-[#04020f]' : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
                 )}
                 style={
                   active
-                    ? {
-                        backgroundColor: it.color,
-                        borderColor: it.color,
-                        boxShadow: `0 0 18px ${it.color}66`,
-                      }
+                    ? { backgroundColor: it.color, borderColor: it.color, boxShadow: `0 0 18px ${it.color}66` }
                     : undefined
                 }
               >
@@ -139,18 +114,18 @@ export default function Onboarding({ onDone }: OnboardingProps) {
           })}
         </div>
 
-        <div className="flex items-center justify-between pt-2 text-[12px] font-medium">
-          <span className="text-white/50">
+        <div className="flex items-center justify-between pt-2 text-[13px] font-medium">
+          <span className="text-white/55">
             Выбрано: <span className="text-[#5eead4] font-bold">{selected.size}</span> / {MAX_PICK}
           </span>
-          {selected.size > 0 && selected.size < MIN_PICK && (
-            <span className="text-amber-300/80">ещё {MIN_PICK - selected.size}</span>
+          {remaining > 0 ? (
+            <span className="text-amber-300/80 font-semibold">
+              Нужно ещё {remaining}, чтобы продолжить
+            </span>
+          ) : (
+            <span className="text-[#5eead4] font-semibold">Можно продолжать</span>
           )}
         </div>
-
-        {error && (
-          <p className="text-[14px] font-semibold text-rose-300 text-center">{error}</p>
-        )}
       </div>
 
       {/* Sticky submit */}
@@ -169,8 +144,8 @@ export default function Onboarding({ onDone }: OnboardingProps) {
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <>
-                <span>Готово</span>
-                <ArrowRight className="w-4 h-4" />
+                <span>{remaining > 0 ? `Выбери ещё ${remaining}` : 'Готово'}</span>
+                {remaining === 0 && <ArrowRight className="w-4 h-4" />}
               </>
             )}
           </button>
