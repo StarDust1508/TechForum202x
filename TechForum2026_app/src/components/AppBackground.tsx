@@ -31,9 +31,13 @@ interface AppBackgroundProps {
 }
 
 export default function AppBackground({ children, className = '', style }: AppBackgroundProps) {
+  // BUG_FIX_CONTEXT: Раньше overflow:hidden на root ломал sticky-headers
+  // в дочерних страницах (Home / Chat) — sticky CSS требует, чтобы ни один
+  // ancestor не имел overflow:hidden/auto/scroll. Заменили на overflow-x-hidden
+  // (только горизонтальный clip фоновых картинок), чтобы sticky работал.
   return (
     <div
-      className={`relative overflow-hidden bg-[#04020f] ${className}`}
+      className={`relative overflow-x-hidden bg-[#04020f] ${className}`}
       style={{ minHeight: '100dvh', ...style }}
     >
       {/* Слой 1: размытое тех-фото в качестве текстуры */}

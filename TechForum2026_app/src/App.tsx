@@ -23,12 +23,11 @@ import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 
 
-// BUG_FIX_CONTEXT: v1 проверял `window.history.length > 1` чтобы решить:
-// идти назад или выйти. Но Capacitor WebView иногда не увеличивает
-// history.length после navigate, и фактически back ВСЕГДА выходил из приложения
-// (что юзер и видел). Сейчас решение по pathname: на любом разделе кроме `/`
-// делаем navigate(-1) (React Router сам корректно идёт назад). На `/` — double-tap
-// to exit с фирменным toast: "Нажмите ещё раз для выхода".
+// BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
+// был установлен через npm, поэтому Capacitor.Plugins.App был undefined,
+// listener не подписывался, и Activity получала back-event на нативном уровне
+// → exit. Теперь импортируем App напрямую (модуль гарантированно подключён),
+// и используем navigate(-1) с fallback на navigate('/') если стека нет.
 function useHardwareBack() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -36,39 +35,36 @@ function useHardwareBack() {
 
   useEffect(() => {
     const Capacitor: any = (window as any).Capacitor;
-    const CapApp = Capacitor && Capacitor.Plugins && Capacitor.Plugins.App;
-    if (!CapApp || typeof CapApp.addListener !== 'function') return;
-
+    if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
+      return;
+    }
     let unsubscribe: (() => void) | undefined;
-    const listenerPromise = CapApp.addListener('backButton', () => {
-      // BUG_FIX_CONTEXT: navigate(-1) ничего не делает если history.length === 1
-      // (Capacitor cold-start / deep-link / restore из background). В таких
-      // случаях Android default-handler закрывал приложение даже на не-главной
-      // странице. Добавили явный fallback navigate('/') когда стека истории нет.
-      if (window.location.pathname !== '/') {
-        if (window.history.length > 1) {
-          navigate(-1);
-        } else {
-          navigate('/');
-        }
-        return;
+    (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        const handle = await CapApp.addListener('backButton', () => {
+          if (window.location.pathname !== '/') {
+            if (window.history.length > 1) {
+              navigate(-1);
+            } else {
+              navigate('/');
+            }
+            return;
+          }
+          // На главном экране — double-tap to exit
+          const now = Date.now();
+          if (now - lastBackPress.current < 2000) {
+            CapApp.exitApp().catch(() => {});
+          } else {
+            lastBackPress.current = now;
+            toast.show('Нажмите ещё раз для выхода', 1800);
+          }
+        });
+        unsubscribe = () => { handle.remove().catch(() => {}); };
+      } catch (err) {
+        console.warn('[hardwareBack] failed to subscribe', err);
       }
-      // На главном экране — double-tap to exit
-      const now = Date.now();
-      if (now - lastBackPress.current < 2000) {
-        if (typeof CapApp.exitApp === 'function') CapApp.exitApp();
-      } else {
-        lastBackPress.current = now;
-        toast.show('Нажмите ещё раз для выхода', 1800);
-      }
-    });
-    Promise.resolve(listenerPromise)
-      .then((handle: any) => {
-        unsubscribe = () => {
-          try { handle?.remove?.(); } catch { /* noop */ }
-        };
-      })
-      .catch(() => {});
+    })();
     return () => unsubscribe?.();
   }, [navigate, toast]);
 }
@@ -171,10 +167,10 @@ function AppContent() {
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
               <Auth onSuccess={setUser} />
-            ) : user.interestsCount === 0 ? (
-              // BUG_FIX_CONTEXT: первый вход — показываем onboarding ПОВЕРХ
-              // routes, чтобы пользователь не мог промахнуться. После onDone
-              // обновляем interestsCount локально (без повторного /auth/me).
+            ) : !user.interestsCount ? (
+              // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
+              // ИЛИ undefined (legacy юзеры из старых билдов без поля). После
+              // onDone обновляем interestsCount локально без повторного /auth/me.
               <Onboarding onDone={() => setUser({ ...user, interestsCount: (user.interestsCount ?? 0) + 1 })} />
             ) : (
               // Все остальные разделы — единый фон Home (требование заказчика).
