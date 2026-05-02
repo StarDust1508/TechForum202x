@@ -19,6 +19,21 @@
 }
 
 /*
+  BUG_FIX_CONTEXT: На Android WebView (Samsung S25 / OnePlus 9R) наблюдались:
+  1) auto-увеличение шрифта при rotate → -webkit-text-size-adjust: 100%
+  2) синяя tap-highlight подсветка кнопок → -webkit-tap-highlight-color: transparent
+  3) Pull-to-refresh / overscroll bounce ломали UX → overscroll-behavior: contain
+*/
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
   BUG_FIX_CONTEXT: на Samsung S25 / OnePlus 9R под main была видна чёрная
   полоса навигации, потому что main с h-[100dvh] меньше body на высоту
   navbar. html/body теперь явно тёмные + min-height с fallback на 100vh

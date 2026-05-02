@@ -10,6 +10,7 @@ import { cn } from '@/src/lib/utils';
 import WaveSurfer from 'wavesurfer.js';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
+import { useToast } from '@/src/components/Toast';
 
 interface ChatMessage {
   role: 'user' | 'bot' | 'other';
@@ -31,6 +32,7 @@ interface SavedChat {
 }
 
 export default function Chat() {
+  const toast = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'bot', text: 'Привет! Я здесь, чтобы помочь тебе не пропустить всё самое интересное на ТехФорум. Что подсказать?', time: '17:05' }
   ]);
@@ -225,7 +227,7 @@ export default function Chat() {
       }, 1000);
     } catch (err) {
       console.error("Recording failed:", err);
-      alert("Не удалось получить доступ к камере/микрофону. Убедитесь, что разрешения предоставлены.");
+      toast.show("Не удалось получить доступ к камере/микрофону. Убедитесь, что разрешения предоставлены.");
     }
   };
 
@@ -335,7 +337,7 @@ export default function Chat() {
 
     if (activeTab === 'Мероприятие') {
       // In a real app we'd broadcast this. Here we just add it to a local list or ignore.
-      alert('Ваше сообщение отправлено в общий чат!');
+      toast.show('Ваше сообщение отправлено в общий чат!');
       return;
     }
 
@@ -378,7 +380,7 @@ export default function Chat() {
     // Manually trigger a "New Chat" session
     setMessages([{ role: 'bot', text: 'Создан новый чат. Чем еще я могу помочь?', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     setCurrentChatId(null);
-    alert('Текущий чат сохранен в историю. Начата новая сессия.');
+    toast.show('Текущий чат сохранен в историю. Начата новая сессия.');
   };
 
   const deleteSavedChat = (id: string) => {
@@ -398,6 +400,7 @@ export default function Chat() {
 
   return (
     <div className="flex flex-col h-full bg-surface relative">
+      <BackButton />
       <header className="pt-4 px-5 space-y-4 bg-surface/80 backdrop-blur-lg border-b border-card-border pb-4 sticky top-0 z-40">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold tracking-tight text-primary">Чат</h1>

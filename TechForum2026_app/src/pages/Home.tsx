@@ -76,7 +76,7 @@ export default function Home() {
     <div
       className="px-5 pb-10"
       style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 48px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
       }}
     >
@@ -95,31 +95,31 @@ export default function Home() {
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75 backdrop-blur-sm hover:border-accent/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
+            className="mt-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[13px] font-semibold uppercase tracking-[0.22em] text-white/75 backdrop-blur-sm hover:border-accent/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
             aria-label="О форуме: 20–21 мая 2026, Саратов"
           >
-            <CalendarDays className="h-3.5 w-3.5 text-accent" />
+            <CalendarDays className="h-4 w-4 text-accent" />
             <span>20–21 мая</span>
             <span className="h-1 w-1 rounded-full bg-white/30" />
-            <MapPin className="h-3.5 w-3.5 text-accent" />
+            <MapPin className="h-4 w-4 text-accent" />
             <span>Саратов</span>
           </Link>
         </header>
 
         <section>
-          <div className="grid grid-cols-3 gap-x-2 gap-y-6 mt-2">
+          <div className="grid grid-cols-3 gap-x-3 gap-y-9 mt-12">
             {menuItems.map(({ label, icon: Icon, to }) => (
               <Link
                 key={label}
                 to={to}
-                className="flex flex-col items-center text-center gap-2.5 rounded-2xl px-1 py-1 active:scale-95 transition-transform"
+                className="flex flex-col items-center text-center gap-3 rounded-2xl px-1 py-1 active:scale-95 transition-transform"
               >
-                <div className="h-11 w-11 rounded-2xl border border-white/12 bg-white/[0.02] flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,0.42)]">
-                  <Icon className="h-6 w-6 text-white/88" />
+                <div className="h-16 w-16 rounded-[1.5rem] border border-white/12 bg-white/[0.02] flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,0.42)]">
+                  <Icon className="h-8 w-8 text-white/88" />
                 </div>
                 <span
                   className="font-elite text-white/90 tracking-[0.01em] whitespace-nowrap"
-                  style={{ fontSize: 'clamp(12px, 3.6vw, 15px)', lineHeight: 1.1 }}
+                  style={{ fontSize: 'clamp(13px, 4vw, 17px)', lineHeight: 1.1 }}
                 >
                   {label}
                 </span>

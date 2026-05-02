@@ -69,6 +69,30 @@ function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // BUG_FIX_CONTEXT: Samsung S25 / OnePlus 9R показывали системный status-bar
+  // с дефолтным светлым иконками поверх тёмного фона приложения — иконки
+  // были невидимы. Также при overlay-режиме возникала наложка контента под
+  // строкой состояния. Конфигурируем native StatusBar через Capacitor:
+  // непрозрачный, цвет #04020f (как фон app), стиль Dark (светлые иконки).
+  // Feature-detect через window.Capacitor — на web (vite dev) импорт плагина
+  // не должен падать, поэтому загружаем динамически и тихо игнорируем ошибки.
+  useEffect(() => {
+    const Capacitor: any = (window as any).Capacitor;
+    if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
+      return;
+    }
+    (async () => {
+      try {
+        const { StatusBar, Style } = await import('@capacitor/status-bar');
+        StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+        StatusBar.setBackgroundColor({ color: '#04020f' }).catch(() => {});
+        StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+      } catch {
+        /* noop — плагин недоступен или web-окружение */
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -130,7 +154,7 @@ function AppContent() {
     // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
-    <div className="bg-[#04020f] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 overflow-hidden relative" style={{ minHeight: '100dvh' }}>
+    <div className="bg-[#04020f] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <main className="w-full sm:max-w-[420px] bg-[#04020f] sm:h-[840px] shadow-[0_0_90px_rgba(13,148,136,0.32)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#130b21]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
         <div className="flex-1 overflow-y-auto scrollbar-hide relative">
           <div className="min-h-full">
