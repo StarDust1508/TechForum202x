@@ -34,6 +34,27 @@ html {
 }
 
 /*
+  BUG_FIX_CONTEXT: Long-press на тексте в Capacitor Android WebView вызывал
+  системный Action Mode (Google Assistant overlay с белым фоном — тот самый
+  пустой белый экран, который пользователь видел при попытке выделить текст).
+  Решение: запретить выделение и long-press contextual actions по всему UI,
+  кроме явных полей ввода (input/textarea/[contenteditable]).
+*/
+body, button, a, span, p, h1, h2, h3, h4, h5, h6, div, li, ul, header, section, article {
+  -webkit-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input, textarea, [contenteditable="true"], [contenteditable=""] {
+  -webkit-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/*
   BUG_FIX_CONTEXT: на Samsung S25 / OnePlus 9R под main была видна чёрная
   полоса навигации, потому что main с h-[100dvh] меньше body на высоту
   navbar. html/body теперь явно тёмные + min-height с fallback на 100vh

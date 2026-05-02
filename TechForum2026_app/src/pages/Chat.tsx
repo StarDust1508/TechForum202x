@@ -472,39 +472,45 @@ export default function Chat() {
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-hide">
         <div className="p-5">
           {activeTab === 'Ассистент' ? (
-            <div className="flex flex-col gap-2">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={cn('flex gap-3 max-w-[85%]', msg.role === 'user' ? 'ml-auto flex-row-reverse' : '')}
-                >
-                  <div className={cn(
-                    'w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 border',
-                    msg.role === 'user' ? 'bg-accent/20 border-accent/30 text-accent' : 'bg-card border-card-border text-muted'
-                  )}>
-                    {msg.role === 'user' ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5 text-accent" />}
-                  </div>
-                  <div className="space-y-0.5 max-w-full">
+            // BUG_FIX_CONTEXT: Ассистент теперь в стиле «Мероприятие» — имя
+            // сверху, time-stamp, bubble bg-card/40 rounded-3xl rounded-tl-none.
+            // Унифицировано по требованию заказчика. AI bot слева, user тоже
+            // слева (одна колонка), различимы по аватару и имени.
+            <div className="flex flex-col gap-4">
+              {messages.map((msg, i) => {
+                const isUser = msg.role === 'user';
+                const name = isUser ? 'Вы' : 'Ассистент';
+                return (
+                  <div key={i} className="flex gap-4 group">
                     <div className={cn(
-                      'px-4 py-3 text-[14px] leading-snug shadow-sm',
-                      msg.role === 'user'
-                        ? 'bg-accent text-surface rounded-[1.2rem] rounded-tr-none font-medium'
-                        : 'bg-card border border-card-border text-primary rounded-[1.2rem] rounded-tl-none'
+                      'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border',
+                      isUser ? 'bg-accent text-surface border-accent shadow-lg shadow-accent/20' : 'bg-card border-card-border text-accent'
                     )}>
-                      {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
-                      {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
+                      {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                     </div>
-                    <p className={cn('text-[8px] text-muted/50 font-black uppercase tracking-widest px-1', msg.role === 'user' ? 'text-right' : 'text-left')}>
-                      {msg.time}
-                    </p>
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-3">
+                        <span className={cn('text-xs font-black uppercase tracking-widest', isUser ? 'text-accent' : 'text-primary')}>
+                          {name}
+                        </span>
+                        <span className="text-[9px] font-mono text-muted/40">{msg.time}</span>
+                      </div>
+                      <div className="bg-card/40 border border-card-border p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-primary/85">
+                        {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
+                        {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {loading && (
-                <div className="flex gap-3 items-center mt-2">
-                  <div className="bg-card border border-card-border p-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-3">
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-card border border-card-border flex items-center justify-center text-accent shrink-0">
+                    <Bot className="w-5 h-5" />
+                  </div>
+                  <div className="bg-card/40 border border-card-border px-4 py-3 rounded-3xl rounded-tl-none flex items-center gap-3">
                     <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                    <span className="text-[11px] text-muted font-bold uppercase tracking-widest">Ассистент думает...</span>
+                    <span className="text-[11px] text-muted font-bold uppercase tracking-widest">Думаю...</span>
                   </div>
                 </div>
               )}
@@ -609,38 +615,41 @@ export default function Chat() {
                     </div>
                   )}
 
-                  <div className="flex flex-col gap-2 pt-2">
-                    {(privateMessages[selectedContact] || []).map((msg, i) => (
-                      <div
-                        key={i}
-                        className={cn('flex gap-3 max-w-[85%]', msg.role === 'user' ? 'ml-auto flex-row-reverse' : '')}
-                      >
-                        <div className={cn(
-                          'w-9 h-9 rounded-2xl overflow-hidden flex items-center justify-center shrink-0 border',
-                          msg.role === 'user' ? 'bg-accent/20 border-accent/30' : 'bg-card border-card-border'
-                        )}>
-                          {msg.role === 'user' ? (
-                            <User className="w-5 h-5 text-accent" />
-                          ) : (
-                            <img src={avatarUrl(selectedContactObj?.name || 'user')} alt="" className="w-full h-full object-cover" />
-                          )}
-                        </div>
-                        <div className="space-y-1">
+                  {/* BUG_FIX_CONTEXT: Личные DM теперь в стиле «Мероприятие» —
+                      имя сверху, time-stamp, bubble bg-card/40 rounded-3xl
+                      rounded-tl-none. Унифицировано по требованию заказчика. */}
+                  <div className="flex flex-col gap-4 pt-2">
+                    {(privateMessages[selectedContact] || []).map((msg, i) => {
+                      const isUser = msg.role === 'user';
+                      const name = isUser ? 'Вы' : selectedContactObj?.name || 'Собеседник';
+                      const avatarSrc = isUser ? null : avatarUrl(selectedContactObj?.name || 'user');
+                      return (
+                        <div key={i} className="flex gap-4 group">
                           <div className={cn(
-                            'p-4 text-[13px] leading-relaxed shadow-lg',
-                            msg.role === 'user'
-                              ? 'bg-accent text-surface rounded-[2rem] rounded-tr-none font-medium'
-                              : 'bg-card border border-card-border text-primary rounded-[2rem] rounded-tl-none'
+                            'w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center shrink-0 border',
+                            isUser ? 'bg-accent text-surface border-accent shadow-lg shadow-accent/20' : 'bg-card border-card-border'
                           )}>
-                            {msg.text}
-                            {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
+                            {isUser ? (
+                              <User className="w-5 h-5" />
+                            ) : (
+                              <img src={avatarSrc!} alt={name} className="w-full h-full object-cover" />
+                            )}
                           </div>
-                          <p className={cn('text-[8px] text-muted font-black uppercase tracking-widest px-2 pt-1', msg.role === 'user' ? 'text-right' : 'text-left')}>
-                            {msg.time}
-                          </p>
+                          <div className="space-y-1.5 flex-1 min-w-0">
+                            <div className="flex items-center gap-3">
+                              <span className={cn('text-xs font-black uppercase tracking-widest', isUser ? 'text-accent' : 'text-primary')}>
+                                {name}
+                              </span>
+                              <span className="text-[9px] font-mono text-muted/40">{msg.time}</span>
+                            </div>
+                            <div className="bg-card/40 border border-card-border p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-primary/85">
+                              {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
+                              {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                     <div ref={messagesEndRef} />
                   </div>
                 </div>

@@ -16,6 +16,7 @@ import Partners from './pages/Partners';
 import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
 import MyRecords from './pages/MyRecords';
+import NewsDetail from './pages/NewsDetail';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
 import { resolveApiUrl } from './lib/runtimeEndpoint';
 import { ToastProvider, useToast } from './components/Toast';
@@ -190,6 +191,7 @@ function AppContent() {
                     <Routes location={location}>
                       <Route path="/" element={<Home />} />
                       <Route path="/feed" element={<Feed />} />
+                      <Route path="/news/:id" element={<NewsDetail />} />
                       <Route path="/schedule" element={<Schedule />} />
                       <Route path="/speakers" element={<Speakers />} />
                       <Route path="/map" element={<Map />} />
