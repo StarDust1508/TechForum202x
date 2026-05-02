@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #5f2b9c;
+  --color-surface: #080512;
+  --color-card: #120a20;
+  --color-card-border: rgba(255, 255, 255, 0.08);
+  --color-primary: #ffffff;
+  --color-muted: #a8a0bb;
+  --font-sans: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --font-elite: "Cinzel", Georgia, serif;
+  background-color: #05030f;
+  color: white;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.font-elite {
+  font-family: var(--font-elite);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.innovation-bg {
+  background: radial-gradient(circle at 50% 0%, rgba(95, 43, 156, 0.2) 0%, transparent 65%),
+              radial-gradient(circle at 0% 100%, rgba(42, 17, 72, 0.24) 0%, transparent 55%);
+}
+
+.circuit-border {
+  position: relative;
+}
+
+.circuit-border::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  border-top: 2px solid rgba(128, 83, 201, 0.4);
+  border-right: 2px solid rgba(128, 83, 201, 0.4);
+  pointer-events: none;
+}
+
+.glow-accent {
+  filter: drop-shadow(0 0 8px rgba(128, 83, 201, 0.45));
+}
+
+.blob-organic {
+  position: absolute;
+  filter: blur(100px);
+  border-radius: 50%;
+  animation: blob-drift 20s infinite alternate ease-in-out;
+}
+
+@keyframes blob-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(100px, 50px) scale(1.2); }
+}

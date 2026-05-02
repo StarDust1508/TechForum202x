@@ -1,0 +1,909 @@
+{
+  "apk": {
+    "path": "/Users/bubble3/Library/Containers/ru.keepcoder.Telegram/Data/tmp/app-release.apk",
+    "package": "com.psy_lololo.conferenceapp",
+    "app_name": "TechForum 2026",
+    "version_name": "1.0.0",
+    "version_code": "1",
+    "min_sdk": "24",
+    "target_sdk": "36",
+    "main_activity": "com.psy_lololo.conferenceapp.MainActivity"
+  },
+  "permissions": [
+    "android.permission.ACCESS_COARSE_LOCATION",
+    "android.permission.ACCESS_FINE_LOCATION",
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.CAMERA",
+    "android.permission.INTERNET",
+    "android.permission.READ_EXTERNAL_STORAGE",
+    "android.permission.RECORD_AUDIO",
+    "android.permission.SYSTEM_ALERT_WINDOW",
+    "android.permission.VIBRATE",
+    "android.permission.WRITE_EXTERNAL_STORAGE",
+    "com.psy_lololo.conferenceapp.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+  ],
+  "components": [
+    {
+      "type": "activity",
+      "name": "com.psy_lololo.conferenceapp.MainActivity",
+      "exported": true,
+      "permission": null,
+      "process": null,
+      "intent_filters": [
+        {
+          "actions": [
+            "android.intent.action.MAIN"
+          ],
+          "categories": [
+            "android.intent.category.LAUNCHER"
+          ],
+          "data": []
+        },
+        {
+          "actions": [
+            "android.intent.action.VIEW"
+          ],
+          "categories": [
+            "android.intent.category.DEFAULT",
+            "android.intent.category.BROWSABLE"
+          ],
+          "data": [
+            {
+              "android:scheme": "conference-app"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "activity",
+      "name": "expo.modules.imagepicker.ExpoCropImageActivity",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "activity",
+      "name": "com.canhub.cropper.CropImageActivity",
+      "exported": true,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "activity",
+      "name": "com.google.android.gms.common.api.GoogleApiActivity",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "service",
+      "name": "com.google.android.gms.metadata.ModuleDependencies",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": [
+        {
+          "actions": [
+            "com.google.android.gms.metadata.MODULE_DEPENDENCIES"
+          ],
+          "categories": [],
+          "data": []
+        }
+      ]
+    },
+    {
+      "type": "service",
+      "name": "expo.modules.location.services.LocationTaskService",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "receiver",
+      "name": "androidx.profileinstaller.ProfileInstallReceiver",
+      "exported": true,
+      "permission": "android.permission.DUMP",
+      "process": null,
+      "intent_filters": [
+        {
+          "actions": [
+            "androidx.profileinstaller.action.INSTALL_PROFILE"
+          ],
+          "categories": [],
+          "data": []
+        },
+        {
+          "actions": [
+            "androidx.profileinstaller.action.SKIP_FILE"
+          ],
+          "categories": [],
+          "data": []
+        },
+        {
+          "actions": [
+            "androidx.profileinstaller.action.SAVE_PROFILE"
+          ],
+          "categories": [],
+          "data": []
+        },
+        {
+          "actions": [
+            "androidx.profileinstaller.action.BENCHMARK_OPERATION"
+          ],
+          "categories": [],
+          "data": []
+        }
+      ]
+    },
+    {
+      "type": "provider",
+      "name": "expo.modules.filesystem.FileSystemFileProvider",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "provider",
+      "name": "expo.modules.imagepicker.fileprovider.ImagePickerFileProvider",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "provider",
+      "name": "com.canhub.cropper.CropFileProvider",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    },
+    {
+      "type": "provider",
+      "name": "androidx.startup.InitializationProvider",
+      "exported": false,
+      "permission": null,
+      "process": null,
+      "intent_filters": []
+    }
+  ],
+  "native_libs": [
+    "lib/arm64-v8a/libanimation-decoder-gif.so",
+    "lib/arm64-v8a/libappmodules.so",
+    "lib/arm64-v8a/libavif_android.so",
+    "lib/arm64-v8a/libc++_shared.so",
+    "lib/arm64-v8a/libexpo-modules-core.so",
+    "lib/arm64-v8a/libfbjni.so",
+    "lib/arm64-v8a/libgesturehandler.so",
+    "lib/arm64-v8a/libgifimage.so",
+    "lib/arm64-v8a/libhermes.so",
+    "lib/arm64-v8a/libhermestooling.so",
+    "lib/arm64-v8a/libimagepipeline.so",
+    "lib/arm64-v8a/libjsi.so",
+    "lib/arm64-v8a/libnative-filters.so",
+    "lib/arm64-v8a/libnative-imagetranscoder.so",
+    "lib/arm64-v8a/libreact_codegen_reactnativekeyboardcontroller.so",
+    "lib/arm64-v8a/libreact_codegen_rnscreens.so",
+    "lib/arm64-v8a/libreact_codegen_rnsvg.so",
+    "lib/arm64-v8a/libreact_codegen_safeareacontext.so",
+    "lib/arm64-v8a/libreactnative.so",
+    "lib/arm64-v8a/libreanimated.so",
+    "lib/arm64-v8a/librnscreens.so",
+    "lib/arm64-v8a/libstatic-webp.so",
+    "lib/arm64-v8a/libworklets.so",
+    "lib/armeabi-v7a/libanimation-decoder-gif.so",
+    "lib/armeabi-v7a/libappmodules.so",
+    "lib/armeabi-v7a/libavif_android.so",
+    "lib/armeabi-v7a/libc++_shared.so",
+    "lib/armeabi-v7a/libexpo-modules-core.so",
+    "lib/armeabi-v7a/libfbjni.so",
+    "lib/armeabi-v7a/libgesturehandler.so",
+    "lib/armeabi-v7a/libgifimage.so",
+    "lib/armeabi-v7a/libhermes.so",
+    "lib/armeabi-v7a/libhermestooling.so",
+    "lib/armeabi-v7a/libimagepipeline.so",
+    "lib/armeabi-v7a/libjsi.so",
+    "lib/armeabi-v7a/libnative-filters.so",
+    "lib/armeabi-v7a/libnative-imagetranscoder.so",
+    "lib/armeabi-v7a/libreact_codegen_reactnativekeyboardcontroller.so",
+    "lib/armeabi-v7a/libreact_codegen_rnscreens.so",
+    "lib/armeabi-v7a/libreact_codegen_rnsvg.so",
+    "lib/armeabi-v7a/libreact_codegen_safeareacontext.so",
+    "lib/armeabi-v7a/libreactnative.so",
+    "lib/armeabi-v7a/libreanimated.so",
+    "lib/armeabi-v7a/librnscreens.so",
+    "lib/armeabi-v7a/libstatic-webp.so",
+    "lib/armeabi-v7a/libworklets.so",
+    "lib/x86/libanimation-decoder-gif.so",
+    "lib/x86/libappmodules.so",
+    "lib/x86/libavif_android.so",
+    "lib/x86/libc++_shared.so",
+    "lib/x86/libexpo-modules-core.so",
+    "lib/x86/libfbjni.so",
+    "lib/x86/libgesturehandler.so",
+    "lib/x86/libgifimage.so",
+    "lib/x86/libhermes.so",
+    "lib/x86/libhermestooling.so",
+    "lib/x86/libimagepipeline.so",
+    "lib/x86/libjsi.so",
+    "lib/x86/libnative-filters.so",
+    "lib/x86/libnative-imagetranscoder.so",
+    "lib/x86/libreact_codegen_reactnativekeyboardcontroller.so",
+    "lib/x86/libreact_codegen_rnscreens.so",
+    "lib/x86/libreact_codegen_rnsvg.so",
+    "lib/x86/libreact_codegen_safeareacontext.so",
+    "lib/x86/libreactnative.so",
+    "lib/x86/libreanimated.so",
+    "lib/x86/librnscreens.so",
+    "lib/x86/libstatic-webp.so",
+    "lib/x86/libworklets.so",
+    "lib/x86_64/libanimation-decoder-gif.so",
+    "lib/x86_64/libappmodules.so",
+    "lib/x86_64/libavif_android.so",
+    "lib/x86_64/libc++_shared.so",
+    "lib/x86_64/libexpo-modules-core.so",
+    "lib/x86_64/libfbjni.so",
+    "lib/x86_64/libgesturehandler.so",
+    "lib/x86_64/libgifimage.so",
+    "lib/x86_64/libhermes.so",
+    "lib/x86_64/libhermestooling.so",
+    "lib/x86_64/libimagepipeline.so",
+    "lib/x86_64/libjsi.so",
+    "lib/x86_64/libnative-filters.so",
+    "lib/x86_64/libnative-imagetranscoder.so",
+    "lib/x86_64/libreact_codegen_reactnativekeyboardcontroller.so",
+    "lib/x86_64/libreact_codegen_rnscreens.so",
+    "lib/x86_64/libreact_codegen_rnsvg.so",
+    "lib/x86_64/libreact_codegen_safeareacontext.so",
+    "lib/x86_64/libreactnative.so",
+    "lib/x86_64/libreanimated.so",
+    "lib/x86_64/librnscreens.so",
+    "lib/x86_64/libstatic-webp.so",
+    "lib/x86_64/libworklets.so"
+  ],
+  "dex_files": [
+    "classes.dex",
+    "classes2.dex",
+    "classes3.dex"
+  ],
+  "meta_inf_versions": [
+    "META-INF/androidx.activity_activity-ktx.version",
+    "META-INF/androidx.activity_activity.version",
+    "META-INF/androidx.annotation_annotation-experimental.version",
+    "META-INF/androidx.appcompat_appcompat-resources.version",
+    "META-INF/androidx.appcompat_appcompat.version",
+    "META-INF/androidx.arch.core_core-runtime.version",
+    "META-INF/androidx.asynclayoutinflater_asynclayoutinflater.version",
+    "META-INF/androidx.autofill_autofill.version",
+    "META-INF/androidx.browser_browser.version",
+    "META-INF/androidx.cardview_cardview.version",
+    "META-INF/androidx.coordinatorlayout_coordinatorlayout.version",
+    "META-INF/androidx.core_core-ktx.version",
+    "META-INF/androidx.core_core-splashscreen.version",
+    "META-INF/androidx.core_core-viewtree.version",
+    "META-INF/androidx.core_core.version",
+    "META-INF/androidx.cursoradapter_cursoradapter.version",
+    "META-INF/androidx.customview_customview.version",
+    "META-INF/androidx.databinding_viewbinding.version",
+    "META-INF/androidx.documentfile_documentfile.version",
+    "META-INF/androidx.drawerlayout_drawerlayout.version",
+    "META-INF/androidx.dynamicanimation_dynamicanimation-ktx.version",
+    "META-INF/androidx.dynamicanimation_dynamicanimation.version",
+    "META-INF/androidx.emoji2_emoji2-views-helper.version",
+    "META-INF/androidx.emoji2_emoji2.version",
+    "META-INF/androidx.exifinterface_exifinterface.version",
+    "META-INF/androidx.fragment_fragment-ktx.version",
+    "META-INF/androidx.fragment_fragment.version",
+    "META-INF/androidx.interpolator_interpolator.version",
+    "META-INF/androidx.legacy_legacy-support-core-ui.version",
+    "META-INF/androidx.legacy_legacy-support-core-utils.version",
+    "META-INF/androidx.legacy_legacy-support-v4.version",
+    "META-INF/androidx.lifecycle_lifecycle-livedata-core-ktx.version",
+    "META-INF/androidx.lifecycle_lifecycle-livedata-core.version",
+    "META-INF/androidx.lifecycle_lifecycle-livedata.version",
+    "META-INF/androidx.lifecycle_lifecycle-process.version",
+    "META-INF/androidx.lifecycle_lifecycle-runtime-ktx.version",
+    "META-INF/androidx.lifecycle_lifecycle-runtime.version",
+    "META-INF/androidx.lifecycle_lifecycle-viewmodel-ktx.version",
+    "META-INF/androidx.lifecycle_lifecycle-viewmodel-savedstate.version",
+    "META-INF/androidx.lifecycle_lifecycle-viewmodel.version",
+    "META-INF/androidx.loader_loader.version",
+    "META-INF/androidx.localbroadcastmanager_localbroadcastmanager.version",
+    "META-INF/androidx.media_media.version",
+    "META-INF/androidx.print_print.version",
+    "META-INF/androidx.profileinstaller_profileinstaller.version",
+    "META-INF/androidx.recyclerview_recyclerview.version",
+    "META-INF/androidx.savedstate_savedstate-ktx.version",
+    "META-INF/androidx.savedstate_savedstate.version",
+    "META-INF/androidx.slidingpanelayout_slidingpanelayout.version",
+    "META-INF/androidx.startup_startup-runtime.version",
+    "META-INF/androidx.swiperefreshlayout_swiperefreshlayout.version",
+    "META-INF/androidx.tracing_tracing-ktx.version",
+    "META-INF/androidx.tracing_tracing.version",
+    "META-INF/androidx.transition_transition.version",
+    "META-INF/androidx.vectordrawable_vectordrawable-animated.version",
+    "META-INF/androidx.vectordrawable_vectordrawable.version",
+    "META-INF/androidx.versionedparcelable_versionedparcelable.version",
+    "META-INF/androidx.viewpager2_viewpager2.version",
+    "META-INF/androidx.viewpager_viewpager.version",
+    "META-INF/com.google.android.material_material.version",
+    "META-INF/kotlinx_coroutines_android.version",
+    "META-INF/kotlinx_coroutines_core.version"
+  ],
+  "app_config": {
+    "name": "TechForum 2026",
+    "slug": "conference-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "conference-app",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0C12"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "backgroundColor": "#0A0C12",
+      "package": "com.psy_lololo.conferenceapp"
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "sdkVersion": "54.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      }
+    }
+  },
+  "routes_heuristic": [
+    "./(tabs)/_layout.tsx",
+    "./(tabs)/chat.tsx",
+    "./(tabs)/index.tsx",
+    "./(tabs)/profile.tsx",
+    "./(tabs)/schedule.tsx",
+    "./(tabs)/speakers.tsx",
+    "./+not-found.tsx",
+    "./_layout.tsx",
+    "./about.tsx",
+    "./gifts.tsx",
+    "./map.tsx",
+    "./meetings.tsx",
+    "./my-schedule.tsx",
+    "./news.tsx",
+    "./partners.tsx",
+    "./ticket.tsx"
+  ],
+  "class_stats": {
+    "total_classes": 21128,
+    "top_package_prefixes": [
+      [
+        "com.google.android",
+        2313
+      ],
+      [
+        "kotlin.reflect.jvm",
+        1943
+      ],
+      [
+        "com.google.common",
+        1878
+      ],
+      [
+        "com.facebook.react",
+        1868
+      ],
+      [
+        "expo.modules.kotlin",
+        1139
+      ],
+      [
+        "com.bumptech.glide",
+        693
+      ],
+      [
+        "com.facebook.imagepipeline",
+        560
+      ],
+      [
+        "kotlinx.coroutines.flow",
+        361
+      ],
+      [
+        "com.swmansion.rnscreens",
+        299
+      ],
+      [
+        "androidx.core.view",
+        297
+      ],
+      [
+        "expo.modules.filesystem",
+        288
+      ],
+      [
+        "androidx.appcompat.widget",
+        263
+      ],
+      [
+        "androidx.core.app",
+        219
+      ],
+      [
+        "org.apache.commons",
+        219
+      ],
+      [
+        "expo.modules.image",
+        205
+      ],
+      [
+        "com.facebook.fresco",
+        195
+      ],
+      [
+        "androidx.fragment.app",
+        190
+      ],
+      [
+        "android.support.v4",
+        188
+      ],
+      [
+        "com.horcrux.svg",
+        176
+      ],
+      [
+        "androidx.recyclerview.widget",
+        175
+      ],
+      [
+        "com.caverock.androidsvg",
+        135
+      ],
+      [
+        "expo.modules.location",
+        132
+      ],
+      [
+        "com.swmansion.gesturehandler",
+        132
+      ],
+      [
+        "kotlinx.coroutines.channels",
+        128
+      ],
+      [
+        "com.facebook.common",
+        123
+      ],
+      [
+        "com.github.penfeizhou",
+        120
+      ],
+      [
+        "androidx.core.content",
+        119
+      ],
+      [
+        "androidx.emoji2.text",
+        119
+      ],
+      [
+        "com.facebook.drawee",
+        116
+      ],
+      [
+        "androidx.constraintlayout.motion",
+        108
+      ],
+      [
+        "expo.modules.imagepicker",
+        103
+      ],
+      [
+        "kotlin.jvm.internal",
+        102
+      ],
+      [
+        "androidx.appcompat.app",
+        99
+      ],
+      [
+        "com.facebook.soloader",
+        88
+      ],
+      [
+        "com.canhub.cropper",
+        86
+      ],
+      [
+        "com.facebook.hermes",
+        85
+      ],
+      [
+        "androidx.constraintlayout.solver",
+        84
+      ],
+      [
+        "androidx.core.graphics",
+        78
+      ],
+      [
+        "kotlinx.coroutines.internal",
+        75
+      ],
+      [
+        "expo.modules.core",
+        70
+      ],
+      [
+        "androidx.core.os",
+        69
+      ],
+      [
+        "androidx.activity.result",
+        65
+      ],
+      [
+        "expo.modules.fetch",
+        65
+      ],
+      [
+        "androidx.appcompat.view",
+        61
+      ],
+      [
+        "androidx.core.util",
+        58
+      ],
+      [
+        "androidx.core.location",
+        58
+      ],
+      [
+        "androidx.core.widget",
+        55
+      ],
+      [
+        "androidx.browser.customtabs",
+        51
+      ],
+      [
+        "androidx.core.text",
+        50
+      ],
+      [
+        "com.facebook.cache",
+        50
+      ],
+      [
+        "okhttp3.internal.http2",
+        49
+      ],
+      [
+        "com.facebook.fbreact",
+        46
+      ],
+      [
+        "androidx.constraintlayout.widget",
+        44
+      ],
+      [
+        "androidx.browser.trusted",
+        43
+      ],
+      [
+        "okhttp3.internal.platform",
+        43
+      ],
+      [
+        "com.facebook.yoga",
+        41
+      ],
+      [
+        "com.swmansion.reanimated",
+        41
+      ],
+      [
+        "androidx.core.provider",
+        40
+      ],
+      [
+        "jp.wasabeef.glide",
+        40
+      ],
+      [
+        "androidx.dynamicanimation.animation",
+        38
+      ],
+      [
+        "com.facebook.infer",
+        37
+      ],
+      [
+        "kotlin.io.path",
+        33
+      ],
+      [
+        "kotlinx.coroutines.debug",
+        33
+      ],
+      [
+        "androidx.viewpager2.widget",
+        32
+      ],
+      [
+        "com.th3rdwave.safeareacontext",
+        32
+      ],
+      [
+        "expo.modules.adapters",
+        32
+      ],
+      [
+        "expo.modules.webbrowser",
+        31
+      ],
+      [
+        "expo.modules.interfaces",
+        31
+      ],
+      [
+        "kotlinx.coroutines.selects",
+        31
+      ],
+      [
+        "android.support.customtabs",
+        30
+      ],
+      [
+        "org.jetbrains.annotations",
+        30
+      ],
+      [
+        "androidx.core.splashscreen",
+        28
+      ],
+      [
+        "com.facebook.datasource",
+        28
+      ],
+      [
+        "org.intellij.lang",
+        27
+      ],
+      [
+        "androidx.lifecycle.viewmodel",
+        26
+      ],
+      [
+        "com.google.errorprone",
+        26
+      ],
+      [
+        "androidx.vectordrawable.graphics",
+        25
+      ],
+      [
+        "androidx.autofill.inline",
+        24
+      ],
+      [
+        "androidx.viewpager.widget",
+        24
+      ],
+      [
+        "kotlin.jvm.functions",
+        24
+      ]
+    ],
+    "expo_module_prefixes": [
+      [
+        "expo.modules.kotlin",
+        1139
+      ],
+      [
+        "expo.modules.filesystem",
+        288
+      ],
+      [
+        "expo.modules.image",
+        205
+      ],
+      [
+        "expo.modules.location",
+        132
+      ],
+      [
+        "expo.modules.imagepicker",
+        103
+      ],
+      [
+        "expo.modules.core",
+        70
+      ],
+      [
+        "expo.modules.fetch",
+        65
+      ],
+      [
+        "expo.modules.adapters",
+        32
+      ],
+      [
+        "expo.modules.webbrowser",
+        31
+      ],
+      [
+        "expo.modules.interfaces",
+        31
+      ],
+      [
+        "expo.modules.haptics",
+        22
+      ],
+      [
+        "expo.modules.splashscreen",
+        19
+      ],
+      [
+        "expo.modules.blur",
+        19
+      ],
+      [
+        "expo.modules.lineargradient",
+        17
+      ],
+      [
+        "expo.modules.keepawake",
+        16
+      ],
+      [
+        "expo.modules.systemui",
+        15
+      ],
+      [
+        "expo.modules.font",
+        15
+      ],
+      [
+        "expo.modules.asset",
+        13
+      ],
+      [
+        "expo.modules.constants",
+        10
+      ],
+      [
+        "expo.modules.linking",
+        10
+      ],
+      [
+        "expo.modules.imageloader",
+        9
+      ],
+      [
+        "expo.modules.apploader",
+        6
+      ],
+      [
+        "expo.modules.rncompatibility",
+        1
+      ],
+      [
+        "expo.modules.ApplicationLifecycleDispatcher",
+        1
+      ],
+      [
+        "expo.modules.BuildConfig",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackage$$ExternalSyntheticLambda0",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackage$Companion",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackage$packageList_delegate$lambda$1$$inlined$sortedByDescending$1",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackage",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackageList$LazyHolder",
+        1
+      ],
+      [
+        "expo.modules.ExpoModulesPackageList",
+        1
+      ],
+      [
+        "expo.modules.ExpoReactHostFactory$ExpoReactHostDelegate",
+        1
+      ],
+      [
+        "expo.modules.ExpoReactHostFactory$createFromReactNativeHost$4",
+        1
+      ],
+      [
+        "expo.modules.ExpoReactHostFactory",
+        1
+      ],
+      [
+        "expo.modules.R",
+        1
+      ],
+      [
+        "expo.modules.ReactActivityDelegateWrapper$$ExternalSyntheticLambda0",
+        1
+      ],
+      [
+        "expo.modules.ReactActivityDelegateWrapper$$ExternalSyntheticLambda1",
+        1
+      ],
+      [
+        "expo.modules.ReactActivityDelegateWrapper$$ExternalSyntheticLambda2",
+        1
+      ],
+      [
+        "expo.modules.ReactActivityDelegateWrapper$$ExternalSyntheticLambda3",
+        1
+      ],
+      [
+        "expo.modules.ReactActivityDelegateWrapper$$ExternalSyntheticLambda4",
+        1
+      ]
+    ],
+    "app_package_classes": [
+      "com.psy_lololo.conferenceapp.BuildConfig",
+      "com.psy_lololo.conferenceapp.MainActivity",
+      "com.psy_lololo.conferenceapp.MainActivity$createReactActivityDelegate$1",
+      "com.psy_lololo.conferenceapp.MainApplication",
+      "com.psy_lololo.conferenceapp.MainApplication$reactNativeHost$1",
+      "com.psy_lololo.conferenceapp.R",
+      "com.psy_lololo.conferenceapp.R$color",
+      "com.psy_lololo.conferenceapp.R$drawable",
+      "com.psy_lololo.conferenceapp.R$integer",
+      "com.psy_lololo.conferenceapp.R$mipmap",
+      "com.psy_lololo.conferenceapp.R$raw",
+      "com.psy_lololo.conferenceapp.R$string",
+      "com.psy_lololo.conferenceapp.R$style"
+    ]
+  }
+}

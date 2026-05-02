@@ -1,0 +1,6 @@
+{
+  "name": "TechForum2026",
+  "description": "TechForum 2026 mobile conference companion app with schedule, speakers, chat, and AI assistant.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": []
+}
