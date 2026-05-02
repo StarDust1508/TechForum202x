@@ -14,15 +14,32 @@
 
 :root {
   --font-elite: "Cinzel", Georgia, serif;
-  background-color: #05030f;
+  background-color: #04020f;
   color: white;
 }
 
-body {
+/*
+  BUG_FIX_CONTEXT: на Samsung S25 / OnePlus 9R под main была видна чёрная
+  полоса навигации, потому что main с h-[100dvh] меньше body на высоту
+  navbar. html/body теперь явно тёмные + min-height с fallback на 100vh
+  для Android WebView, который иногда отдаёт 0 для 100dvh при инициализации.
+*/
+html, body, #root {
   margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: #04020f;
+  overscroll-behavior: none;
+}
+
+body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Поглощаем нижний safe-area inset фоном — чтобы под навбаром не было
+     пустоты другого цвета. */
+  padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 .font-elite {

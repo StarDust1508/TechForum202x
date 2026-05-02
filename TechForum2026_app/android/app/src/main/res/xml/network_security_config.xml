@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Явное разрешение cleartext (HTTP) трафика к нашему backend.
+  Без этого Android 9+ блокирует HTTP даже с usesCleartextTraffic="true",
+  если адрес указан как IP, а не domain. После получения domain + Let's
+  Encrypt сертификата этот файл можно удалить и убрать
+  android:networkSecurityConfig из AndroidManifest.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">72.56.9.90</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

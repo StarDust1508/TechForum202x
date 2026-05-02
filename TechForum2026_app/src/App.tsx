@@ -109,8 +109,14 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#04020f] flex flex-col items-center justify-center p-0 sm:p-4 overflow-hidden relative">
-      <main className="w-full max-w-[420px] bg-[#04020f] h-[100dvh] sm:h-[840px] shadow-[0_0_90px_rgba(13,148,136,0.32)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#130b21]">
+    // BUG_FIX_CONTEXT: На мобильных (Samsung S25 / OnePlus 9R и т.п.) под main
+    // оставалась чёрная полоса — main был h-[100dvh] (минус navbar) внутри
+    // outer min-h-screen (100vh с navbar). На mobile теперь main растягивается
+    // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
+    // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
+    // с центрированной "телефонной" рамкой 420×840.
+    <div className="bg-[#04020f] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 overflow-hidden relative" style={{ minHeight: '100dvh' }}>
+      <main className="w-full sm:max-w-[420px] bg-[#04020f] sm:h-[840px] shadow-[0_0_90px_rgba(13,148,136,0.32)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#130b21]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
         <div className="flex-1 overflow-y-auto scrollbar-hide relative">
           <div className="min-h-full">
             {!user ? (
