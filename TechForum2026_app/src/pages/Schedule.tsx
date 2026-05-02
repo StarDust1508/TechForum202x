@@ -1,66 +1,146 @@
 // FILE: src/pages/Schedule.tsx
-// VERSION: 2.0.0
+// VERSION: 3.0.0
 // START_MODULE_CONTRACT:
-// PURPOSE: Страница расписания форума — табы по дням, фильтры по залам и трекам,
-//          регистрация на сессии в localStorage, цветовая кодировка трека.
-// SCOPE: UI расписания + клиентская регистрация (без бэка).
-// INPUT: SESSIONS, TRACKS, HALLS, DAYS из src/data.
+// PURPOSE: Расписание форума — табы по дням, фильтры по залам и трекам,
+//          серверная регистрация на сессии (Postgres), conflict-detection
+//          модалка, экспорт .ics для одной сессии или для всех «моих».
+// SCOPE: UI расписания + клиентские вызовы API регистрации/календаря.
+// INPUT: SESSIONS, TRACKS, HALLS, DAYS, EVENT_META из src/data; API /api/v1.
 // OUTPUT: JSX-страница.
-// KEYWORDS: DOMAIN(8): ConferenceProgram; CONCEPT(7): FilterableList; TECH(6): React, Tailwind
-// LINKS: READS_DATA_FROM(8): src/data.ts; WRITES_DATA_TO(5): localStorage
+// KEYWORDS: DOMAIN(8): ConferenceProgram; CONCEPT(8): FilterableList, ConflictDetect; TECH(7): React, Capacitor
+// LINKS: READS_DATA_FROM(8): src/data.ts; CALLS_API(9): /sessions/registered, /sessions/:id/register, /sessions/:id/calendar
 // END_MODULE_CONTRACT
 //
 // START_RATIONALE:
-// Q: Почему фильтры по hallId/trackId/dayId, а не по строкам?
-// A: В v1 фильтр зала ломался из-за Cyrillic 'Зал А' vs Latin 'Зал A' рассинхрона.
-//    Фильтры на ID гарантируют корректное сопоставление.
-// Q: Почему bracket-of-truth для дня — id, а UI-лейбл — отдельно?
-// A: Лейбл может локализоваться или измениться, ID остаётся стабильным якорем.
+// Q: Почему conflict-detection — warning-modal, а не hard-block?
+// A: Юзер мог реально хотеть переключаться между двумя параллельными сессиями
+//    (часть одной + часть другой). Warning + кнопка "Всё равно записаться"
+//    оставляет свободу выбора.
+// Q: Почему регистрации храним и локально (registeredIds state) и на сервере?
+// A: Серверный список — источник истины (синхронизация между устройствами,
+//    .ics export). Локальный кеш — для мгновенной реакции UI без round-trip.
 // END_RATIONALE
 //
 // START_CHANGE_SUMMARY:
-// LAST_CHANGE: [v2.0.0 - Переход на ID-based фильтрацию (DAYS/HALLS/TRACKS),
-//                       добавлен трек-фильтр, цветовой бейдж трека на карточке,
-//                       "Live"-бейдж переименован в "В ЭФИРЕ"]
-// PREV_CHANGE_SUMMARY: [v1.0.0 - Хардкод '15 мая'/'16 мая', баг 'Зал A' Latin/Cyrillic]
+// LAST_CHANGE: [v3.0.0 - Регистрации на сервере (Postgres) вместо localStorage,
+//                       conflict-detection modal, экспорт .ics на сессию и
+//                       на всю личную программу.]
+// PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, getTrackById } from '../data';
-import { MapPin, Filter, Cpu, Calendar } from 'lucide-react';
+import { SESSIONS, TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
+import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import BackButton from '@/src/components/BackButton';
+import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 const MY_TAB_ID = 'my';
+const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
+
+function timeToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
+  return (h * 60) + m;
+}
+
+/**
+ * Возвращает все сессии того же дня, которые пересекаются по времени с target,
+ * и при этом уже в registeredIds (т.е. конфликтуют). Сама target исключается.
+ */
+function findConflicts(target: Session, registeredIds: string[]): Session[] {
+  const targetStart = timeToMinutes(target.startTime);
+  const targetEnd = timeToMinutes(target.endTime);
+  return SESSIONS.filter(s => {
+    if (s.id === target.id) return false;
+    if (s.dayId !== target.dayId) return false;
+    if (!registeredIds.includes(s.id)) return false;
+    const start = timeToMinutes(s.startTime);
+    const end = timeToMinutes(s.endTime);
+    return start < targetEnd && end > targetStart;
+  });
+}
 
 export default function Schedule() {
   const [selectedDayId, setSelectedDayId] = useState<string>(DAYS[0]?.id ?? '');
   const [activeHallId, setActiveHallId] = useState<string>('all');
   const [activeTrackId, setActiveTrackId] = useState<string>('all');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
+  const [conflictTarget, setConflictTarget] = useState<{ session: Session; conflicts: Session[] } | null>(null);
 
+  // Загружаем регистрации с сервера. Если 401/network-error — fallback к
+  // legacy localStorage (миграция со старой версии приложения).
   useEffect(() => {
-    const stored = localStorage.getItem('techforum_registrations');
-    if (stored) {
+    let cancelled = false;
+    (async () => {
       try {
-        setRegisteredIds(JSON.parse(stored));
-      } catch (e) {
-        console.error('Failed to load registrations', e);
+        const res = await fetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled && Array.isArray(data?.sessionIds)) {
+            setRegisteredIds(data.sessionIds);
+            return;
+          }
+        }
+      } catch {
+        // network down — fallback на legacy localStorage
       }
-    }
+      const stored = localStorage.getItem(LEGACY_LOCALSTORAGE_KEY);
+      if (stored && !cancelled) {
+        try { setRegisteredIds(JSON.parse(stored)); } catch { /* ignore */ }
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  const toggleRegistration = (id: string) => {
-    const updated = registeredIds.includes(id)
-      ? registeredIds.filter(rid => rid !== id)
-      : [...registeredIds, id];
-    setRegisteredIds(updated);
-    localStorage.setItem('techforum_registrations', JSON.stringify(updated));
-  };
+  async function persistRegistration(sessionId: string, register: boolean): Promise<void> {
+    try {
+      const url = resolveApiUrl(`/sessions/${sessionId}/register`);
+      await fetch(url, { method: register ? 'POST' : 'DELETE', credentials: 'include' });
+    } catch (e) {
+      // network error — пишем в localStorage как fallback
+      console.error('[Schedule] register failed (offline)', e);
+    }
+    // Параллельно дублируем в localStorage для оффлайна
+    const next = register
+      ? Array.from(new Set([...registeredIds, sessionId]))
+      : registeredIds.filter(id => id !== sessionId);
+    localStorage.setItem(LEGACY_LOCALSTORAGE_KEY, JSON.stringify(next));
+  }
+
+  function setRegisteredAndPersist(sessionId: string, register: boolean): void {
+    setRegisteredIds(prev => {
+      const next = register
+        ? Array.from(new Set([...prev, sessionId]))
+        : prev.filter(id => id !== sessionId);
+      return next;
+    });
+    void persistRegistration(sessionId, register);
+  }
+
+  function handleRegisterClick(session: Session): void {
+    const isRegistered = registeredIds.includes(session.id);
+    if (isRegistered) {
+      // снятие — без подтверждения
+      setRegisteredAndPersist(session.id, false);
+      return;
+    }
+    const conflicts = findConflicts(session, registeredIds);
+    if (conflicts.length > 0) {
+      setConflictTarget({ session, conflicts });
+      return;
+    }
+    setRegisteredAndPersist(session.id, true);
+  }
+
+  function confirmConflictRegister(): void {
+    if (!conflictTarget) return;
+    setRegisteredAndPersist(conflictTarget.session.id, true);
+    setConflictTarget(null);
+  }
 
   // BUG_FIX_CONTEXT: v1 использовал s.location.includes(activeHall) с Cyrillic vs
-  // Latin рассинхроном (например, 'Зал A' Latin в halls и 'Зал А' Cyrillic в data).
-  // Сейчас сравниваем строго по hallId.
+  // Latin рассинхроном. Сейчас сравниваем строго по hallId.
   const filteredSessions = SESSIONS.filter(s => {
     const isMyTab = selectedDayId === MY_TAB_ID;
     const isDayMatch = isMyTab ? registeredIds.includes(s.id) : s.dayId === selectedDayId;
@@ -82,7 +162,7 @@ export default function Schedule() {
           <h1 className="text-4xl font-extrabold tracking-tighter text-primary">Расписание</h1>
         </div>
 
-        {/* Day tabs — driven by DAYS from data.ts, plus "Мои записи" tab */}
+        {/* Day tabs */}
         <div className="flex bg-[#13161f] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
           {[
             ...DAYS.map(d => ({ id: d.id, label: d.label })),
@@ -103,7 +183,19 @@ export default function Schedule() {
           ))}
         </div>
 
-        {/* Hall filter pills — by hallId */}
+        {/* «Скачать всю мою программу в календарь» — показываем только в табе "Мои записи" */}
+        {selectedDayId === MY_TAB_ID && registeredIds.length > 0 && (
+          <a
+            href={resolveApiUrl('/sessions/calendar')}
+            download="techforum2026-my.ics"
+            className="flex items-center justify-center gap-2 bg-[#5eead4]/10 border border-[#5eead4]/30 text-[#5eead4] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+          >
+            <Download className="w-4 h-4" />
+            Все мои сессии в календарь
+          </a>
+        )}
+
+        {/* Hall filter pills */}
         <div className="flex gap-3 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
           {[{ id: 'all', name: 'Все залы' }, ...HALLS.map(h => ({ id: h.id, name: h.name }))].map((h) => {
             const active = activeHallId === h.id;
@@ -113,9 +205,7 @@ export default function Schedule() {
                 onClick={() => setActiveHallId(h.id)}
                 className={cn(
                   'px-6 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none',
-                  active
-                    ? 'bg-primary border-primary text-surface'
-                    : 'bg-surface border-card-border text-muted/60',
+                  active ? 'bg-primary border-primary text-surface' : 'bg-surface border-card-border text-muted/60',
                 )}
               >
                 {h.name}
@@ -124,7 +214,7 @@ export default function Schedule() {
           })}
         </div>
 
-        {/* Track filter pills — color-coded by track */}
+        {/* Track filter pills */}
         <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
           {[{ id: 'all', name: 'Все треки', color: '#5eead4' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
             const active = activeTrackId === t.id;
@@ -151,13 +241,13 @@ export default function Schedule() {
             const track = getTrackById(session.trackId);
             const trackColor = track?.color ?? '#5eead4';
             const isRegistered = registeredIds.includes(session.id);
+            const isCommonFormat = session.format === 'break' || session.format === 'opening' || session.format === 'closing';
 
             return (
               <div
                 key={session.id}
                 className="mb-5 bg-[#13161f]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden circuit-border"
               >
-                {/* Track color bar */}
                 <div
                   className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
                   style={{ backgroundColor: trackColor, boxShadow: `0 0 12px ${trackColor}88` }}
@@ -201,26 +291,38 @@ export default function Schedule() {
                   </div>
                 )}
 
-                <div className="pt-2 flex justify-between items-center bg-surface/30 -mx-6 -mb-6 px-6 py-4 border-t border-card-border/50">
+                <div className="pt-2 flex justify-between items-center bg-surface/30 -mx-6 -mb-6 px-6 py-4 border-t border-card-border/50 gap-3">
                   <span
-                    className="text-[10px] font-black uppercase tracking-widest pl-2 border-l-2"
+                    className="text-[10px] font-black uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
                     style={{ borderColor: trackColor, color: trackColor }}
                   >
                     {session.track}
                   </span>
-                  {session.format !== 'break' && session.format !== 'opening' && session.format !== 'closing' && (
-                    <button
-                      onClick={() => toggleRegistration(session.id)}
-                      className={cn(
-                        'text-[10px] font-black uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
-                        isRegistered
-                          ? 'bg-card border border-accent/40 text-accent'
-                          : 'bg-accent text-surface shadow-accent/10 hover:brightness-110',
-                      )}
-                    >
-                      {isRegistered ? 'Уже иду' : 'Пойду'}
-                    </button>
-                  )}
+                  <div className="flex gap-2 items-center">
+                    {!isCommonFormat && (
+                      <a
+                        href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
+                        download={`techforum2026-${session.id}.ics`}
+                        title="Добавить в календарь"
+                        className="text-[10px] font-black uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-card-border text-muted/70 hover:text-accent hover:border-accent/30 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {!isCommonFormat && (
+                      <button
+                        onClick={() => handleRegisterClick(session)}
+                        className={cn(
+                          'text-[10px] font-black uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
+                          isRegistered
+                            ? 'bg-card border border-accent/40 text-accent'
+                            : 'bg-accent text-surface shadow-accent/10 hover:brightness-110',
+                        )}
+                      >
+                        {isRegistered ? 'Уже иду' : 'Пойду'}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -233,14 +335,75 @@ export default function Schedule() {
               {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
             </div>
             <p className="text-muted font-medium">
-              {selectedDayId === MY_TAB_ID
-                ? 'Вы ещё не записались ни на одну сессию'
-                : 'Нет докладов по выбранным фильтрам'}
+              {selectedDayId === MY_TAB_ID ? 'Вы ещё не записались ни на одну сессию' : 'Нет докладов по выбранным фильтрам'}
             </p>
           </div>
         )}
       </div>
+
+      {/* Conflict warning modal */}
+      <AnimatePresence>
+        {conflictTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-5"
+            onClick={() => setConflictTarget(null)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 280 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-[#13161f] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                    <AlertTriangle className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <h2 className="text-base font-black text-white tracking-tight">Конфликт времени</h2>
+                </div>
+                <button
+                  onClick={() => setConflictTarget(null)}
+                  className="w-8 h-8 rounded-xl bg-card border border-card-border flex items-center justify-center text-muted hover:text-primary"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <p className="text-[13px] text-white/75 leading-relaxed">
+                «{conflictTarget.session.title}» ({conflictTarget.session.startTime}–{conflictTarget.session.endTime}) пересекается со временем уже выбранных сессий:
+              </p>
+
+              <ul className="space-y-1.5">
+                {conflictTarget.conflicts.map((c) => (
+                  <li key={c.id} className="text-[12px] text-amber-300/90 bg-amber-500/5 border border-amber-500/15 rounded-xl px-3 py-2">
+                    <span className="font-mono">{c.startTime}–{c.endTime}</span> · {c.title}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  onClick={() => setConflictTarget(null)}
+                  className="flex-1 py-3 rounded-2xl bg-card border border-card-border text-[12px] font-semibold text-white/75 active:scale-[0.98]"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={confirmConflictRegister}
+                  className="flex-1 py-3 rounded-2xl bg-amber-500/90 text-black text-[12px] font-bold active:scale-[0.98]"
+                >
+                  Всё равно записаться
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
-

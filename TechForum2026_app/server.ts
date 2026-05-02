@@ -66,7 +66,16 @@ loadEnvironmentFiles();
 const dbModule = await import('./src/db/index.js');
 const { db, pool } = dbModule;
 const schemaModule = await import('./src/db/schema.js');
-const { users, posts, postLikes, postComments, statuses } = schemaModule;
+const { users, posts, postLikes, postComments, statuses, registrations, sessionsEvent } = schemaModule;
+
+// Доменные данные программы (treki, halls, days, speakers, sessions, partners,
+// EVENT_META) — источник истины src/data.ts. Используются для AI-контекста
+// и .ics-генерации. БД содержит копию через src/db/seed.ts.
+const dataModule = await import('./src/data.js');
+const { TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, EVENT_META } = dataModule;
+
+const icsModule = await import('./src/lib/ics.js');
+const { buildIcsCalendar, formatIcsDateTime } = icsModule;
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
@@ -180,7 +189,11 @@ async function startServer(): Promise<void> {
     console.warn('SESSION_SECRET is not set. Using ephemeral dev secret.');
   }
 
-  if (isProduction) {
+  // BUG_FIX_CONTEXT: trust proxy=1 включаем ТОЛЬКО когда мы реально за reverse-proxy
+  // (nginx/cloudflare). При прямом доступе к http://72.56.9.90:3100 без proxy,
+  // express-session с trust proxy и secure=false вёл себя странно (Set-Cookie
+  // не отдавался). Включается через TRUST_PROXY=1 в env.
+  if (String(process.env.TRUST_PROXY || '').trim() === '1') {
     app.set('trust proxy', 1);
   }
 
@@ -192,12 +205,25 @@ async function startServer(): Promise<void> {
     res.setHeader('Referrer-Policy', 'no-referrer');
     next();
   });
+  // BUG_FIX_CONTEXT: Пока у нас нет domain + Let's Encrypt сертификата, APK
+  // ходит к backend по cleartext (http://72.56.9.90:3100). Cookie c secure=true
+  // в этом сценарии не сохраняется → юзер не может залогиниться. Env-toggle
+  // COOKIE_SECURE=false разрешает cookie без HTTPS. Когда поднимем HTTPS, в
+  // .env.production выставим COOKIE_SECURE=true (или удалим — дефолт isProduction).
+  const cookieSecureEnv = String(process.env.COOKIE_SECURE || '').trim().toLowerCase();
+  const cookieSecure = cookieSecureEnv === 'true' ? true
+    : cookieSecureEnv === 'false' ? false
+    : isProduction;
+  if (isProduction && !cookieSecure) {
+    console.warn('[security] COOKIE_SECURE=false in production. OK ONLY for HTTP-only deployments without HTTPS — switch to true after getting a domain + cert.');
+  }
+
   app.use(session({
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction,
+      secure: cookieSecure,
       sameSite: 'lax',
       maxAge: 1000 * 60 * 60 * 24,
       httpOnly: true,
@@ -308,9 +334,49 @@ async function startServer(): Promise<void> {
   // AI (Gemini proxy)
   // ========================================================================
 
+  // BUG_FIX_CONTEXT: AI Chat event-aware. Раньше /ai/chat был общим LLM proxy
+  // без знания о конференции — на вопрос "что мне посетить про AI?" отвечал
+  // как обычный ChatGPT. Теперь на каждый запрос инжектируем компактный
+  // снимок программы (TRACKS, SESSIONS, SPEAKERS, EVENT_META) как system-context.
+  // Gemini ест ~6KB этого контекста легко (input до 1M токенов). Function-calling
+  // не используем — простой prompt-injection даёт 95% эффекта.
+  function buildEventContext(): string {
+    const lines: string[] = [];
+    lines.push(`# КОНФЕРЕНЦИЯ: ${EVENT_META.name}`);
+    lines.push(`Локация: ${EVENT_META.location}, ${EVENT_META.city}`);
+    lines.push(`Организатор: ${EVENT_META.organizer} (${EVENT_META.organizerEmail})`);
+    lines.push('');
+    lines.push('## ДНИ:');
+    for (const d of DAYS) lines.push(`- ${d.id}: ${d.label} ${d.weekday} (${d.date})`);
+    lines.push('');
+    lines.push('## ТРЕКИ:');
+    for (const t of TRACKS) lines.push(`- ${t.id}: ${t.name}`);
+    lines.push('');
+    lines.push('## ЗАЛЫ:');
+    for (const h of HALLS) lines.push(`- ${h.id}: ${h.name} (вместимость ${h.capacity})`);
+    lines.push('');
+    lines.push('## СПИКЕРЫ:');
+    for (const sp of SPEAKERS) {
+      lines.push(`- ${sp.name} | ${sp.role}, ${sp.company} | трек: ${sp.trackId} | тема: ${sp.topic ?? '—'}`);
+    }
+    lines.push('');
+    lines.push('## ПРОГРАММА:');
+    for (const s of SESSIONS) {
+      const day = DAYS.find(d => d.id === s.dayId)?.label ?? s.dayId;
+      const speakerNames = s.speakerIds.map((id: string) => SPEAKERS.find(x => x.id === id)?.name ?? id).join(', ') || '—';
+      lines.push(`- [${day} ${s.startTime}-${s.endTime}] ${s.format.toUpperCase()} «${s.title}» в ${s.location}, трек: ${s.trackId ?? '—'}, спикеры: ${speakerNames}`);
+    }
+    lines.push('');
+    lines.push('## ПАРТНЁРЫ:');
+    for (const p of PARTNERS) lines.push(`- ${p.name} (${p.tier}): ${p.description}`);
+    return lines.join('\n');
+  }
+
+  const SYSTEM_INSTRUCTION = `Ты — AI-ассистент конференции TechForum 2026. Отвечай по-русски, кратко (2-4 предложения) и по делу. Используй ТОЛЬКО факты из контекста программы ниже, не выдумывай сессий и спикеров. Если вопрос вне программы — говори "не нашёл этого в программе" и предлагай ближайшую релевантную сессию из контекста.`;
+
   api.post('/ai/chat', aiRateLimit, requireAuth, async (req, res) => {
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    const context = typeof req.body?.context === 'string' ? req.body.context.slice(0, 20000) : '';
+    const userContext = typeof req.body?.context === 'string' ? req.body.context.slice(0, 20000) : '';
 
     if (!message) {
       res.status(400).json({ error: 'message_required' });
@@ -322,7 +388,17 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const prompt = context ? `${context}\n\nUser: ${message}` : message;
+    const eventContext = buildEventContext();
+    const prompt = [
+      SYSTEM_INSTRUCTION,
+      '',
+      '=== КОНТЕКСТ ПРОГРАММЫ ===',
+      eventContext,
+      '=== КОНЕЦ КОНТЕКСТА ===',
+      userContext ? `\nДополнительный контекст пользователя:\n${userContext}` : '',
+      `\nВопрос пользователя: ${message}`,
+    ].join('\n');
+
     try {
       const result = await gemini.models.generateContent({
         model: geminiModel,
@@ -662,6 +738,164 @@ async function startServer(): Promise<void> {
     const userById = new Map(userRows.map(u => [u.id, toPublicUser(u)]));
     const list = all.map(s => ({ ...s, user: userById.get(s.userId) ?? null }));
     res.json(list);
+  });
+
+  // ========================================================================
+  // SESSION REGISTRATIONS (привязка юзера к сессии расписания)
+  // ========================================================================
+
+  api.get('/sessions/registered', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const rows = await db.select().from(registrations).where(eq(registrations.userId, userId));
+    res.json({ sessionIds: rows.map(r => r.sessionId) });
+  });
+
+  api.post('/sessions/:id/register', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const sessionId = String(req.params.id);
+
+    // Проверяем что сессия вообще существует в БД
+    const sess = (await db.select().from(sessionsEvent).where(eq(sessionsEvent.id, sessionId)).limit(1))[0];
+    if (!sess) {
+      res.status(404).json({ error: 'session_not_found' });
+      return;
+    }
+
+    await db.insert(registrations)
+      .values({ userId, sessionId })
+      .onConflictDoNothing();
+
+    res.json({ ok: true, sessionId });
+  });
+
+  api.delete('/sessions/:id/register', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const sessionId = String(req.params.id);
+
+    await db.delete(registrations)
+      .where(and(eq(registrations.userId, userId), eq(registrations.sessionId, sessionId)));
+
+    res.json({ ok: true, sessionId });
+  });
+
+  // ========================================================================
+  // CALENDAR EXPORT (.ics)
+  // ========================================================================
+
+  // BUG_FIX_CONTEXT: ICS для одной сессии — анонимный, не требует auth.
+  // Полезно когда юзер делится ссылкой "добавить эту сессию" со знакомым.
+  api.get('/sessions/:id/calendar', (req, res) => {
+    const sessionId = String(req.params.id);
+    const sess = SESSIONS.find(s => s.id === sessionId);
+    if (!sess) {
+      res.status(404).json({ error: 'session_not_found' });
+      return;
+    }
+    const day = DAYS.find(d => d.id === sess.dayId);
+    if (!day) {
+      res.status(500).json({ error: 'day_resolution_failed' });
+      return;
+    }
+    const ics = buildIcsCalendar([
+      {
+        uid: `session-${sess.id}@techforum2026`,
+        dtstart: formatIcsDateTime(day.date, sess.startTime),
+        dtend: formatIcsDateTime(day.date, sess.endTime),
+        summary: `${sess.title} — ${EVENT_META.name}`,
+        description: `${sess.description}\n\nСпикеры: ${sess.speakerName}\nТрек: ${sess.track}`,
+        location: `${sess.location}, ${EVENT_META.location}, ${EVENT_META.city}`,
+        organizer: { name: EVENT_META.organizer, email: EVENT_META.organizerEmail },
+        url: EVENT_META.url,
+      },
+    ], { name: EVENT_META.name, timezone: EVENT_META.timezone });
+
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="techforum2026-${sess.id}.ics"`);
+    res.send(ics);
+  });
+
+  // ICS со всеми зарегистрированными юзером сессиями.
+  api.get('/sessions/calendar', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const regs = await db.select().from(registrations).where(eq(registrations.userId, userId));
+    const registeredIds = new Set(regs.map(r => r.sessionId));
+    const userSessions = SESSIONS.filter(s => registeredIds.has(s.id));
+
+    if (userSessions.length === 0) {
+      res.status(404).json({ error: 'no_registered_sessions' });
+      return;
+    }
+
+    const events = userSessions.map(s => {
+      const day = DAYS.find(d => d.id === s.dayId)!;
+      return {
+        uid: `session-${s.id}@techforum2026`,
+        dtstart: formatIcsDateTime(day.date, s.startTime),
+        dtend: formatIcsDateTime(day.date, s.endTime),
+        summary: `${s.title} — ${EVENT_META.name}`,
+        description: `${s.description}\n\nСпикеры: ${s.speakerName}\nТрек: ${s.track}`,
+        location: `${s.location}, ${EVENT_META.location}, ${EVENT_META.city}`,
+        organizer: { name: EVENT_META.organizer, email: EVENT_META.organizerEmail },
+        url: EVENT_META.url,
+      };
+    });
+
+    const ics = buildIcsCalendar(events, { name: `Моя программа — ${EVENT_META.name}`, timezone: EVENT_META.timezone });
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="techforum2026-my.ics"`);
+    res.send(ics);
+  });
+
+  // ========================================================================
+  // TICKET (для QR на входе)
+  // ========================================================================
+
+  // Возвращает payload-ы для QR-кода билета. Подпись HMAC-SHA256 от
+  // (userId|email|name|tier) с использованием SESSION_SECRET. Сканер на входе
+  // проверяет подпись и пускает.
+  api.get('/ticket/me', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const user = await findUserById(userId);
+    if (!user) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+
+    const tier = 'standard';
+    const eventId = 'techforum-2026';
+    const payload = `${eventId}|${user.id}|${user.email}|${user.name}|${tier}`;
+    const hmac = crypto.createHmac('sha256', sessionSecret).update(payload).digest('hex').slice(0, 32);
+    const qrPayload = `${payload}|${hmac}`;
+
+    res.json({
+      eventId,
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      tier,
+      qrPayload,
+      issuedAt: new Date().toISOString(),
+    });
   });
 
   api.use((_req, res) => {
