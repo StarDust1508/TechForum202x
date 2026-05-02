@@ -1,0 +1,98 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'TechForum2026_app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: TechForum2026_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: TechForum2026_app/package-lock.json
+
+      - name: Setup Java 21 (Capacitor 8 + Android Gradle Plugin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install npm deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Write production frontend env
+        run: |
+          cat > .env.production <<EOF
+          NODE_ENV=production
+          VITE_API_BASE_URL=http://72.56.9.90:3100/api/v1
+          VITE_WS_BASE_URL=ws://72.56.9.90:3100
+          VITE_ENABLE_LOCAL_FALLBACK=false
+          EOF
+
+      - name: Build Vite bundle
+        run: npm run build
+
+      - name: Capacitor sync (Android)
+        run: npx cap sync android
+
+      - name: Force cleartext in AndroidManifest
+        run: |
+          sed -i 's/android:usesCleartextTraffic="false"/android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
+          grep usesCleartextTraffic android/app/src/main/AndroidManifest.xml
+
+      - name: Gradle assembleDebug
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --warning-mode=summary
+
+      - name: Rename APK with version + commit
+        id: meta
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          VERSION=$(node -p "require('./package.json').version")
+          OUT_NAME="TechForum2026-v${VERSION}-${SHORT}-debug.apk"
+          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/${OUT_NAME}"
+          echo "out_name=${OUT_NAME}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "short=${SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.out_name }}
+          path: TechForum2026_app/android/app/build/outputs/apk/debug/${{ steps.meta.outputs.out_name }}
+          retention-days: 30
+
+      - name: Create release on tag-style commits or manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ steps.meta.outputs.short }}
+          name: APK build ${{ steps.meta.outputs.short }}
+          body: |
+            Automated debug APK from commit ${{ github.sha }}
+            Backend endpoint: http://72.56.9.90:3100/api/v1
+          files: TechForum2026_app/android/app/build/outputs/apk/debug/${{ steps.meta.outputs.out_name }}
+          fail_on_unmatched_files: true
