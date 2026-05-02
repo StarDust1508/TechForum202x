@@ -70,30 +70,16 @@ const menuItems: MenuItem[] = [
 ];
 
 export default function Home() {
+  // BUG_FIX_CONTEXT: Home больше не рендерит свой фон — единый фон даёт
+  // <AppBackground> в App.tsx (применяется ко всем разделам). Здесь только контент.
   return (
     <div
-      className="relative flex-1 overflow-hidden bg-[#04020f]"
-      style={{ minHeight: '100dvh' }}
+      className="px-5 pb-10"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+      }}
     >
-      <div className="absolute inset-0">
-        <img
-          src="/home-menu-reference.jpg"
-          alt=""
-          aria-hidden="true"
-          className="h-full w-full object-cover scale-[1.03] opacity-20 blur-[5px] saturate-50"
-        />
-      </div>
-
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,1)_0%,rgba(8,5,23,0.98)_30%,rgba(10,7,31,0.98)_60%,rgba(8,5,21,1)_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(20,184,166,0.28),transparent_45%)]" />
-
-      <div
-        className="relative z-10 px-5 pb-10"
-        style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 8px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
-        }}
-      >
         <header className="pt-0 pb-4 text-center">
           <h1
             className="font-elite font-bold tracking-[0.03em] text-[#ccfbf1] drop-shadow-[0_10px_34px_rgba(13,148,136,0.55)]"
@@ -141,7 +127,6 @@ export default function Home() {
             ))}
           </div>
         </section>
-      </div>
     </div>
   );
 }

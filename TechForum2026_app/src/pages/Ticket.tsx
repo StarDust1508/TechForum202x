@@ -80,7 +80,7 @@ export default function Ticket() {
   const ticketShortId = ticket ? ticket.userId.replace(/-/g, '').slice(0, 8).toUpperCase() : '';
 
   return (
-    <div className="flex-1 bg-surface flex flex-col px-5 pb-10">
+    <div className="flex-1 flex flex-col px-5 pb-10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}>
       <header className="flex items-center gap-4 mb-8">
         <button
           onClick={() => navigate(-1)}

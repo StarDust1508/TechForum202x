@@ -14,7 +14,7 @@ export default function Speakers() {
   );
 
   return (
-    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 bg-tech-grid min-h-full relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
       <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">

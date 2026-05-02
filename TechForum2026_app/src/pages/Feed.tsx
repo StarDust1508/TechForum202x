@@ -153,7 +153,7 @@ export default function Feed() {
   const [viewingStatus, setViewingStatus] = useState<any | null>(null);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-surface relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+    <div className="flex-1 flex flex-col h-full relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
       <BackButton />
       {/* Feed Header */}
       <header className="p-6 pb-2">
