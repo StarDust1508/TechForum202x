@@ -38,6 +38,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import session from 'express-session';
+import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { eq, desc, and } from 'drizzle-orm';
@@ -66,13 +67,13 @@ loadEnvironmentFiles();
 const dbModule = await import('./src/db/index.js');
 const { db, pool } = dbModule;
 const schemaModule = await import('./src/db/schema.js');
-const { users, posts, postLikes, postComments, statuses, registrations, sessionsEvent } = schemaModule;
+const { users, posts, postLikes, postComments, statuses, registrations, sessionsEvent, userInterests } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
 // EVENT_META) — источник истины src/data.ts. Используются для AI-контекста
 // и .ics-генерации. БД содержит копию через src/db/seed.ts.
 const dataModule = await import('./src/data.js');
-const { TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, EVENT_META } = dataModule;
+const { TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, EVENT_META, INTERESTS } = dataModule;
 
 const icsModule = await import('./src/lib/ics.js');
 const { buildIcsCalendar, formatIcsDateTime } = icsModule;
@@ -304,6 +305,24 @@ async function startServer(): Promise<void> {
     process.exit(1);
   }
 
+  // ========================================================================
+  // FILE UPLOADS (avatars)
+  // ========================================================================
+  // BUG_FIX_CONTEXT: Avatar uploads — multer пишет файлы в UPLOAD_DIR
+  // (по умолчанию /var/data/uploads). Static handler смонтирован ДО api router'ов,
+  // чтобы /uploads/<file> шёл напрямую в express.static, а не через api 404.
+  const uploadDir = String(process.env.UPLOAD_DIR || '/var/data/uploads').trim();
+  try {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  } catch (err) {
+    console.warn(`[uploads] mkdir failed for ${uploadDir}:`, err);
+  }
+  const upload = multer({
+    dest: uploadDir,
+    limits: { fileSize: 5 * 1024 * 1024 },
+  });
+  app.use('/uploads', express.static(uploadDir));
+
   const api = express.Router();
 
   // ========================================================================
@@ -458,7 +477,7 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'user_create_failed' });
       return;
     }
-    res.json(toPublicUser(created));
+    res.json({ ...toPublicUser(created), interestsCount: 0 });
   });
 
   api.post('/auth/login', authRateLimit, async (req, res) => {
@@ -472,7 +491,8 @@ async function startServer(): Promise<void> {
     }
 
     (req.session as { userId?: string }).userId = user.id;
-    res.json(toPublicUser(user));
+    const myInterests = await db.select().from(userInterests).where(eq(userInterests.userId, user.id));
+    res.json({ ...toPublicUser(user), interestsCount: myInterests.length });
   });
 
   api.post('/auth/logout', authRateLimit, (req, res) => {
@@ -493,7 +513,10 @@ async function startServer(): Promise<void> {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
-    res.json(toPublicUser(user));
+    // BUG_FIX_CONTEXT: Onboarding-флоу: фронт решает показать onboarding-экран
+    // если interestsCount === 0. Считаем числом строк в user_interests.
+    const myInterests = await db.select().from(userInterests).where(eq(userInterests.userId, userId));
+    res.json({ ...toPublicUser(user), interestsCount: myInterests.length });
   });
 
   api.patch('/auth/me', requireAuth, async (req, res) => {
@@ -537,6 +560,44 @@ async function startServer(): Promise<void> {
       return;
     }
     res.json(toPublicUser(updated));
+  });
+
+  // ========================================================================
+  // AVATAR UPLOAD
+  // ========================================================================
+
+  // BUG_FIX_CONTEXT: Возвращаем относительный URL ('/uploads/<file>'), а не абсолютный.
+  // Клиент сам резолвит через resolveAssetUrl() — это позволяет одному и тому же
+  // payload работать как через прямой http://72.56.9.90:3100, так и через прокси.
+  api.post('/me/avatar', requireAuth, upload.single('file'), async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: 'file_required' });
+      return;
+    }
+
+    const allowedMime = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    if (!allowedMime.has(file.mimetype)) {
+      try { fs.unlinkSync(file.path); } catch { /* noop */ }
+      res.status(400).json({ error: 'unsupported_mime', mime: file.mimetype });
+      return;
+    }
+
+    const user = await findUserById(userId);
+    if (!user) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+
+    const relativeUrl = `/uploads/${file.filename}`;
+    await db.update(users).set({ avatar: relativeUrl }).where(eq(users.id, user.id));
+
+    res.json({ avatar: relativeUrl });
   });
 
   // ========================================================================
@@ -738,6 +799,55 @@ async function startServer(): Promise<void> {
     const userById = new Map(userRows.map(u => [u.id, toPublicUser(u)]));
     const list = all.map(s => ({ ...s, user: userById.get(s.userId) ?? null }));
     res.json(list);
+  });
+
+  // ========================================================================
+  // INTERESTS (Onboarding + Recommended ранжирование Schedule)
+  // ========================================================================
+
+  // BUG_FIX_CONTEXT: справочник 22 интересов — читаем напрямую из data.ts
+  // INTERESTS, чтобы избежать лишнего SELECT (данные статичны и одинаковы
+  // в БД и в data.ts). Public — нужен на onboarding-экране ДО auth (на
+  // случай если решим показывать его сразу после регистрации без редиректа).
+  api.get('/interests', (_req, res) => {
+    res.json(INTERESTS);
+  });
+
+  api.get('/me/interests', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const rows = await db.select().from(userInterests).where(eq(userInterests.userId, userId));
+    res.json({ interestIds: rows.map(r => r.interestId) });
+  });
+
+  api.put('/me/interests', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) {
+      res.status(401).json({ error: 'Не авторизован' });
+      return;
+    }
+    const raw = req.body?.interestIds;
+    if (!Array.isArray(raw)) {
+      res.status(400).json({ error: 'interestIds must be array' });
+      return;
+    }
+    const validIds = new Set(INTERESTS.map((i: { id: string }) => i.id));
+    const incoming = Array.from(new Set(raw.map(String))).filter(id => validIds.has(id));
+    if (incoming.length > 10) {
+      res.status(400).json({ error: 'too_many_interests', message: 'Максимум 10 направлений' });
+      return;
+    }
+    // Atomic delete + insert. Drizzle pg-pool поддерживает .transaction().
+    await db.transaction(async (tx) => {
+      await tx.delete(userInterests).where(eq(userInterests.userId, userId));
+      if (incoming.length > 0) {
+        await tx.insert(userInterests).values(incoming.map(interestId => ({ userId, interestId })));
+      }
+    });
+    res.json({ ok: true, interestIds: incoming, count: incoming.length });
   });
 
   // ========================================================================

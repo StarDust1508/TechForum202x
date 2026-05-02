@@ -28,10 +28,10 @@ import { db, closeDb } from './index';
 import {
   tracks, halls, days, speakers,
   sessionsEvent, sessionSpeakers,
-  partners, users,
+  partners, users, interests,
 } from './schema';
 import {
-  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS,
+  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS,
 } from '../data';
 
 function hashPassword(password: string, salt?: string): string {
@@ -71,6 +71,20 @@ async function seedReferenceTables(): Promise<void> {
   console.log(`[seed] days: upserted ${DAYS.length}`);
   // END_BLOCK_DAYS
 
+  // START_BLOCK_INTERESTS: 22 направления (для onboarding и Recommended ранжирования)
+  for (const it of INTERESTS) {
+    await db.insert(interests).values({
+      id: it.id,
+      label: it.label,
+      color: it.color,
+    }).onConflictDoUpdate({
+      target: interests.id,
+      set: { label: it.label, color: it.color },
+    });
+  }
+  console.log(`[seed] interests: upserted ${INTERESTS.length}`);
+  // END_BLOCK_INTERESTS
+
   // START_BLOCK_SPEAKERS: спикеры
   for (const sp of SPEAKERS) {
     await db.insert(speakers).values({
@@ -82,6 +96,7 @@ async function seedReferenceTables(): Promise<void> {
       avatarLetter: sp.avatarLetter,
       topic: sp.topic ?? null,
       trackId: sp.trackId,
+      interestIds: sp.interestIds,
     }).onConflictDoUpdate({
       target: speakers.id,
       set: {
@@ -92,6 +107,7 @@ async function seedReferenceTables(): Promise<void> {
         avatarLetter: sp.avatarLetter,
         topic: sp.topic ?? null,
         trackId: sp.trackId,
+        interestIds: sp.interestIds,
       },
     });
   }

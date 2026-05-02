@@ -11,6 +11,7 @@ import Profile from './pages/Profile';
 import Ticket from './pages/Ticket';
 import Giveaways from './pages/Giveaways';
 import Auth from './pages/Auth';
+import Onboarding from './pages/Onboarding';
 import Partners from './pages/Partners';
 import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
@@ -161,6 +162,11 @@ function AppContent() {
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
               <Auth onSuccess={setUser} />
+            ) : user.interestsCount === 0 ? (
+              // BUG_FIX_CONTEXT: первый вход — показываем onboarding ПОВЕРХ
+              // routes, чтобы пользователь не мог промахнуться. После onDone
+              // обновляем interestsCount локально (без повторного /auth/me).
+              <Onboarding onDone={() => setUser({ ...user, interestsCount: (user.interestsCount ?? 0) + 1 })} />
             ) : (
               // Все остальные разделы — единый фон Home (требование заказчика).
               <AppBackground>

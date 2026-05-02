@@ -103,6 +103,10 @@ export const speakers = pgTable(
     avatarLetter: text('avatar_letter').notNull(),
     topic: text('topic'),
     trackId: text('track_id').notNull().references(() => tracks.id, { onDelete: 'restrict' }),
+    // BUG_FIX_CONTEXT: Для ранжирования "Recommended" в Schedule нужно знать
+    // тематические интересы спикера. text[] — нативный массив Postgres,
+    // Drizzle поддерживает через .array(). Default '{}' гарантирует non-null.
+    interestIds: text('interest_ids').array().notNull().default([]),
   },
   (t) => ({
     trackIdx: index('speakers_track_idx').on(t.trackId),
@@ -226,5 +230,28 @@ export const registrations = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.sessionId] }),
     sessionIdx: index('registrations_session_idx').on(t.sessionId),
+  }),
+);
+
+// ============================================================================
+// INTERESTS (Onboarding + ранжирование Recommended в Schedule)
+// ============================================================================
+
+export const interests = pgTable('interests', {
+  id: text('id').primaryKey(),
+  label: text('label').notNull(),
+  color: varchar('color', { length: 16 }).notNull(),
+});
+
+export const userInterests = pgTable(
+  'user_interests',
+  {
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    interestId: text('interest_id').notNull().references(() => interests.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.interestId] }),
+    userIdx: index('user_interests_user_idx').on(t.userId),
   }),
 );

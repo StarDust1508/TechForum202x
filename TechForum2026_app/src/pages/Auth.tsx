@@ -16,6 +16,9 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [error, setError] = useState('');
 
   const [form, setForm] = useState({ email: '', phone: '', password: '', name: '' });
+  // BUG_FIX_CONTEXT: По требованию 152-ФЗ при регистрации нужно явное
+  // согласие на обработку ПД. На login-моде чекбокс не нужен.
+  const [consent, setConsent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -230,9 +233,23 @@ export default function Auth({ onSuccess }: AuthProps) {
             )}
           </AnimatePresence>
 
+          {mode === 'register' && (
+            <label className="flex items-start gap-3 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 w-4 h-4 accent-[#5eead4] rounded"
+              />
+              <span className="text-[12px] leading-snug text-white/65">
+                Я согласен на обработку персональных данных в соответствии с 152-ФЗ.
+              </span>
+            </label>
+          )}
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || (mode === 'register' && !consent)}
             className="w-full bg-gradient-to-r from-[#5eead4] to-[#2dd4bf] text-[#04020f] py-4 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(94,234,212,0.35)] mt-6"
           >
             {loading ? (

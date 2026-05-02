@@ -5,7 +5,7 @@ import {
   History, Camera, X, Music, Check, User, Send, Image as ImageIcon
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
 
 export default function Feed() {
@@ -226,7 +226,7 @@ export default function Feed() {
               className="flex flex-col items-center gap-2 shrink-0 active:scale-90 transition-transform"
             >
               <div className="w-14 h-14 rounded-[1.5rem] border-2 border-accent p-0.5">
-                <img src={status.user?.avatar} className="w-full h-full rounded-[1.3rem] object-cover" />
+                <img src={resolveAssetUrl(status.user?.avatar)} className="w-full h-full rounded-[1.3rem] object-cover" />
               </div>
               <span className="text-[8px] font-black uppercase tracking-widest opacity-40 truncate w-14 text-center">{status.user?.name.split(' ')[0]}</span>
             </button>
@@ -328,7 +328,7 @@ export default function Feed() {
               feedPosts.map(post => (
                 <div key={post.id} className="bg-card border border-card-border rounded-[2rem] p-6 space-y-4">
                   <div className="flex items-center gap-3">
-                    <img src={post.user?.avatar} alt="" className="w-10 h-10 rounded-2xl border border-card-border" />
+                    <img src={resolveAssetUrl(post.user?.avatar)} alt="" className="w-10 h-10 rounded-2xl border border-card-border" />
                     <div>
                       <p className="text-xs font-black text-primary uppercase tracking-widest">{post.user?.name}</p>
                       <p className="text-[9px] text-muted font-mono">{new Date(post.createdAt).toLocaleTimeString()}</p>
@@ -529,7 +529,7 @@ export default function Feed() {
 
             <div className="mt-8 flex items-center justify-between mb-12">
               <div className="flex items-center gap-3">
-                <img src={viewingStatus.user?.avatar} className="w-10 h-10 rounded-2xl border border-white/20" />
+                <img src={resolveAssetUrl(viewingStatus.user?.avatar)} className="w-10 h-10 rounded-2xl border border-white/20" />
                 <div>
                   <p className="text-xs font-black text-white uppercase tracking-widest">{viewingStatus.user?.name}</p>
                   <p className="text-[9px] text-white/40 uppercase font-mono">СЕЙЧАС</p>

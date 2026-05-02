@@ -96,6 +96,19 @@ export interface Speaker {
   topic?: string;
   /** ID основного трека спикера (для бейджа в карточке). */
   trackId: string;
+  /**
+   * IDs интересов из INTERESTS, которыми покрывается экспертиза спикера.
+   * Используется для ранжирования "Recommended" в Schedule (score =
+   * пересечение с интересами пользователя).
+   */
+  interestIds: string[];
+}
+
+export interface Interest {
+  id: string;
+  label: string;
+  /** Hex-цвет акцента pill. */
+  color: string;
 }
 
 export interface Session {
@@ -213,6 +226,39 @@ export const DAYS: Day[] = [
 ];
 
 // ============================================================================
+// SECTION: INTERESTS — справочник 22 направлений для onboarding
+// ============================================================================
+// Используется (1) при первом входе для выбора 3-10 направлений в Onboarding,
+// (2) для ранжирования "Recommended" в Schedule.
+// Цвета — hex для pill-акцентов (под dark-bg, ярко, но не кислотно).
+// ============================================================================
+
+export const INTERESTS: Interest[] = [
+  { id: 'ai',          label: 'AI / ML',          color: '#a855f7' },
+  { id: 'backend',     label: 'Backend',          color: '#3b82f6' },
+  { id: 'frontend',    label: 'Frontend',         color: '#5eead4' },
+  { id: 'mobile',      label: 'Mobile',           color: '#06b6d4' },
+  { id: 'devops',      label: 'DevOps',           color: '#f59e0b' },
+  { id: 'cloud',       label: 'Cloud',            color: '#0ea5e9' },
+  { id: 'security',    label: 'Security',         color: '#ef4444' },
+  { id: 'data',        label: 'Data Engineering', color: '#10b981' },
+  { id: 'product',     label: 'Product',          color: '#ec4899' },
+  { id: 'design',      label: 'Design',           color: '#f472b6' },
+  { id: 'blockchain',  label: 'Blockchain',       color: '#fbbf24' },
+  { id: 'iot',         label: 'IoT',              color: '#84cc16' },
+  { id: 'robotics',    label: 'Robotics',         color: '#a78bfa' },
+  { id: 'gamedev',     label: 'GameDev',          color: '#fb923c' },
+  { id: 'hardware',    label: 'Hardware',         color: '#94a3b8' },
+  { id: 'fintech',     label: 'FinTech',          color: '#22c55e' },
+  { id: 'edtech',      label: 'EdTech',           color: '#6366f1' },
+  { id: 'healthtech',  label: 'HealthTech',       color: '#14b8a6' },
+  { id: 'startup',     label: 'Startup',          color: '#eab308' },
+  { id: 'vc',          label: 'VC',               color: '#a16207' },
+  { id: 'oss',         label: 'OSS',              color: '#65a30d' },
+  { id: 'career',      label: 'Career',           color: '#d946ef' },
+];
+
+// ============================================================================
 // SECTION: SPEAKERS
 // ============================================================================
 // ПРИНЦИП: реальные публичные tech-figures РФ-сцены, реальные актуальные роли,
@@ -229,6 +275,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ОБ',
     topic: 'Архитектура высоконагруженных систем: уроки 15 лет Highload++',
     trackId: 'backend',
+    interestIds: ['backend', 'devops', 'oss'],
   },
   {
     id: 'sp_kraynov',
@@ -239,6 +286,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'АК',
     topic: 'Генеративные модели в продуктах массового сегмента',
     trackId: 'ai',
+    interestIds: ['ai', 'product'],
   },
   {
     id: 'sp_bilenko',
@@ -249,6 +297,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'МБ',
     topic: 'Research-направления: куда движется индустрия AI',
     trackId: 'ai',
+    interestIds: ['ai', 'data'],
   },
   {
     id: 'sp_sebrant',
@@ -259,6 +308,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'АС',
     topic: 'Стратегия tech-продуктов: уроки Яндекса',
     trackId: 'product',
+    interestIds: ['product', 'startup', 'career'],
   },
   {
     id: 'sp_shipilev',
@@ -269,6 +319,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'АШ',
     topic: 'JIT-компиляция и performance JVM в 2026',
     trackId: 'backend',
+    interestIds: ['backend', 'hardware', 'oss'],
   },
   {
     id: 'sp_soshnikov',
@@ -279,6 +330,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ДС',
     topic: 'AI Copilot-инструменты в инженерных командах',
     trackId: 'ai',
+    interestIds: ['ai', 'edtech', 'career'],
   },
   {
     id: 'sp_petrov',
@@ -289,6 +341,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ГП',
     topic: 'DevRel в технических командах',
     trackId: 'product',
+    interestIds: ['career', 'product', 'oss'],
   },
   {
     id: 'sp_prokopov',
@@ -299,6 +352,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'НП',
     topic: 'Инструменты разработчика: что меняется к 2026',
     trackId: 'frontend',
+    interestIds: ['frontend', 'oss', 'design'],
   },
   {
     id: 'sp_sitnik',
@@ -309,6 +363,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'АС',
     topic: 'Современный фронтенд-tooling: PostCSS, Lightning CSS и далее',
     trackId: 'frontend',
+    interestIds: ['frontend', 'oss', 'design'],
   },
   {
     id: 'sp_burtsev',
@@ -319,6 +374,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'МБ',
     topic: 'Open-source диалоговые системы и фундаментальные исследования AI',
     trackId: 'ai',
+    interestIds: ['ai', 'oss', 'edtech'],
   },
   {
     id: 'sp_oseledets',
@@ -329,6 +385,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ИО',
     topic: 'Тензорные методы в современном ML',
     trackId: 'ai',
+    interestIds: ['ai', 'data', 'edtech'],
   },
   {
     id: 'sp_vetrov',
@@ -339,6 +396,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ДВ',
     topic: 'Байесовский подход в современных нейросетях',
     trackId: 'ai',
+    interestIds: ['ai', 'data', 'edtech'],
   },
   {
     id: 'sp_illarionov',
@@ -349,6 +407,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ОИ',
     topic: 'WebRTC и инфраструктура VK Calls',
     trackId: 'backend',
+    interestIds: ['backend', 'mobile', 'cloud'],
   },
   {
     id: 'sp_kalinin',
@@ -359,6 +418,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'АК',
     topic: 'Распределённые системы: эволюция платформы Авито',
     trackId: 'data',
+    interestIds: ['data', 'backend', 'cloud'],
   },
   {
     id: 'sp_ivanov',
@@ -369,6 +429,7 @@ export const SPEAKERS: Speaker[] = [
     avatarLetter: 'ДИ',
     topic: 'Платформенный подход и developer experience',
     trackId: 'devops',
+    interestIds: ['devops', 'cloud', 'fintech'],
   },
 ];
 

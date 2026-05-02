@@ -45,6 +45,30 @@ export function resolveApiUrl(path: string): string {
   return `${base}${normalizedPath}`;
 }
 
+/**
+ * Преобразует относительный URL ассета (например, '/uploads/abc.jpg') в абсолютный,
+ * используя origin из API base URL. Если URL уже абсолютный (http/https/data) — возвращает как есть.
+ *
+ * BUG_FIX_CONTEXT: Avatar возвращается с бэкенда как '/uploads/<file>'. Когда фронт
+ * собран с VITE_API_BASE_URL=http://72.56.9.90:3100/api/v1 и работает в Capacitor APK,
+ * относительный путь резолвится в `capacitor://localhost/uploads/...` и не находит файл.
+ * Хелпер берёт origin (scheme+host+port) из API base и склеивает.
+ */
+export function resolveAssetUrl(pathOrUrl: string | null | undefined): string {
+  if (!pathOrUrl) return '';
+  const value = String(pathOrUrl);
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+  const apiBase = getApiBaseUrl();
+  try {
+    const url = new URL(apiBase);
+    const origin = `${url.protocol}//${url.host}`;
+    const normalizedPath = value.startsWith('/') ? value : `/${value}`;
+    return `${origin}${normalizedPath}`;
+  } catch {
+    return value;
+  }
+}
+
 export function resolveWsUrl(path = '/ws'): string {
   const wsEnv = String(import.meta.env.VITE_WS_BASE_URL || '').trim();
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

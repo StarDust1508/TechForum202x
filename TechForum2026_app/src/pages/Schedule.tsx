@@ -28,7 +28,7 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
+import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
 import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
@@ -37,7 +37,28 @@ import BackButton from '@/src/components/BackButton';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 const MY_TAB_ID = 'my';
+const RECOMMENDED_TAB_ID = 'recommended';
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
+
+/**
+ * Score сессии для Recommended-таба.
+ * Считаем размер пересечения интересов всех её спикеров с интересами юзера.
+ * Если 0 пересечений — score 0; сортировка fallback-ит на дату+время.
+ */
+function recommendedScore(session: Session, myInterestSet: Set<string>): number {
+  if (myInterestSet.size === 0) return 0;
+  const speakerInterests = new Set<string>();
+  for (const sid of session.speakerIds) {
+    const sp = SPEAKERS.find(s => s.id === sid);
+    if (!sp) continue;
+    for (const ii of sp.interestIds) speakerInterests.add(ii);
+  }
+  let score = 0;
+  for (const ii of speakerInterests) {
+    if (myInterestSet.has(ii)) score += 1;
+  }
+  return score;
+}
 
 function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
@@ -66,7 +87,26 @@ export default function Schedule() {
   const [activeHallId, setActiveHallId] = useState<string>('all');
   const [activeTrackId, setActiveTrackId] = useState<string>('all');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
+  const [myInterestIds, setMyInterestIds] = useState<string[]>([]);
   const [conflictTarget, setConflictTarget] = useState<{ session: Session; conflicts: Session[] } | null>(null);
+
+  // Загружаем интересы пользователя для ранжирования "Recommended".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.interestIds)) {
+          setMyInterestIds(data.interestIds);
+        }
+      } catch {
+        // network — молча оставляем []. Recommended вырождается в дата+время сорт.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Загружаем регистрации с сервера. Если 401/network-error — fallback к
   // legacy localStorage (миграция со старой версии приложения).
@@ -141,13 +181,31 @@ export default function Schedule() {
 
   // BUG_FIX_CONTEXT: v1 использовал s.location.includes(activeHall) с Cyrillic vs
   // Latin рассинхроном. Сейчас сравниваем строго по hallId.
-  const filteredSessions = SESSIONS.filter(s => {
-    const isMyTab = selectedDayId === MY_TAB_ID;
-    const isDayMatch = isMyTab ? registeredIds.includes(s.id) : s.dayId === selectedDayId;
+  const isMyTab = selectedDayId === MY_TAB_ID;
+  const isRecommendedTab = selectedDayId === RECOMMENDED_TAB_ID;
+  const myInterestSet = new Set<string>(myInterestIds);
+
+  let filteredSessions = SESSIONS.filter(s => {
+    const isDayMatch = isMyTab
+      ? registeredIds.includes(s.id)
+      : isRecommendedTab
+        ? true // на табе Recommended показываем все сессии (отсортированные по score)
+        : s.dayId === selectedDayId;
     const isHallMatch = activeHallId === 'all' || s.hallId === activeHallId;
     const isTrackMatch = activeTrackId === 'all' || s.trackId === activeTrackId;
     return isDayMatch && isHallMatch && isTrackMatch;
   });
+
+  if (isRecommendedTab) {
+    // Сортируем по убыванию score. При равенстве — по дате (dayId) + времени.
+    filteredSessions = [...filteredSessions].sort((a, b) => {
+      const scoreA = recommendedScore(a, myInterestSet);
+      const scoreB = recommendedScore(b, myInterestSet);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      if (a.dayId !== b.dayId) return a.dayId.localeCompare(b.dayId);
+      return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
+    });
+  }
 
   return (
     <div className="flex-1 pb-24 pt-6 px-6 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
@@ -162,10 +220,15 @@ export default function Schedule() {
           <h1 className="text-4xl font-extrabold tracking-tighter text-primary">Расписание</h1>
         </div>
 
-        {/* Day tabs */}
+        {/* Day tabs.
+            BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
+            между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
+            Таб "Мои записи" остаётся справа. */}
         <div className="flex bg-[#13161f] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
           {[
-            ...DAYS.map(d => ({ id: d.id, label: d.label })),
+            ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
+            { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
+            ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
             { id: MY_TAB_ID, label: 'Мои записи' },
           ].map((tab) => (
             <button
@@ -335,7 +398,11 @@ export default function Schedule() {
               {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
             </div>
             <p className="text-muted font-medium">
-              {selectedDayId === MY_TAB_ID ? 'Вы ещё не записались ни на одну сессию' : 'Нет докладов по выбранным фильтрам'}
+              {selectedDayId === MY_TAB_ID
+                ? 'Вы ещё не записались ни на одну сессию'
+                : selectedDayId === RECOMMENDED_TAB_ID
+                  ? 'Нет рекомендаций — попробуй сменить фильтры или выбрать больше интересов'
+                  : 'Нет докладов по выбранным фильтрам'}
             </p>
           </div>
         )}
