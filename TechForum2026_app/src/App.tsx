@@ -15,7 +15,6 @@ import Partners from './pages/Partners';
 import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
 import MyRecords from './pages/MyRecords';
-import SplashScreen from './components/SplashScreen';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
 import { resolveApiUrl } from './lib/runtimeEndpoint';
 
@@ -57,7 +56,6 @@ function AppContent() {
 
   useEffect(() => {
     let isMounted = true;
-    const startTime = Date.now();
 
     const checkAuth = async () => {
       try {
@@ -88,11 +86,11 @@ function AppContent() {
           }
         }
       } finally {
-        // Splash must be visible for at least ~1500 ms so the user actually sees it.
-        const elapsed = Date.now() - startTime;
-        const minSplashMs = 1500;
-        const wait = Math.max(0, minSplashMs - elapsed);
-        setTimeout(() => { if (isMounted) setLoading(false); }, wait);
+        // BUG_FIX_CONTEXT: v1 искусственно держал splash минимум 1500ms.
+        // По требованию заказчика splash убран полностью — переходим в Auth/Home
+        // мгновенно после ответа /auth/me. Минимальный спиннер на брендовом
+        // фоне сохраняется на время сетевого вызова, чтобы не было FOUC.
+        if (isMounted) setLoading(false);
       }
     };
 
@@ -103,7 +101,11 @@ function AppContent() {
   }, []);
 
   if (loading) {
-    return <SplashScreen />;
+    return (
+      <div className="min-h-screen bg-[#04020f] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-[#5eead4]/40 border-t-[#5eead4] rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (

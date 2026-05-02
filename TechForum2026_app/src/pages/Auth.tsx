@@ -68,31 +68,48 @@ export default function Auth({ onSuccess }: AuthProps) {
     }
   };
 
-  // Унифицированные стили: один шрифт-семейство (font-sans), одинаковые размеры/веса.
-  // Никаких uppercase + tracking-widest, никаких font-black/font-bold-смесей.
-  const labelClass = 'text-[12px] font-medium text-white/70';
-  const inputClass = 'w-full bg-white/[0.04] border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-[15px] font-normal text-white placeholder:text-white/30 focus:border-[#5eead4]/60 focus:bg-white/[0.06] outline-none transition-all';
+  // Унифицированные стили формы.
+  // BUG_FIX_CONTEXT: По требованию заказчика "шрифт чуть больше и заметнее на всём
+  // экране, кроме «Войти/Регистрация»": label поднят 12→14px и medium→semibold,
+  // input поднят 15→16px и normal→medium. Кнопки таба и submit ('Войти'/'Регистрация'/
+  // 'Создать аккаунт') не тронуты.
+  const labelClass = 'text-[14px] font-semibold text-white/75';
+  const inputClass = 'w-full bg-white/[0.04] border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-[16px] font-medium text-white placeholder:text-white/30 focus:border-[#5eead4]/60 focus:bg-white/[0.06] outline-none transition-all';
   const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40';
 
   return (
     <div className="relative flex-1 min-h-full overflow-hidden bg-[#04020f]">
-      {/* Фон в стиле Home — единый язык */}
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,1)_0%,rgba(8,5,23,0.98)_30%,rgba(10,7,31,0.98)_60%,rgba(8,5,21,1)_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(94,234,212,0.22),transparent_55%)]" />
+      {/* BUG_FIX_CONTEXT: Заменили AI-сгенерированный SVG-фон с условными "схемами"
+          и "светящимся чипом" (был в SplashScreen) на реальный постер форума.
+          Постер показывается с пониженной непрозрачностью + два затемняющих слоя
+          сверху для читаемости форм. Файл лежит в public/conference-bg.jpg. */}
+      <img
+        src="/conference-bg.jpg"
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 h-full w-full object-cover scale-[1.25] opacity-85"
+        style={{ objectPosition: 'center 42%', filter: 'blur(3px) saturate(1.15)' }}
+      />
+      {/* Затемнение: сильное сверху и снизу (читаемость заголовка и кнопки),
+          умеренное в средней части (виден силуэт шестерёнок и бирюзовый цвет постера).
+          Постер слегка заблюрен (3px) — текстовые блоки нечитаемы, но шестерёнки
+          и общий "чертёжный" вайб остаются. */}
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,0.78)_0%,rgba(4,2,15,0.32)_22%,rgba(4,2,15,0.42)_72%,rgba(4,2,15,0.92)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)]" />
 
       <div
         className="relative z-10 flex flex-col justify-center min-h-full px-7 pb-10"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)' }}
       >
-        {/* TechForum 2026 — выделенный заголовок (единый бренд во всём приложении) */}
+        {/* TechForum 2026 — выделенный заголовок (единый бренд во всём приложении).
+            BUG_FIX_CONTEXT: По требованию заказчика подзаголовок
+            "Конференция технологий · 15–16 мая" удалён. Дата перенесена в data.ts
+            (DAYS) — она едина во всём приложении. */}
         <div className="text-center mb-8">
           <h1 className="font-elite text-[44px] leading-[0.95] font-bold tracking-[0.04em] text-[#ccfbf1] drop-shadow-[0_8px_28px_rgba(94,234,212,0.55)]">
             TechForum
             <span className="block mt-1">2026</span>
           </h1>
-          <p className="mt-3 text-[13px] font-medium text-white/55 tracking-[0.04em]">
-            Конференция технологий · 15–16 мая
-          </p>
         </div>
 
         {/* Тонкий переключатель login / register с плавной motion-индикацией */}
@@ -127,8 +144,8 @@ export default function Auth({ onSuccess }: AuthProps) {
               type="button"
               onClick={() => setMethod(m)}
               className={cn(
-                'flex-1 py-2 text-[12px] font-medium rounded-xl transition-all',
-                method === m ? 'bg-white/[0.06] text-[#ccfbf1]' : 'text-white/45'
+                'flex-1 py-2 text-[14px] font-semibold rounded-xl transition-all',
+                method === m ? 'bg-white/[0.06] text-[#ccfbf1]' : 'text-white/55'
               )}
             >
               {m === 'email' ? 'Email' : 'Телефон'}
@@ -147,6 +164,9 @@ export default function Auth({ onSuccess }: AuthProps) {
               transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
               className="space-y-4"
             >
+              {/* BUG_FIX_CONTEXT: По требованию заказчика убраны placeholders
+                  (примеры) во всех полях. Подсказка теперь только через label
+                  сверху — поле остаётся пустым до ввода. */}
               {mode === 'register' && (
                 <div className="space-y-1.5">
                   <label className={labelClass}>Имя</label>
@@ -158,14 +178,13 @@ export default function Auth({ onSuccess }: AuthProps) {
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                       className={inputClass}
-                      placeholder="Иван Иванов"
                     />
                   </div>
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className={labelClass}>{method === 'email' ? 'Email адрес' : 'Номер телефона'}</label>
+                <label className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
                 <div className="relative">
                   {method === 'email' ? <Mail className={iconClass} /> : <Phone className={iconClass} />}
                   <input
@@ -174,7 +193,6 @@ export default function Auth({ onSuccess }: AuthProps) {
                     value={method === 'email' ? form.email : form.phone}
                     onChange={(e) => setForm({ ...form, [method]: e.target.value })}
                     className={inputClass}
-                    placeholder={method === 'email' ? 'user@example.com' : '+7 (999) 000-00-00'}
                   />
                 </div>
               </div>
@@ -189,7 +207,6 @@ export default function Auth({ onSuccess }: AuthProps) {
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     className={inputClass}
-                    placeholder="••••••••"
                   />
                 </div>
               </div>
@@ -202,7 +219,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="text-[12px] font-medium text-rose-300 text-center"
+                className="text-[14px] font-semibold text-rose-300 text-center"
               >
                 {error}
               </motion.p>
@@ -224,16 +241,9 @@ export default function Auth({ onSuccess }: AuthProps) {
             )}
           </button>
         </form>
-
-        <div className="mt-6 text-center">
-          <button
-            type="button"
-            onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
-            className="text-[12px] font-medium text-white/55 hover:text-[#ccfbf1] transition-colors"
-          >
-            {mode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}
-          </button>
-        </div>
+        {/* BUG_FIX_CONTEXT: По требованию заказчика удалена нижняя ссылка
+            "Нет аккаунта? Зарегистрироваться / Уже есть аккаунт? Войти".
+            Переключение режима остаётся через таб-бегунок выше. */}
       </div>
     </div>
   );

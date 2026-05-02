@@ -41,18 +41,28 @@ export default function Ticket() {
                     <rect x="15" y="70" width="15" height="15" fill="white" rx="2" />
                     <rect x="18" y="73" width="9" height="9" fill="currentColor" rx="1" />
                     
-                    {[...Array(60)].map((_, i) => (
-                      <rect 
-                        key={i}
-                        x={Math.floor(Math.random() * 80) + 10}
-                        y={Math.floor(Math.random() * 80) + 10}
-                        width="4"
-                        height="4"
-                        fill="currentColor"
-                        rx="1"
-                        opacity={Math.random() > 0.3 ? 1 : 0}
-                      />
-                    ))}
+                    {/* BUG_FIX_CONTEXT: v1 рендерил QR через Math.random() в каждом
+                        ререндере, из-за чего "QR" мигал и был не сканируемым. Заменено
+                        на стабильный детерминированный паттерн на основе хэша индекса.
+                        Реальный QR через qrcode-lib придёт в Этапе 3 (Quick Win #10). */}
+                    {Array.from({ length: 60 }, (_, i) => {
+                      const hash = (i * 2654435761) >>> 0;
+                      const x = (hash % 80) + 10;
+                      const y = ((hash >> 8) % 80) + 10;
+                      const visible = (hash >> 16) % 10 > 2;
+                      return (
+                        <rect
+                          key={i}
+                          x={x}
+                          y={y}
+                          width="4"
+                          height="4"
+                          fill="currentColor"
+                          rx="1"
+                          opacity={visible ? 1 : 0}
+                        />
+                      );
+                    })}
                   </svg>
                 </div>
               </div>

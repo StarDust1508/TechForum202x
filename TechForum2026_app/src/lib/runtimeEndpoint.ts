@@ -35,9 +35,14 @@ export function getApiBaseUrl(): string {
 }
 
 export function resolveApiUrl(path: string): string {
+  // BUG_FIX_CONTEXT: Раньше использовали `new URL(normalizedPath, `${base}/`)`,
+  // но new URL с absolute-path (начинающимся с '/') СТИРАЕТ pathname базы:
+  //   new URL('/auth/me', 'http://localhost:3000/api/v1/') → 'http://localhost:3000/auth/me'
+  // Из-за этого все API-вызовы из фронта попадали на SPA-fallback (HTML) и парсились
+  // как JSON → SyntaxError "Unexpected token '<'". Теперь конкатенируем явно.
   const base = getApiBaseUrl().replace(/\/+$/, '');
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  return new URL(normalizedPath, `${base}/`).toString();
+  return `${base}${normalizedPath}`;
 }
 
 export function resolveWsUrl(path = '/ws'): string {

@@ -189,7 +189,14 @@ async function startServer(): Promise<void> {
     .map((item) => item.trim())
     .filter(Boolean);
 
+  // BUG_FIX_CONTEXT: dev-сервер отдаёт frontend и backend с одного origin (localhost:3000).
+  // Когда Vite-middleware подгружает /@react-refresh и прочие HMR-эндпоинты, браузер
+  // отправляет Origin: http://localhost:3000 даже для same-origin запросов. CORS-middleware
+  // (см. ниже) рубил их 403, потому что в fallbackCorsOrigins не было self-origin'а.
+  // Добавили http://localhost:3000 и http://127.0.0.1:3000.
   const fallbackCorsOrigins = isProduction ? [] : [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
     'http://localhost:5173',
     'http://127.0.0.1:5173',
     'http://192.168.31.24:5173',

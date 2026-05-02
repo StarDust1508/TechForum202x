@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+
+# Editor / tooling
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code (local-only preview/launch config — содержит абсолютные пути)
+.claude/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build output
+TechForum2026_app/dist/
+TechForum2026_app/android/app/build/
+TechForum2026_app/android/build/
+TechForum2026_app/android/.gradle/
+
+# Env (локальные секреты — не в репо)
+TechForum2026_app/.env
+TechForum2026_app/.env.local
+TechForum2026_app/.env.development
+TechForum2026_app/.env.production
+TechForum2026_app/.env.development.local
+TechForum2026_app/.env.production.local

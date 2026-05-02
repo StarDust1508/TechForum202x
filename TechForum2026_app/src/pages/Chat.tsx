@@ -112,13 +112,16 @@ export default function Chat() {
     };
 
     if (media.type === 'image') {
+      // BUG_FIX_CONTEXT: v1 рендерил <BackButton /> и safe-area-inset paddingTop
+      // внутри пузыря изображения сообщения — компонент дублировался в каждом image
+      // bubble и распирал bubble на 64+px сверху. BackButton — для шапки страницы,
+      // не для контента сообщения. Удалено.
       return (
-        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 group mt-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-          <img 
-            src={media.url} 
-            alt="Shared media" 
-            className="max-w-full h-auto object-cover max-h-80" 
+        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 group mt-2">
+          <img
+            src={media.url}
+            alt="Shared media"
+            className="max-w-full h-auto object-cover max-h-80"
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">

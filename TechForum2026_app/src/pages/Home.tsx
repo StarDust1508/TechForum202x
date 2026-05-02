@@ -56,10 +56,10 @@ export default function Home() {
           </h1>
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75 backdrop-blur-sm">
             <CalendarDays className="h-3.5 w-3.5 text-accent" />
-            <span>15–16 мая</span>
+            <span>20–21 мая</span>
             <span className="h-1 w-1 rounded-full bg-white/30" />
             <MapPin className="h-3.5 w-3.5 text-accent" />
-            <span>Москва</span>
+            <span>Саратов</span>
           </div>
         </header>
 

@@ -32,7 +32,7 @@ const GIVEAWAYS: Giveaway[] = [
     item: 'AirPods Max',
     image: 'https://picsum.photos/seed/airpods/800/600',
     description: 'Кристально чистый звук и адаптивное шумоподавление. Цвет "Космический серый".',
-    endTime: '16 мая, 12:00',
+    endTime: '21 мая, 12:00',
     participants: 856
   },
   {
@@ -41,7 +41,7 @@ const GIVEAWAYS: Giveaway[] = [
     item: 'Apple Watch Ultra 2',
     image: 'https://picsum.photos/seed/watch/800/600',
     description: 'Самые прочные и функциональные часы для экстремальных условий.',
-    endTime: '16 мая, 15:00',
+    endTime: '21 мая, 15:00',
     participants: 432
   }
 ];

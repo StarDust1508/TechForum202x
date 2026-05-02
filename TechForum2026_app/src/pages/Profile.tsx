@@ -22,6 +22,16 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   const [saving, setSaving] = useState(false);
 
   const handleLogout = async () => {
+    // BUG_FIX_CONTEXT: v1 чистил только локальную сессию в localStorage,
+    // но серверная cookie-сессия оставалась валидной до истечения maxAge=24h.
+    // При повторном /auth/me юзер всё ещё считался залогиненным.
+    // Сейчас явно бьём в /auth/logout (best-effort, без блокировки UI).
+    try {
+      const logoutUrl = resolveApiUrl('/auth/logout');
+      await fetch(logoutUrl, { method: 'POST', credentials: 'include' });
+    } catch (e) {
+      console.error('Backend logout failed (continuing with local cleanup)', e);
+    }
     clearLocalSession();
     window.location.reload();
   };
