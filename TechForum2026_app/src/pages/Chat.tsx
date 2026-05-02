@@ -9,6 +9,7 @@ import { SESSIONS, SPEAKERS } from '../data';
 import { cn } from '@/src/lib/utils';
 import WaveSurfer from 'wavesurfer.js';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import BackButton from '@/src/components/BackButton';
 
 interface ChatMessage {
   role: 'user' | 'bot' | 'other';
@@ -112,7 +113,8 @@ export default function Chat() {
 
     if (media.type === 'image') {
       return (
-        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 group mt-2">
+        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 group mt-2" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
           <img 
             src={media.url} 
             alt="Shared media" 

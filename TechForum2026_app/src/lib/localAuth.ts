@@ -34,7 +34,9 @@ export function isLocalAuthFallbackEnabled(): boolean {
   const explicit = String(import.meta.env.VITE_ENABLE_LOCAL_FALLBACK ?? '').trim().toLowerCase();
   if (explicit === 'true') return true;
   if (explicit === 'false') return false;
-  return import.meta.env.MODE !== 'production';
+  // Default: ON. The APK ships standalone (no bundled backend),
+  // so local auth must work when the network/backend is unreachable.
+  return true;
 }
 
 const seedUsers: LocalUser[] = [
@@ -69,14 +71,40 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-function getSubtleCrypto(): SubtleCrypto {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) throw new Error('Local auth crypto is unavailable');
-  return subtle;
+function hasSubtleCrypto(): boolean {
+  return typeof globalThis !== 'undefined' && !!globalThis.crypto && !!globalThis.crypto.subtle;
+}
+
+// Insecure but functional fallback when Web Crypto isn't available
+// (e.g. file:// origin, http:// without localhost, ancient WebView).
+// Uses a simple iterative SHA-256-like loop in pure JS so users can still register.
+function fallbackHashSync(password: string, saltBase64: string): string {
+  const PRIME_A = 0x9E3779B1; // golden-ratio constant
+  const PRIME_B = 0x85EBCA77;
+  const PRIME_C = 0xC2B2AE3D;
+  const data = `${saltBase64}::${password}`;
+  let h1 = 0xDEADBEEF >>> 0;
+  let h2 = 0x41C6CE57 >>> 0;
+  for (let iter = 0; iter < 5000; iter++) {
+    for (let i = 0; i < data.length; i++) {
+      const ch = data.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, PRIME_A) >>> 0;
+      h2 = Math.imul(h2 ^ ch, PRIME_B) >>> 0;
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), PRIME_C) >>> 0;
+    h2 = Math.imul(h2 ^ (h2 >>> 13), PRIME_C) >>> 0;
+  }
+  const bytes = new Uint8Array(8);
+  for (let i = 0; i < 4; i++) {
+    bytes[i]     = (h1 >>> ((3 - i) * 8)) & 0xff;
+    bytes[i + 4] = (h2 >>> ((3 - i) * 8)) & 0xff;
+  }
+  return 'fallback:' + bytesToBase64(bytes);
 }
 
 async function derivePasswordHash(password: string, saltBase64: string): Promise<string> {
-  const subtle = getSubtleCrypto();
+  if (!hasSubtleCrypto()) return fallbackHashSync(password, saltBase64);
+  const subtle = globalThis.crypto.subtle;
   const keyMaterial = await subtle.importKey(
     'raw',
     new TextEncoder().encode(password),
@@ -94,9 +122,15 @@ async function derivePasswordHash(password: string, saltBase64: string): Promise
 }
 
 async function createPasswordDigest(password: string): Promise<{ hash: string; salt: string }> {
-  const cryptoApi = globalThis.crypto;
-  if (!cryptoApi) throw new Error('Local auth crypto is unavailable');
-  const salt = bytesToBase64(cryptoApi.getRandomValues(new Uint8Array(16)));
+  let salt: string;
+  if (hasSubtleCrypto()) {
+    salt = bytesToBase64(globalThis.crypto.getRandomValues(new Uint8Array(16)));
+  } else {
+    // Fallback random source (Math.random) — only used when Web Crypto isn't available.
+    const buf = new Uint8Array(16);
+    for (let i = 0; i < buf.length; i++) buf[i] = Math.floor(Math.random() * 256);
+    salt = bytesToBase64(buf);
+  }
   const hash = await derivePasswordHash(password, salt);
   return { hash, salt };
 }

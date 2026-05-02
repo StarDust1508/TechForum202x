@@ -11,6 +11,8 @@ import {
   FileText,
   Info,
   Sparkles,
+  CalendarDays,
+  MapPin,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -31,7 +33,7 @@ const menuItems = [
 
 export default function Home() {
   return (
-    <div className="relative flex-1 min-h-full overflow-hidden bg-[#040317]">
+    <div className="relative flex-1 min-h-full overflow-hidden bg-[#04020f]">
       <div className="absolute inset-0">
         <img
           src="/home-menu-reference.jpg"
@@ -40,15 +42,25 @@ export default function Home() {
         />
       </div>
 
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(9,5,23,0.96)_0%,rgba(10,7,31,0.96)_44%,rgba(8,5,21,0.98)_100%)]" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(121,83,181,0.25),transparent_45%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,1)_0%,rgba(8,5,23,0.98)_30%,rgba(10,7,31,0.98)_60%,rgba(8,5,21,1)_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(20,184,166,0.28),transparent_45%)]" />
 
-      <div className="relative z-10 px-5 pb-8 pt-4">
-        <header className="pt-4 pb-8 text-center">
-          <h1 className="font-elite text-[62px] leading-[0.92] font-bold tracking-[0.04em] text-[#d7c4ff] drop-shadow-[0_10px_34px_rgba(83,57,135,0.55)]">
+      <div
+        className="relative z-10 px-5 pb-10"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4px)' }}
+      >
+        <header className="pt-0 pb-4 text-center">
+          <h1 className="font-elite text-[62px] leading-[0.92] font-bold tracking-[0.04em] text-[#ccfbf1] drop-shadow-[0_10px_34px_rgba(13,148,136,0.55)]">
             TechForum
             <span className="block mt-1">2026</span>
           </h1>
+          <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/75 backdrop-blur-sm">
+            <CalendarDays className="h-3.5 w-3.5 text-accent" />
+            <span>15–16 мая</span>
+            <span className="h-1 w-1 rounded-full bg-white/30" />
+            <MapPin className="h-3.5 w-3.5 text-accent" />
+            <span>Москва</span>
+          </div>
         </header>
 
         <section>

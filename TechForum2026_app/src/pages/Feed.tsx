@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import BackButton from '@/src/components/BackButton';
 
 export default function Feed() {
   const [activeType, setActiveType] = useState<'posts' | 'reels'>('reels');
@@ -152,7 +153,8 @@ export default function Feed() {
   const [viewingStatus, setViewingStatus] = useState<any | null>(null);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-surface relative">
+    <div className="flex-1 flex flex-col h-full bg-surface relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       {/* Feed Header */}
       <header className="p-6 pb-2">
         <div className="flex items-center justify-between mb-6">

@@ -1,8 +1,10 @@
 import { MapPin, Building, Coffee, Wifi, Phone, Info } from 'lucide-react';
+import BackButton from '@/src/components/BackButton';
 
 export default function Map() {
   return (
-    <div className="pb-24 pt-6 px-5 space-y-8">
+    <div className="pb-24 pt-6 px-5 space-y-8" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-1">
         <h1 className="text-3xl font-bold tracking-tight text-primary">Карта площадки</h1>
         <p className="text-xs text-muted font-medium">Технопарк "Инновация", Холл 1-2</p>

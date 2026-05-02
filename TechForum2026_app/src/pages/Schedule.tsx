@@ -3,6 +3,7 @@ import { SESSIONS } from '../data';
 import { MapPin, Clock, Filter, Cpu, Calendar } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
+import BackButton from '@/src/components/BackButton';
 
 export default function Schedule() {
   const [selectedDay, setSelectedDay] = useState('15 мая');
@@ -45,7 +46,8 @@ export default function Schedule() {
   const halls = ['Все', 'Главная сцена', 'Зал A', 'Зал B'];
 
   return (
-    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 bg-tech-grid min-h-full relative">
+    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 bg-tech-grid min-h-full relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">
           <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent glow-accent" />

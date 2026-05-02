@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, CheckCircle2, CircleAlert, Server } from 'lucide-react';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import BackButton from '@/src/components/BackButton';
 
 type HealthState = {
   loading: boolean;
@@ -42,7 +43,8 @@ export default function Diagnostics() {
   }, []);
 
   return (
-    <div className="flex-1 min-h-full px-6 pt-8 pb-10 space-y-6">
+    <div className="flex-1 min-h-full px-6 pt-8 pb-10 space-y-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-1.5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-accent/85 font-semibold">System</p>
         <h1 className="font-elite text-4xl leading-none text-white">Диагностика</h1>

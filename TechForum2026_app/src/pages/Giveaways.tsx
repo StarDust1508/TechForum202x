@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Gift, Zap, Laptop, Headphones, Trophy, ChevronRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import BackButton from '@/src/components/BackButton';
 
 interface Giveaway {
   id: string;
@@ -71,7 +72,8 @@ export default function Giveaways() {
   };
 
   return (
-    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 bg-tech-grid min-h-full relative">
+    <div className="flex-1 pb-24 pt-6 px-6 space-y-8 bg-tech-grid min-h-full relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">
           <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent glow-accent" />

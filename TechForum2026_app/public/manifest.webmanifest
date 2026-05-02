@@ -1,0 +1,19 @@
+{
+  "name": "TechForum 2026",
+  "short_name": "TechForum",
+  "description": "Мобильное приложение конференции TechForum 2026 — программа, спикеры, чат, билет и расписание сессий.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#080512",
+  "background_color": "#04020f",
+  "lang": "ru",
+  "categories": ["events", "productivity", "business"],
+  "icons": [
+    { "src": "icon-192.png",       "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png",       "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png",       "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "app-icon-1024.png",  "sizes": "1024x1024","type": "image/png", "purpose": "any" }
+  ]
+}

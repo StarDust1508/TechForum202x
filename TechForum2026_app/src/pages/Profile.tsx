@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/src/lib/utils';
 import { clearLocalSession, isLocalAuthFallbackEnabled, updateLocalUser } from '@/src/lib/localAuth';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import BackButton from '@/src/components/BackButton';
 
 interface ProfileProps {
   user: any;
@@ -62,10 +63,24 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   };
 
   return (
-    <div className="flex-1 pb-24 pt-12 px-6 space-y-8 bg-[#050505] min-h-screen relative">
+    <div className="flex-1 pb-24 pt-12 px-6 space-y-8 bg-[#050505] min-h-screen relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-4 text-center flex flex-col items-center">
         <div className="w-24 h-24 bg-accent/10 border-2 border-accent/30 rounded-[2.5rem] flex items-center justify-center text-3xl font-black text-accent shadow-xl shadow-accent/5 relative overflow-hidden group">
-          <img src={user.avatar} className="relative z-10 w-full h-full object-cover" referrerPolicy="no-referrer" />
+          {user.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user.name || 'avatar'}
+              className="relative z-10 w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : null}
+          <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-accent select-none">
+            {String(user.name || '?').trim().charAt(0).toUpperCase()}
+          </span>
         </div>
         <div className="space-y-1">
           <h1 className="text-2xl font-black text-white">{user.name}</h1>

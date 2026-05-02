@@ -2,7 +2,7 @@
 @import "tailwindcss";
 
 @theme {
-  --color-accent: #5f2b9c;
+  --color-accent: #5eead4;
   --color-surface: #080512;
   --color-card: #120a20;
   --color-card-border: rgba(255, 255, 255, 0.08);
@@ -38,8 +38,8 @@ body {
 }
 
 .innovation-bg {
-  background: radial-gradient(circle at 50% 0%, rgba(95, 43, 156, 0.2) 0%, transparent 65%),
-              radial-gradient(circle at 0% 100%, rgba(42, 17, 72, 0.24) 0%, transparent 55%);
+  background: radial-gradient(circle at 50% 0%, rgba(20, 184, 166, 0.22) 0%, transparent 65%),
+              radial-gradient(circle at 0% 100%, rgba(15, 118, 110, 0.24) 0%, transparent 55%);
 }
 
 .circuit-border {
@@ -53,13 +53,13 @@ body {
   right: 0;
   width: 40px;
   height: 40px;
-  border-top: 2px solid rgba(128, 83, 201, 0.4);
-  border-right: 2px solid rgba(128, 83, 201, 0.4);
+  border-top: 2px solid rgba(94, 234, 212, 0.45);
+  border-right: 2px solid rgba(94, 234, 212, 0.45);
   pointer-events: none;
 }
 
 .glow-accent {
-  filter: drop-shadow(0 0 8px rgba(128, 83, 201, 0.45));
+  filter: drop-shadow(0 0 8px rgba(94, 234, 212, 0.5));
 }
 
 .blob-organic {
