@@ -1,11 +1,12 @@
 import { SPEAKERS } from '../data';
-import { Search, Send, Briefcase, Info, Mic2 } from 'lucide-react';
-import { cn } from '@/src/lib/utils';
+import { Search, Send, Info, Mic2 } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
 
 export default function Speakers() {
   const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   const filteredSpeakers = SPEAKERS.filter(s => 
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -76,8 +77,12 @@ export default function Speakers() {
               </div>
 
               <div className="mt-4 flex justify-end">
-                <button className="bg-surface border border-card-border hover:border-accent px-5 py-2.5 rounded-2xl flex items-center gap-2 text-primary hover:text-accent transition-all active:scale-95 group/btn">
-                  <span className="text-[10px] font-black uppercase tracking-widest">Чат</span>
+                <button
+                  onClick={() => navigate('/chat')}
+                  aria-label={`Открыть AI-чат и спросить про ${speaker.name}`}
+                  className="bg-surface border border-card-border hover:border-accent px-5 py-2.5 rounded-2xl flex items-center gap-2 text-primary hover:text-accent transition-all active:scale-95 group/btn"
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest">Спросить AI</span>
                   <Send className="w-3.5 h-3.5 transition-transform group-hover/btn:translate-x-1" />
                 </button>
               </div>
