@@ -38,6 +38,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import multer from 'multer';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -219,14 +220,32 @@ async function startServer(): Promise<void> {
     console.warn('[security] COOKIE_SECURE=false in production. OK ONLY for HTTP-only deployments without HTTPS — switch to true after getting a domain + cert.');
   }
 
+  // BUG_FIX_CONTEXT: До v2.1 express-session использовал дефолтный MemoryStore —
+  // session записи жили в RAM Node.js процесса. На любой restart pm2 / OOM /
+  // деплой все юзеры разлогинивались и видели Auth-экран на cold-start APK,
+  // хотя их строка в users-таблице корректно лежала. Юзер интерпретировал это
+  // как "БД не сохранила данные". Переходим на connect-pg-simple — таблица
+  // session в той же БД, переживает любой restart. Используем существующий
+  // pg.Pool, ноль новых соединений.
+  const PgStore = connectPgSimple(session);
+  const sessionStore = new PgStore({
+    pool,
+    tableName: 'session',
+    createTableIfMissing: true,
+    // Чистим истёкшие сессии раз в 15 минут — защита от роста таблицы.
+    pruneSessionInterval: 60 * 15,
+  });
+
   app.use(session({
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
       secure: cookieSecure,
       sameSite: 'lax',
-      maxAge: 1000 * 60 * 60 * 24,
+      maxAge: 1000 * 60 * 60 * 24 * 30,
       httpOnly: true,
     },
   }));

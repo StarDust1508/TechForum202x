@@ -1,6 +1,41 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
+/*
+  GOST Type A — фирменный чертёжный шрифт ГОСТ 2.304 (Type A).
+  Перекликается с blueprint-фоном TechForum 2026, единый brand-вижуал.
+
+  Файлы должны лежать в public/fonts/:
+    - GOSTTypeA-Regular.woff2
+    - GOSTTypeA-Italic.woff2
+    - GOSTTypeA-Bold.woff2
+  См. public/fonts/README.md — инструкция по выкладке файлов и лицензия.
+
+  font-display: swap — пока файлы не догрузились, используется fallback
+  (Cormorant Garamond / Georgia), но без FOIT (невидимого текста).
+*/
+@font-face {
+  font-family: 'GOST Type A';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/GOSTTypeA-Regular.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'GOST Type A';
+  font-style: italic;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/GOSTTypeA-Italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'GOST Type A';
+  font-style: normal;
+  font-weight: 700 900;
+  font-display: swap;
+  src: url('/fonts/GOSTTypeA-Bold.woff2') format('woff2');
+}
+
 @theme {
   --color-accent: #5eead4;
   --color-surface: #080512;
@@ -10,6 +45,9 @@
   --color-muted: #a8a0bb;
   --font-sans: "Cormorant Garamond", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  /* font-blueprint — основной brand-шрифт TechForum 2026.
+     Используется в Auth, заголовках разделов, кнопках главного действия. */
+  --font-blueprint: "GOST Type A", "Cormorant Garamond", ui-serif, Georgia, serif;
 }
 
 :root {
@@ -80,6 +118,12 @@ body {
 
 .font-elite {
   font-family: var(--font-elite);
+}
+
+.font-blueprint {
+  font-family: var(--font-blueprint);
+  font-feature-settings: "ss01" on, "kern" on;
+  letter-spacing: 0.005em;
 }
 
 .scrollbar-hide::-webkit-scrollbar {

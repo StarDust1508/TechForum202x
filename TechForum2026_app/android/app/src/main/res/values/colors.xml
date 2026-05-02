@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- BUG_FIX_CONTEXT: единый брендовый тёмный фон. Используется как
+         windowBackground, statusBarColor, navigationBarColor — чтобы не было
+         белой вспышки при холодном старте, keyboard show и orientation change. -->
+    <color name="brand_dark">#04020F</color>
+
+    <color name="colorPrimary">#5EEAD4</color>
+    <color name="colorPrimaryDark">#04020F</color>
+    <color name="colorAccent">#5EEAD4</color>
+</resources>

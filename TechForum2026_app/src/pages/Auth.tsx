@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon } from 'lucide-react';
+import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@/src/lib/localAuth';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
@@ -14,11 +15,34 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // BUG_FIX_CONTEXT: focus-стейт для тонкой анимации backdrop'а — при фокусе
+  // на input приглушаем blueprint и слегка увеличиваем масштаб, чтобы
+  // создать ощущение "фокус на форме". Не блокирует interactivity.
+  const [focused, setFocused] = useState(false);
 
   const [form, setForm] = useState({ email: '', phone: '', password: '', name: '' });
   // BUG_FIX_CONTEXT: По требованию 152-ФЗ при регистрации нужно явное
   // согласие на обработку ПД. На login-моде чекбокс не нужен.
   const [consent, setConsent] = useState(false);
+
+  // BUG_FIX_CONTEXT: Биометрия — после успешного login/register предлагаем
+  // включить, если (1) сенсор доступен, (2) биометрия ещё не включена.
+  // Реальное предложение — отдельный мини-экран после onSuccess (см. ниже),
+  // здесь только кэшируем availability.
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [showBioOffer, setShowBioOffer] = useState(false);
+  const [pendingUser, setPendingUser] = useState<unknown | null>(null);
+  const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
+  const [bioBusy, setBioBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      const ok = await isBiometricAvailable();
+      if (mounted) setBioAvailable(ok);
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,6 +65,16 @@ export default function Auth({ onSuccess }: AuthProps) {
       if (!ct.includes('application/json')) throw new Error('backend_invalid_response');
       if (!res.ok) throw new Error(data?.error || 'Ошибка входа');
       if (!data || typeof data !== 'object') throw new Error('backend_invalid_response');
+      // BUG_FIX_CONTEXT: Если биометрия доступна и ещё не включена —
+      // НЕ переходим в App мгновенно. Показываем оффер. После выбора
+      // (включить / "не сейчас") — onSuccess.
+      if (bioAvailable && !isBiometricEnabled() && method === 'email') {
+        setPendingUser(data);
+        setPendingCreds({ email: identifier, password: form.password });
+        setShowBioOffer(true);
+        setLoading(false);
+        return;
+      }
       onSuccess(data);
     } catch (err: any) {
       const rawMessage = String(err?.message || '');
@@ -72,32 +106,53 @@ export default function Auth({ onSuccess }: AuthProps) {
   };
 
   // Унифицированные стили формы.
-  // BUG_FIX_CONTEXT: По требованию заказчика "шрифт чуть больше и заметнее на всём
-  // экране, кроме «Войти/Регистрация»": label поднят 12→14px и medium→semibold,
-  // input поднят 15→16px и normal→medium. Кнопки таба и submit ('Войти'/'Регистрация'/
-  // 'Создать аккаунт') не тронуты.
-  const labelClass = 'text-[14px] font-semibold text-white/75';
-  const inputClass = 'w-full bg-white/[0.04] border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-[16px] font-medium text-white placeholder:text-white/30 focus:border-[#5eead4]/60 focus:bg-white/[0.06] outline-none transition-all';
-  const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/40';
+  // BUG_FIX_CONTEXT: По требованию заказчика — шрифты крупнее и читаемее.
+  // Минимальный размер input на мобильном — 17px (iOS не зумит при focus
+  // только при ≥16px, но 17px даёт больший визуальный вес для брендового
+  // GOST-серифа). Все ярлыки и табы — 16px font-semibold через GOST Type A.
+  const labelClass = 'text-[16px] font-semibold tracking-[0.01em] text-white/80 font-blueprint';
+  const inputClass = 'w-full bg-white/[0.05] border border-white/12 rounded-2xl py-4 pl-12 pr-4 text-[17px] font-medium text-white placeholder:text-white/30 focus:border-[#5eead4]/60 focus:bg-white/[0.08] outline-none transition-all font-blueprint';
+  const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/45';
+
+  // BUG_FIX_CONTEXT: focus-handlers навешиваются на каждый input через
+  // spread {...inputFocusProps}. Не делаем onFocusCapture/onBlurCapture
+  // на форме — они стрельнут на каждом фокус-сдвиге между полями
+  // (false-positive blur). Per-input — точное соответствие "юзер сейчас
+  // в поле ввода".
+  const inputFocusProps = {
+    onFocus: () => setFocused(true),
+    onBlur: () => setFocused(false),
+  };
 
   return (
-    // BUG_FIX_CONTEXT: На Samsung S25 / OnePlus 9R под формой была видна
-    // чёрная пустая зона ~1/3 экрана: фон-постер не растягивался, потому что
-    // Auth root имел только `flex-1 min-h-full` без явной высоты в условиях
-    // когда родитель не задавал ему 100% (зависело от App.tsx flex-структуры).
-    // Сейчас явно minHeight: 100dvh — постер всегда заполняет весь viewport.
+    // BUG_FIX_CONTEXT: minHeight: 100lvh (large viewport) — фон не "схлопывается"
+    // при появлении клавиатуры на iOS / Android (там 100dvh уменьшается).
+    // Раньше при focus input на iPhone 17 / Samsung S25 между картинкой и
+    // новой высотой viewport оставалась белая щель. 100lvh держит постер на
+    // полную высоту экрана, контент внутри прокручивается. iOS 15.4+, Chrome 108+.
     <div
       className="relative overflow-hidden bg-[#04020f]"
-      style={{ minHeight: '100dvh' }}
+      style={{ minHeight: '100lvh' }}
     >
       <img
         src="/conference-bg.jpg"
         alt=""
         aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover scale-[1.25] opacity-85"
-        style={{ objectPosition: 'center 42%', filter: 'blur(3px) saturate(1.15)' }}
+        className="absolute inset-0 h-full w-full object-cover transition-all duration-500 ease-out"
+        style={{
+          objectPosition: 'center 42%',
+          filter: `blur(${focused ? 6 : 3}px) saturate(${focused ? 0.9 : 1.15})`,
+          opacity: focused ? 0.5 : 0.85,
+          transform: `scale(${focused ? 1.32 : 1.25})`,
+        }}
       />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,0.78)_0%,rgba(4,2,15,0.32)_22%,rgba(4,2,15,0.42)_72%,rgba(4,2,15,0.92)_100%)]" />
+      <div
+        className="absolute inset-0 transition-opacity duration-500 ease-out"
+        style={{
+          background: 'linear-gradient(180deg, rgba(4,2,15,0.78) 0%, rgba(4,2,15,0.32) 22%, rgba(4,2,15,0.42) 72%, rgba(4,2,15,0.92) 100%)',
+          opacity: focused ? 1 : 0.85,
+        }}
+      />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)]" />
 
       <div
@@ -113,20 +168,21 @@ export default function Auth({ onSuccess }: AuthProps) {
             "Конференция технологий · 15–16 мая" удалён. Дата перенесена в data.ts
             (DAYS) — она едина во всём приложении. */}
         <div className="text-center mb-8">
-          <h1 className="font-elite text-[44px] leading-[0.95] font-bold tracking-[0.04em] text-[#ccfbf1] drop-shadow-[0_8px_28px_rgba(94,234,212,0.55)]">
+          <h1 className="font-blueprint text-[46px] leading-[0.95] font-bold tracking-[0.06em] text-[#ccfbf1] drop-shadow-[0_8px_28px_rgba(94,234,212,0.55)]">
             TechForum
             <span className="block mt-1">2026</span>
           </h1>
         </div>
 
-        {/* Тонкий переключатель login / register с плавной motion-индикацией */}
+        {/* Тонкий переключатель login / register с плавной motion-индикацией.
+            BUG_FIX_CONTEXT: Раньше был layout + одновременный inline style.left —
+            двойная анимация дёргала бегунок. Теперь чисто motion.animate{left}. */}
         <div className="relative flex bg-white/[0.04] border border-white/10 p-1 rounded-2xl mb-6">
-          {/* Бегунок */}
           <motion.span
-            layout
-            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+            initial={false}
+            animate={{ left: mode === 'login' ? 4 : 'calc(50% + 0px)' }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.6 }}
             className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-[#5eead4]/15 border border-[#5eead4]/40"
-            style={{ left: mode === 'login' ? 4 : 'calc(50% + 0px)' }}
           />
           {(['login','register'] as const).map((m) => (
             <button
@@ -134,7 +190,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               type="button"
               onClick={() => { setMode(m); setError(''); }}
               className={cn(
-                'relative flex-1 py-2.5 text-[13px] font-medium rounded-xl transition-colors z-10',
+                'relative flex-1 py-3 text-[16px] font-semibold rounded-xl transition-colors z-10 font-blueprint',
                 mode === m ? 'text-[#ccfbf1]' : 'text-white/55'
               )}
             >
@@ -151,7 +207,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               type="button"
               onClick={() => setMethod(m)}
               className={cn(
-                'flex-1 py-2 text-[14px] font-semibold rounded-xl transition-all',
+                'flex-1 py-2.5 text-[16px] font-semibold rounded-xl transition-all font-blueprint',
                 method === m ? 'bg-white/[0.06] text-[#ccfbf1]' : 'text-white/55'
               )}
             >
@@ -160,65 +216,71 @@ export default function Auth({ onSuccess }: AuthProps) {
           ))}
         </div>
 
-        {/* Форма с плавным переходом login ↔ register */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={mode}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-              className="space-y-4"
-            >
-              {/* BUG_FIX_CONTEXT: По требованию заказчика убраны placeholders
-                  (примеры) во всех полях. Подсказка теперь только через label
-                  сверху — поле остаётся пустым до ввода. */}
-              {mode === 'register' && (
-                <div className="space-y-1.5">
-                  <label className={labelClass}>Имя</label>
-                  <div className="relative">
-                    <UserIcon className={iconClass} />
-                    <input
-                      type="text"
-                      required
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
+        {/* Форма с плавным переходом login ↔ register.
+            BUG_FIX_CONTEXT: РАНЬШЕ всю форму оборачивали в AnimatePresence с
+            key={mode} — Email и Пароль перерендеривались при каждом
+            переключении и дублировались на время exit-фазы (визуальный
+            "мусор", двойные поля). Юзер описал это как "панель летает".
+            ТЕПЕРЬ Email и Пароль постоянны в DOM, анимируется ТОЛЬКО
+            поле «Имя» через AnimatePresence + height/opacity. motion.form
+            layout сам сглаживает изменение высоты, submit не прыгает. */}
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+        >
+          <AnimatePresence initial={false}>
+            {mode === 'register' && (
+              <motion.div
+                key="name-field"
+                initial={{ opacity: 0, height: 0, y: -8 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -8 }}
+                transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
+                className="space-y-1.5 overflow-hidden"
+              >
+                <label className={labelClass}>Имя</label>
                 <div className="relative">
-                  {method === 'email' ? <Mail className={iconClass} /> : <Phone className={iconClass} />}
+                  <UserIcon className={iconClass} />
                   <input
-                    type={method === 'email' ? 'email' : 'tel'}
-                    required
-                    value={method === 'email' ? form.email : form.phone}
-                    onChange={(e) => setForm({ ...form, [method]: e.target.value })}
+                    type="text"
+                    required={mode === 'register'}
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className={inputClass}
+                    {...inputFocusProps}
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className={labelClass}>Пароль</label>
-                <div className="relative">
-                  <Lock className={iconClass} />
-                  <input
-                    type="password"
-                    required
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            )}
           </AnimatePresence>
+
+          <div className="space-y-1.5">
+            <label className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
+            <div className="relative">
+              {method === 'email' ? <Mail className={iconClass} /> : <Phone className={iconClass} />}
+              <input
+                type={method === 'email' ? 'email' : 'tel'}
+                required
+                value={method === 'email' ? form.email : form.phone}
+                onChange={(e) => setForm({ ...form, [method]: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className={labelClass}>Пароль</label>
+            <div className="relative">
+              <Lock className={iconClass} />
+              <input
+                type="password"
+                required
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+          </div>
 
           <AnimatePresence>
             {error && (
@@ -226,7 +288,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
-                className="text-[14px] font-semibold text-rose-300 text-center"
+                className="text-[15px] font-semibold text-rose-300 text-center font-blueprint"
               >
                 {error}
               </motion.p>
@@ -239,9 +301,9 @@ export default function Auth({ onSuccess }: AuthProps) {
                 type="checkbox"
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
-                className="mt-1 w-4 h-4 accent-[#5eead4] rounded"
+                className="mt-1 w-[18px] h-[18px] accent-[#5eead4] rounded"
               />
-              <span className="text-[12px] leading-snug text-white/65">
+              <span className="text-[14px] leading-snug text-white/70 font-blueprint">
                 Я согласен на обработку персональных данных в соответствии с 152-ФЗ.
               </span>
             </label>
@@ -250,14 +312,14 @@ export default function Auth({ onSuccess }: AuthProps) {
           <button
             type="submit"
             disabled={loading || (mode === 'register' && !consent)}
-            className="w-full bg-gradient-to-r from-[#5eead4] to-[#2dd4bf] text-[#04020f] py-4 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(94,234,212,0.35)] mt-6"
+            className="w-full bg-gradient-to-r from-[#5eead4] to-[#2dd4bf] text-[#04020f] py-4 rounded-2xl text-[17px] font-bold tracking-[0.02em] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(94,234,212,0.35)] mt-6 font-blueprint"
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <>
                 <span>{mode === 'login' ? 'Войти' : 'Создать аккаунт'}</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-[18px] h-[18px]" />
               </>
             )}
           </button>
@@ -266,6 +328,99 @@ export default function Auth({ onSuccess }: AuthProps) {
             "Нет аккаунта? Зарегистрироваться / Уже есть аккаунт? Войти".
             Переключение режима остаётся через таб-бегунок выше. */}
       </div>
+
+      {/* Биометрический оффер. Появляется ПОВЕРХ Auth поверх blueprint-фона
+          сразу после успешного login/register, если: (a) сенсор есть,
+          (b) биометрия ещё не включена, (c) метод входа email (при phone
+          credentials/password в этой версии не валидируются на сервере). */}
+      <AnimatePresence>
+        {showBioOffer && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-[#04020f]/85 backdrop-blur-md"
+          >
+            <motion.div
+              initial={{ y: 24, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 24, opacity: 0, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              className="w-full max-w-[380px] bg-[#0c0820] border border-white/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(94,234,212,0.18)]"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (bioBusy) return;
+                  setShowBioOffer(false);
+                  if (pendingUser) onSuccess(pendingUser);
+                }}
+                aria-label="Закрыть"
+                className="absolute right-5 top-5 w-9 h-9 flex items-center justify-center rounded-full text-white/55 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
+              >
+                <XIcon className="w-[18px] h-[18px]" />
+              </button>
+
+              <div className="flex flex-col items-center text-center pt-2">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#5eead4]/20 to-[#2dd4bf]/10 border border-[#5eead4]/40 flex items-center justify-center mb-5 shadow-[0_8px_28px_rgba(94,234,212,0.25)]">
+                  <Fingerprint className="w-8 h-8 text-[#5eead4]" />
+                </div>
+                <h2 className="font-blueprint text-[26px] leading-tight font-bold text-[#ccfbf1] mb-2">
+                  Включить вход<br />по биометрии?
+                </h2>
+                <p className="text-[15px] leading-relaxed text-white/65 font-blueprint mb-6">
+                  Открывайте TechForum за секунду без ввода пароля — Face ID, отпечаток или PIN телефона.
+                </p>
+
+                <button
+                  type="button"
+                  disabled={bioBusy}
+                  onClick={async () => {
+                    if (!pendingCreds || !pendingUser) return;
+                    setBioBusy(true);
+                    setError('');
+                    try {
+                      await enableBiometric(pendingCreds.email, pendingCreds.password);
+                      setShowBioOffer(false);
+                      onSuccess(pendingUser);
+                    } catch (e: unknown) {
+                      // Юзер отменил BiometricPrompt или ОС вернула ошибку.
+                      // Не блокируем вход — закрываем оффер и просто пускаем
+                      // в App. Можно будет включить позже из Профиля.
+                      setShowBioOffer(false);
+                      onSuccess(pendingUser);
+                    } finally {
+                      setBioBusy(false);
+                    }
+                  }}
+                  className="w-full bg-gradient-to-r from-[#5eead4] to-[#2dd4bf] text-[#04020f] py-4 rounded-2xl text-[17px] font-bold tracking-[0.02em] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(94,234,212,0.35)] font-blueprint"
+                >
+                  {bioBusy ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Fingerprint className="w-[18px] h-[18px]" />
+                      <span>Включить</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  disabled={bioBusy}
+                  onClick={() => {
+                    setShowBioOffer(false);
+                    if (pendingUser) onSuccess(pendingUser);
+                  }}
+                  className="mt-3 w-full text-[15px] font-semibold text-white/55 hover:text-white/85 transition-colors py-3 font-blueprint"
+                >
+                  Не сейчас
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

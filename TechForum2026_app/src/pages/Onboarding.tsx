@@ -1,11 +1,20 @@
 // FILE: src/pages/Onboarding.tsx
-// VERSION: 2.0.0
+// VERSION: 2.1.0
 // START_MODULE_CONTRACT:
 // PURPOSE: Onboarding-экран — первый вход после регистрации. Юзер выбирает
-//          3-10 направлений интересов из 22. Сохраняем на сервере (best-effort)
-//          + всегда в localStorage. UI никогда не блокирует юзера сетевыми
-//          ошибками — после клика "Готово" с валидным выбором всегда onDone().
+//          3-10 направлений интересов из 22. Сохраняем на сервере (источник
+//          истины) + дублируем в localStorage как retry-буфер.
 // END_MODULE_CONTRACT
+//
+// START_CHANGE_SUMMARY:
+// LAST_CHANGE: [v2.1.0 — Был баг: PUT /me/interests был fire-and-forget,
+//                       любой 401/network/timeout молча игнорировался,
+//                       onDone() вызывался всегда. На cold-start /auth/me
+//                       возвращал interestsCount=0 → юзера снова кидало
+//                       в онбординг. Теперь await response.ok, при ошибке
+//                       показываем сообщение и НЕ закрываем экран.
+//                       localStorage остаётся retry-буфером для App.tsx.]
+// END_CHANGE_SUMMARY
 
 import { useState } from 'react';
 import { Loader2, ArrowRight } from 'lucide-react';
@@ -14,16 +23,18 @@ import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
 
 interface OnboardingProps {
-  onDone: () => void;
+  onDone: (interestsCount: number) => void;
 }
 
 const MIN_PICK = 3;
 const MAX_PICK = 10;
 const LS_KEY = 'techforum_my_interests';
+const LS_PENDING_KEY = 'techforum_pending_interests';
 
 export default function Onboarding({ onDone }: OnboardingProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>('');
 
   function toggle(id: string): void {
     setSelected(prev => {
@@ -41,29 +52,38 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   async function submit(): Promise<void> {
     if (selected.size < MIN_PICK) return;
     setLoading(true);
+    setError('');
     const interestIds = Array.from(selected);
 
-    // BUG_FIX_CONTEXT: Юзер видел "Failed to fetch" и не мог пройти onboarding.
-    // Причины могут быть разные (SameSite cookie на cross-origin PUT в Capacitor
-    // WebView, network hiccup, local-auth fallback без cookie). Делаем сохранение
-    // best-effort: пишем В ЛЮБОМ СЛУЧАЕ в localStorage, серверный PUT — попытка
-    // в фоне, успех/провал не блокирует переход в app. Schedule-ранжирование
-    // подтянет интересы из localStorage если /me/interests недоступен.
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(interestIds));
+      localStorage.setItem(LS_PENDING_KEY, JSON.stringify(interestIds));
     } catch { /* private mode / quota — ignore */ }
 
     try {
-      await fetch(resolveApiUrl('/me/interests'), {
+      const res = await fetch(resolveApiUrl('/me/interests'), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ interestIds }),
       });
-    } catch { /* offline / cors — игнор: данные уже в localStorage */ }
-
-    setLoading(false);
-    onDone();
+      if (!res.ok) {
+        const ct = String(res.headers.get('content-type') || '').toLowerCase();
+        const data = ct.includes('application/json') ? await res.json().catch(() => null) : null;
+        const msg = data?.message || data?.error || `Сервер ответил ${res.status}`;
+        throw new Error(msg);
+      }
+      try { localStorage.removeItem(LS_PENDING_KEY); } catch { /* noop */ }
+      setLoading(false);
+      onDone(interestIds.length);
+    } catch (err: unknown) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const isNetwork = /failed to fetch|networkerror|load failed|typeerror/i.test(raw);
+      setError(isNetwork
+        ? 'Нет соединения с сервером. Проверьте интернет и попробуйте ещё раз.'
+        : `Не удалось сохранить выбор: ${raw}`);
+      setLoading(false);
+    }
   }
 
   const canSubmit = selected.size >= MIN_PICK && !loading;
@@ -126,6 +146,12 @@ export default function Onboarding({ onDone }: OnboardingProps) {
             <span className="text-[#5eead4] font-semibold">Можно продолжать</span>
           )}
         </div>
+
+        {error && (
+          <p className="text-[14px] font-semibold text-rose-300 text-center pt-1" role="alert">
+            {error}
+          </p>
+        )}
       </div>
 
       {/* Sticky submit */}

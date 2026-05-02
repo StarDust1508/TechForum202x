@@ -130,6 +130,7 @@ export const sessionsEvent = pgTable(
   (t) => ({
     dayIdx: index('sessions_day_idx').on(t.dayId),
     trackIdx: index('sessions_track_idx').on(t.trackId),
+    hallIdx: index('sessions_hall_idx').on(t.hallId),
   }),
 );
 
@@ -197,6 +198,7 @@ export const postComments = pgTable(
   },
   (t) => ({
     postIdx: index('post_comments_post_idx').on(t.postId),
+    userIdx: index('post_comments_user_idx').on(t.userId),
   }),
 );
 

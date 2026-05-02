@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- BUG_FIX_CONTEXT: Был чисто белый фон adaptive-icon. На launcher-экране
+         с тёмной темой это давало белый квадрат вокруг лого. Меняем на брендовый
+         тёмный — иконка читается как часть тёмного UI. -->
+    <color name="ic_launcher_background">#04020F</color>
 </resources>

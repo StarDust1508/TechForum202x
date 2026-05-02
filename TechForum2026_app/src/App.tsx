@@ -19,8 +19,11 @@ import MyRecords from './pages/MyRecords';
 import NewsDetail from './pages/NewsDetail';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
 import { resolveApiUrl } from './lib/runtimeEndpoint';
+import { tryBiometricAutoLogin } from './lib/biometric';
+import { prefetchPublicData } from './lib/prefetch';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
+import OfflineBanner from './components/OfflineBanner';
 
 
 // BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
@@ -101,14 +104,77 @@ function AppContent() {
 
   useEffect(() => {
     let isMounted = true;
+    // BUG_FIX_CONTEXT: По требованию заказчика — при холодном старте APK юзер
+    // должен встретить blueprint TechForum2026 на ~1 секунду, а не лого/белизну.
+    // Делаем это через минимальный 1000ms блок Loader-экрана, который рендерит
+    // тот же conference-bg.jpg что и Auth-панель. Параллельно идёт сетевой
+    // /auth/me — если ответ пришёл раньше 1с, всё равно держим экран до 1с.
+    const startAt = Date.now();
+    const MIN_SPLASH_MS = 1000;
+
+    // BUG_FIX_CONTEXT: П6 — рандомный сброс на онбординг. Onboarding раньше
+    // делал PUT /me/interests fire-and-forget, и если запрос падал, выбор
+    // оставался ТОЛЬКО в localStorage. /auth/me возвращал interestsCount=0,
+    // юзер видел онбординг снова. Теперь Onboarding пишет pending-копию в
+    // localStorage и только при 200 OK от сервера её удаляет. Здесь, на
+    // boot после успешного /auth/me, дочищаем хвост: если pending есть и
+    // сервер сейчас доступен — повторяем PUT.
+    const retryPendingInterests = async (): Promise<void> => {
+      let pendingRaw: string | null = null;
+      try { pendingRaw = localStorage.getItem('techforum_pending_interests'); }
+      catch { return; }
+      if (!pendingRaw) return;
+      let interestIds: string[] = [];
+      try { interestIds = JSON.parse(pendingRaw); }
+      catch { try { localStorage.removeItem('techforum_pending_interests'); } catch { /* noop */ } return; }
+      if (!Array.isArray(interestIds) || interestIds.length === 0) {
+        try { localStorage.removeItem('techforum_pending_interests'); } catch { /* noop */ }
+        return;
+      }
+      try {
+        const res = await fetch(resolveApiUrl('/me/interests'), {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ interestIds }),
+        });
+        if (res.ok) {
+          try { localStorage.removeItem('techforum_pending_interests'); } catch { /* noop */ }
+          if (isMounted) {
+            setUser((prev: any) => prev ? { ...prev, interestsCount: interestIds.length } : prev);
+          }
+        }
+      } catch { /* offline — попробуем на следующем cold-start */ }
+    };
 
     const checkAuth = async () => {
       try {
+        // Пока крутится splash — параллельно прогреваем HTTP-кэш для
+        // публичных данных программы. К моменту входа в Home /sessions,
+        // /speakers и т.д. уже в WebView-кэше → мгновенный рендер.
+        prefetchPublicData();
+
         const meUrl = resolveApiUrl('/auth/me');
         const res = await fetch(meUrl, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (isMounted) setUser(data);
+          // Если БД говорит 0 интересов, но в localStorage висит pending —
+          // это та самая забуксовавшая запись из Onboarding. Дошлём.
+          if (data && (!data.interestsCount || data.interestsCount === 0)) {
+            void retryPendingInterests();
+          }
+          return;
+        }
+
+        // /auth/me=401 → сессия в БД истекла или её никогда не было.
+        // Если юзер ранее включил биометрию — пробуем тихий auto-login.
+        // BUG_FIX_CONTEXT: Делаем это ДО local-auth fallback и ПОСЛЕ
+        // проверки cookie-сессии — чтобы кейс "сессия жива" не требовал
+        // лишнего BiometricPrompt при каждом старте.
+        const bioUser = await tryBiometricAutoLogin();
+        if (bioUser && isMounted) {
+          setUser(bioUser);
           return;
         }
 
@@ -131,11 +197,9 @@ function AppContent() {
           }
         }
       } finally {
-        // BUG_FIX_CONTEXT: v1 искусственно держал splash минимум 1500ms.
-        // По требованию заказчика splash убран полностью — переходим в Auth/Home
-        // мгновенно после ответа /auth/me. Минимальный спиннер на брендовом
-        // фоне сохраняется на время сетевого вызова, чтобы не было FOUC.
-        if (isMounted) setLoading(false);
+        const elapsed = Date.now() - startAt;
+        const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
+        setTimeout(() => { if (isMounted) setLoading(false); }, wait);
       }
     };
 
@@ -147,8 +211,19 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#04020f] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-[#5eead4]/40 border-t-[#5eead4] rounded-full animate-spin" />
+      <div
+        className="relative overflow-hidden bg-[#04020f]"
+        style={{ minHeight: '100dvh' }}
+      >
+        <img
+          src="/conference-bg.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 h-full w-full object-cover scale-[1.25] opacity-85"
+          style={{ objectPosition: 'center 42%', filter: 'blur(3px) saturate(1.15)' }}
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,0.78)_0%,rgba(4,2,15,0.32)_22%,rgba(4,2,15,0.42)_72%,rgba(4,2,15,0.92)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)]" />
       </div>
     );
   }
@@ -161,17 +236,20 @@ function AppContent() {
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
     <div className="bg-[#04020f] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
+      <OfflineBanner />
       <main className="w-full sm:max-w-[420px] bg-[#04020f] sm:h-[840px] shadow-[0_0_90px_rgba(13,148,136,0.32)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#130b21]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
-        <div className="flex-1 overflow-y-auto scrollbar-hide relative">
+        <div className="flex-1 overflow-y-auto scrollbar-hide relative" style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}>
           <div className="min-h-full">
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
               <Auth onSuccess={setUser} />
             ) : !user.interestsCount ? (
               // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
-              // ИЛИ undefined (legacy юзеры из старых билдов без поля). После
-              // onDone обновляем interestsCount локально без повторного /auth/me.
-              <Onboarding onDone={() => setUser({ ...user, interestsCount: (user.interestsCount ?? 0) + 1 })} />
+              // ИЛИ undefined (legacy юзеры из старых билдов без поля). Onboarding
+              // вызывает onDone(count) ТОЛЬКО после успешного PUT /me/interests
+              // (источник истины — БД), мы получаем реальное число выбранных
+              // интересов и используем его — на cold-start /auth/me вернёт то же.
+              <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
             ) : (
               // Все остальные разделы — единый фон Home (требование заказчика).
               <AppBackground>
