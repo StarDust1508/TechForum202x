@@ -41,6 +41,18 @@ jobs:
       - name: Install npm deps
         run: npm ci --no-audit --no-fund
 
+      # GUARD: пока бэкенд по cleartext (нет HTTPS-домена), androidScheme обязан
+      # быть 'http' — иначе WebView origin https://localhost, fetch к http://72.56.9.90:3100
+      # блокируется как mixed content. Симптом — "Нет соединения с сервером" в APK.
+      # Когда переедем на HTTPS — удалить этот шаг. См. ARCHITECTURE.md §8.
+      - name: Guard — androidScheme must be 'http' until HTTPS migration
+        run: |
+          if grep -E "androidScheme:[[:space:]]*['\"]https['\"]" capacitor.config.ts; then
+            echo "::error::androidScheme is 'https' — это сломает APK (mixed content к http бэку). См. ARCHITECTURE.md §8."
+            exit 1
+          fi
+          echo "OK: androidScheme is 'http'"
+
       - name: Write production frontend env
         run: |
           cat > .env.production <<EOF
@@ -66,7 +78,11 @@ jobs:
         run: |
           npx vite build --mode production
           echo "--- bundle env check ---"
-          grep -r "72.56.9.90" dist/assets/ | head -3 || echo "WARNING: API URL not baked into bundle"
+          if ! grep -rq "72.56.9.90" dist/assets/; then
+            echo "::error::API URL not baked into bundle — VITE_API_BASE_URL не попал в build. APK не сможет достучаться до бэка."
+            exit 1
+          fi
+          grep -rl "72.56.9.90" dist/assets/ | head -3
 
       - name: Capacitor sync (Android)
         run: npx cap sync android

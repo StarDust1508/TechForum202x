@@ -5,11 +5,13 @@ const config: CapacitorConfig = {
   appName: 'TechForum 2026',
   webDir: 'dist',
   server: {
-    // BUG_FIX_CONTEXT: APK ходит по сети к http://72.56.9.90:3100 (cleartext —
-    // у нас пока нет домена для Let's Encrypt). По умолчанию Android 9+ блокирует
-    // cleartext. Включаем allowMixedContent + cleartext для конкретных IP/домена.
-    // После получения domain + HTTPS — это можно убрать.
-    androidScheme: 'https',
+    // CRITICAL: androidScheme ОБЯЗАН быть 'http' пока бэкенд по cleartext
+    // http://72.56.9.90:3100 (нет домена + Let's Encrypt). При 'https' WebView
+    // origin = https://localhost, fetch к http://... блокируется как mixed content
+    // (allowMixedContent на Android 9+ для XHR/fetch не помогает). Симптом —
+    // "Нет соединения с сервером" на регистрации/логине. См. ARCHITECTURE.md §8.
+    // НЕ менять обратно на 'https' до полной миграции на HTTPS-домен.
+    androidScheme: 'http',
     cleartext: true,
     allowNavigation: [
       '72.56.9.90',
