@@ -83,7 +83,7 @@ export default function MyRecords() {
       <BackButton />
       <header className="space-y-1.5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-accent/85 font-semibold">Личный кабинет</p>
-        <h1 className="font-display text-4xl leading-none text-white">Мои записи</h1>
+        <h1 className="font-display-cyrl text-4xl leading-none text-white">Мои записи</h1>
       </header>
 
       {registeredSessions.length === 0 ? (

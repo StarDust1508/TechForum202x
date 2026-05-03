@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=Forum&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
 /*
@@ -52,8 +52,12 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   /* font-blueprint — техн./body GOST Type A. */
   --font-blueprint: "GOST Type A", "Cormorant Garamond", ui-serif, Georgia, serif;
-  /* font-display — serif с засечками для H1 "TechForum 2026" (макет). */
+  /* font-display — serif с засечками для латинского H1 "TechForum 2026". */
   --font-display: "Cinzel", "Cormorant Garamond", Georgia, serif;
+  /* font-display-cyrl — Forum (Google Fonts) для кириллических заголовков.
+     Cinzel не поддерживает кириллицу, fallback на Cormorant Garamond italic
+     рисовал "рукописные" буквы. Forum — антиквенный serif с full-cyrl set. */
+  --font-display-cyrl: "Forum", "Cormorant Garamond", Georgia, serif;
 }
 
 :root {
@@ -125,6 +129,13 @@ body {
   font-family: var(--font-display);
   font-feature-settings: "kern" on, "liga" on;
   letter-spacing: 0.02em;
+}
+
+.font-display-cyrl {
+  font-family: var(--font-display-cyrl);
+  font-feature-settings: "kern" on, "liga" on;
+  letter-spacing: 0.02em;
+  font-style: normal;
 }
 
 .font-blueprint {

@@ -24,27 +24,23 @@
   <rect width="390" height="844" fill="url(#gridLg)"/>
   <rect width="390" height="844" fill="url(#glowGrad)"/>
 
-  <!-- ===== Globe (top-right) ===== -->
-  <g transform="translate(330,150)" stroke="#3a8a92" fill="none" stroke-width="0.7" opacity="0.55">
-    <circle r="155"/>
-    <circle r="120" opacity="0.6"/>
-    <circle r="85" opacity="0.5"/>
-    <circle r="50" opacity="0.4"/>
-    <!-- latitudes -->
-    <ellipse rx="155" ry="40"/>
-    <ellipse rx="155" ry="80"/>
-    <ellipse rx="155" ry="120"/>
-    <ellipse rx="155" ry="20" opacity="0.5"/>
-    <!-- longitudes -->
-    <ellipse rx="40" ry="155"/>
-    <ellipse rx="80" ry="155"/>
-    <ellipse rx="120" ry="155"/>
-    <ellipse rx="20" ry="155" opacity="0.5"/>
-    <!-- continents (abstract dotted blobs) -->
+  <!-- ===== Globe (mid-right, ниже title-зоны) ===== -->
+  <g transform="translate(340,330)" stroke="#3a8a92" fill="none" stroke-width="0.7" opacity="0.32">
+    <circle r="110"/>
+    <circle r="85" opacity="0.6"/>
+    <circle r="60" opacity="0.5"/>
+    <circle r="35" opacity="0.4"/>
+    <ellipse rx="110" ry="28"/>
+    <ellipse rx="110" ry="58"/>
+    <ellipse rx="110" ry="86"/>
+    <ellipse rx="110" ry="14" opacity="0.5"/>
+    <ellipse rx="28" ry="110"/>
+    <ellipse rx="58" ry="110"/>
+    <ellipse rx="86" ry="110"/>
+    <ellipse rx="14" ry="110" opacity="0.5"/>
     <g opacity="0.7" stroke="#5fbac0" stroke-width="0.5">
-      <path d="M-40 -60 Q-20 -75 5 -65 T 50 -55 Q 60 -40 45 -25 T 10 -15 Q -25 -20 -40 -40 Z"/>
-      <path d="M-70 10 Q-50 5 -30 18 T 0 30 Q -10 50 -35 55 T -75 45 Q -85 28 -70 10 Z"/>
-      <path d="M30 35 Q 55 30 75 45 T 95 75 Q 80 95 55 90 T 25 75 Q 18 55 30 35 Z"/>
+      <path d="M-28 -42 Q-14 -53 4 -46 T 36 -39 Q 42 -28 32 -18 T 7 -10 Q -18 -14 -28 -28 Z"/>
+      <path d="M-50 7 Q-36 4 -22 13 T 0 21 Q -7 36 -25 39 T -54 32 Q -60 20 -50 7 Z"/>
     </g>
   </g>
 
@@ -76,8 +72,8 @@
     <line x1="0" y1="58" x2="0" y2="32"/>
   </g>
 
-  <!-- ===== City wireframe (bottom-right) ===== -->
-  <g transform="translate(220,640)" stroke="#5fbac0" fill="none" stroke-width="0.7" opacity="0.7">
+  <!-- ===== City wireframe (тонкая полоса в самом низу) ===== -->
+  <g transform="translate(195,765) scale(0.55)" stroke="#5fbac0" fill="none" stroke-width="1.1" opacity="0.55">
     <!-- ground -->
     <line x1="0" y1="160" x2="180" y2="160"/>
     <!-- buildings -->

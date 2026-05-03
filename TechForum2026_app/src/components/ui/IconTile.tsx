@@ -17,7 +17,7 @@ export default function IconTile({ to, label, icon: Icon }: IconTileProps) {
         <Icon className="h-8 w-8 text-[#4ec9c0]" strokeWidth={1.5} />
       </span>
       <span
-        className="font-display text-[#d8f0ee] tracking-[0.02em] whitespace-nowrap"
+        className="font-display-cyrl text-[#d8f0ee] tracking-[0.02em] whitespace-nowrap"
         style={{ fontSize: 'clamp(13px, 3.6vw, 15px)', lineHeight: 1.1 }}
       >
         {label}

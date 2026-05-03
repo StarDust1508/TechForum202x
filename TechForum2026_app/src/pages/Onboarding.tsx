@@ -21,6 +21,7 @@ import { Loader2, ArrowRight } from 'lucide-react';
 import { INTERESTS } from '../data';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
+import AppBackground from '@/src/components/AppBackground';
 
 interface OnboardingProps {
   onDone: (interestsCount: number) => void;
@@ -90,19 +91,17 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   const remaining = Math.max(0, MIN_PICK - selected.size);
 
   return (
-    <div
-      className="relative bg-[#03161c] text-white overflow-y-auto"
-      style={{
-        minHeight: '100dvh',
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
-      }}
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)] pointer-events-none" />
-
+    <AppBackground>
+      <div
+        className="relative w-full overflow-y-auto"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
+        }}
+      >
       <div className="relative z-10 px-7 space-y-6">
         <div className="space-y-3 pt-4">
-          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#d8f0ee]">
+          <h1 className="font-display-cyrl text-[30px] font-semibold leading-tight tracking-wide text-[#d8f0ee]">
             Что тебе интересно?
           </h1>
           <p className="text-[14px] text-white/65 leading-relaxed">
@@ -120,13 +119,10 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                 onClick={() => toggle(it.id)}
                 className={cn(
                   'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
-                  active ? 'text-[#03161c]' : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
-                )}
-                style={
                   active
-                    ? { backgroundColor: it.color, borderColor: it.color, boxShadow: `0 0 18px ${it.color}66` }
-                    : undefined
-                }
+                    ? 'bg-[#4ec9c0]/15 border-[#4ec9c0]/70 text-[#4ec9c0] shadow-[0_0_18px_rgba(78,201,192,0.35)]'
+                    : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
+                )}
               >
                 {it.label}
               </button>
@@ -164,7 +160,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            className="w-full border border-[#4ec9c0]/55 bg-[#0a2f38]/70 text-[#d8f0ee] py-4 rounded-[14px] text-[15px] font-semibold uppercase tracking-[0.04em] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 shadow-[0_8px_24px_rgba(78,201,192,0.18)] hover:border-[#4ec9c0]/80 font-display"
+            className="w-full border border-[#4ec9c0]/55 bg-[#03161c]/60 backdrop-blur-sm text-[#d8f0ee] py-4 rounded-[14px] text-[16px] font-semibold uppercase tracking-[0.06em] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 shadow-[0_8px_24px_rgba(78,201,192,0.18)] hover:border-[#4ec9c0]/80 font-display-cyrl"
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -177,6 +173,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </AppBackground>
   );
 }

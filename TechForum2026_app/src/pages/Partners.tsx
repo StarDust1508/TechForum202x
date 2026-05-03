@@ -14,7 +14,7 @@ export default function Partners() {
       <BackButton />
       <header className="space-y-1.5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-accent/85 font-semibold">TechForum</p>
-        <h1 className="font-display text-4xl leading-none text-white">Партнеры</h1>
+        <h1 className="font-display-cyrl text-4xl leading-none text-white">Партнеры</h1>
       </header>
 
       <div className="space-y-3.5">

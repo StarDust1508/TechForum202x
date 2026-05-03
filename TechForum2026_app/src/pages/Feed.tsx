@@ -48,7 +48,7 @@ export default function Feed() {
           <Newspaper className="w-3.5 h-3.5" />
           Новости форума
         </p>
-        <h1 className="font-display text-4xl leading-none text-white">Лента</h1>
+        <h1 className="font-display-cyrl text-4xl leading-none text-white">Лента</h1>
       </header>
 
       <ul className="space-y-3">

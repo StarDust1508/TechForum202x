@@ -160,7 +160,7 @@ export default function Auth({ onSuccess }: AuthProps) {
             и проверить связь с сервером прямо со старта. Удалить после
             стабилизации. */}
         <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
-          build nsc-fix · diag
+          build redesign-pass · diag
         </div>
         <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
           <button
@@ -191,7 +191,7 @@ export default function Auth({ onSuccess }: AuthProps) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -14 }}
             transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-            className="mt-8 mb-5 font-display text-[28px] font-semibold text-[#d8f0ee] tracking-wide"
+            className="mt-8 mb-5 font-display-cyrl text-[28px] font-semibold text-[#d8f0ee] tracking-wide"
           >
             {mode === 'login' ? 'Войти' : 'Регистрация'}
           </motion.h2>
@@ -327,13 +327,15 @@ export default function Auth({ onSuccess }: AuthProps) {
           </button>
         </div>
 
-        <div className="flex-1" />
-
+        {/* Tagline — поднят над city-зоной фона и снабжён тонкой полупрозрачной
+            подложкой, чтобы читался поверх blueprint-чертежа. */}
         <p
-          className="mt-8 max-w-[220px] self-end text-right font-display text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line"
+          className="mt-10 mb-2 max-w-[260px] self-end text-right font-display-cyrl text-[11px] uppercase tracking-[0.18em] text-[#7ed6d0]/85 leading-relaxed whitespace-pre-line bg-[#03161c]/55 backdrop-blur-sm rounded-md px-3 py-2"
         >
           {sectionTagline}
         </p>
+
+        <div className="flex-1" />
       </div>
 
       <AnimatePresence>
@@ -369,7 +371,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#4ec9c0]/40 bg-[#0a2f38]/70 shadow-[0_8px_28px_rgba(78,201,192,0.25)]">
                   <Fingerprint className="h-8 w-8 text-[#4ec9c0]" strokeWidth={1.5} />
                 </div>
-                <h2 className="font-display text-[24px] font-semibold text-[#d8f0ee] mb-2 leading-tight">
+                <h2 className="font-display-cyrl text-[24px] font-semibold text-[#d8f0ee] mb-2 leading-tight">
                   Включить вход<br />по биометрии?
                 </h2>
                 <p className="mb-6 text-[15px] leading-relaxed text-[#7aa8a4] font-blueprint">
