@@ -336,23 +336,26 @@ async function startServer(): Promise<void> {
   }
 
   // BUG_FIX_CONTEXT (FIND-008): Origin-based CSRF mitigation. Для mutating
-  // методов (POST/PUT/PATCH/DELETE) проверяем Origin/Referer:
-  //   - Если Origin есть и НЕ в allowedOrigins → 403. CORS-блок ниже всё
-  //     равно отбросит ответ браузеру, но Origin-check срабатывает РАНЬШЕ
-  //     bus-логики — не даём атакующему даже вычислить ответ через side
-  //     effects (БД insert, AI quota).
-  //   - Если Origin отсутствует (server-to-server, native APK без Origin)
-  //     — пропускаем. Capacitor APK ставит Origin=capacitor://localhost,
-  //     который мы добавили в CORS_ALLOW_ORIGINS.
-  // Cross-site cookie-сессионная атака с другого домена не пройдёт:
-  // (a) браузер не отдаст cookie на cross-site POST с SameSite=lax,
-  // (b) этот middleware дополнительно режет на уровне Origin.
+  // методов (POST/PUT/PATCH/DELETE) проверяем Origin:
+  //   - Origin отсутствует (native server-to-server, fetch без CORS) → пропускаем.
+  //   - Origin === 'null' (opaque-origin native WebView, sandboxed iframe,
+  //     redirect cross-origin) → пропускаем как native context. Capacitor APK
+  //     для cross-origin XHR может слать именно "null" вместо http://localhost,
+  //     если запрос прошёл через ServiceWorker или редирект — без этой
+  //     ветки регистрация/логин падали 403 ("Нет соединения с сервером" в UI).
+  //     Безопасность: SameSite=Lax cookie не уходит на cross-site POST,
+  //     реальный CSRF-атакующий из браузера всегда имеет конкретный Origin.
+  //   - Origin есть и НЕ в allowedOrigins → 403.
   const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const isAllowedOrigin = (origin: string): boolean =>
+    origin === 'null' || allowedOrigins.includes(origin);
+
   app.use((req, res, next) => {
     if (!MUTATING_METHODS.has(req.method)) { next(); return; }
     const origin = req.header('origin');
     if (!origin) { next(); return; }
-    if (!allowedOrigins.includes(origin)) {
+    if (!isAllowedOrigin(origin)) {
+      console.warn(`[csrf] blocked Origin=${origin} method=${req.method} path=${req.path}`);
       res.status(403).json({ error: 'origin_not_allowed', message: `Origin ${origin} blocked by CSRF guard` });
       return;
     }
@@ -370,7 +373,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    if (!allowedOrigins.includes(origin)) {
+    if (!isAllowedOrigin(origin)) {
       res.status(403).json({
         error: 'origin_not_allowed',
         message: `Origin ${origin} is not allowed`,
@@ -378,6 +381,9 @@ async function startServer(): Promise<void> {
       return;
     }
 
+    // Для opaque-origin (Origin: null) возвращаем "null" как ACAO — это
+    // валидный CORS-ответ по спецификации Fetch и нужен Capacitor WebView,
+    // чтобы fetch не упал на CORS-проверке после ответа сервера.
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-CSRF-Token, X-Client-Platform');
