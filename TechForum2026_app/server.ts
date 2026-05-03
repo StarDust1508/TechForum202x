@@ -309,6 +309,18 @@ async function startServer(): Promise<void> {
     },
   }));
 
+  // Временно: лог каждого запроса к /api/v1/auth/* и /api/v1/health для
+  // диагностики "не доходят запросы с APK". Удалим после стабилизации.
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/auth') || req.path === '/api/v1/health') {
+      const ua = String(req.header('user-agent') || '').slice(0, 80);
+      const origin = String(req.header('origin') || '<no-origin>');
+      const ip = req.ip || req.socket.remoteAddress || '?';
+      console.log(`[req] ${req.method} ${req.path} origin=${origin} ip=${ip} ua=${ua}`);
+    }
+    next();
+  });
+
   const configuredCorsOrigins = String(process.env.CORS_ALLOW_ORIGINS || '')
     .split(',')
     .map((item) => item.trim())

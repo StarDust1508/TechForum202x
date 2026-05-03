@@ -21,6 +21,9 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [mode, setMode] = useState<Mode>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [debugInfo, setDebugInfo] = useState('');
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState('');
   const [form, setForm] = useState({ email: '', password: '', passwordConfirm: '', name: '' });
   const [consent, setConsent] = useState(false);
 
@@ -52,6 +55,7 @@ export default function Auth({ onSuccess }: AuthProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setDebugInfo('');
     if (mode === 'register' && form.password !== form.passwordConfirm) {
       setError('Пароли не совпадают');
       return;
@@ -61,6 +65,7 @@ export default function Auth({ onSuccess }: AuthProps) {
     const endpointPath = mode === 'login' ? '/auth/login' : '/auth/register';
     const endpoint = resolveApiUrl(endpointPath);
 
+    let httpStatus: number | null = null;
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -72,10 +77,11 @@ export default function Auth({ onSuccess }: AuthProps) {
           name: form.name || form.email.split('@')[0],
         }),
       });
+      httpStatus = res.status;
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
       const data = ct.includes('application/json') ? await res.json() : null;
       if (!ct.includes('application/json')) throw new Error('backend_invalid_response');
-      if (!res.ok) throw new Error(data?.error || 'Ошибка входа');
+      if (!res.ok) throw new Error(data?.error || `http_${res.status}`);
       if (!data || typeof data !== 'object') throw new Error('backend_invalid_response');
       if (bioAvailable && !isBiometricEnabled()) {
         setPendingUser(data);
@@ -88,8 +94,12 @@ export default function Auth({ onSuccess }: AuthProps) {
     } catch (err: any) {
       const rawMessage = String(err?.message || '');
       const isNetworkError = /failed to fetch|networkerror|fetch|backend_invalid_response|unexpected token|load failed|cors|typeerror/i.test(rawMessage);
+      // Диагностика, видимая прямо в UI на устройстве — чтобы понять, что
+      // реально происходит без adb/devtools. Удалим, когда стабилизируется.
+      const debugLine = `${endpoint} → ${httpStatus ?? 'no-response'} | ${rawMessage.slice(0, 120)}`;
       if (!isLocalAuthFallbackEnabled()) {
         setError(isNetworkError ? 'Нет соединения с сервером. Проверьте интернет.' : (rawMessage || 'Ошибка входа'));
+        setDebugInfo(debugLine);
         setLoading(false);
         return;
       }
@@ -108,9 +118,27 @@ export default function Auth({ onSuccess }: AuthProps) {
           : isNetworkError ? 'Нет соединения. Попробуйте ещё раз через минуту.'
           : (msg || 'Не удалось выполнить вход');
         setError(friendly);
+        setDebugInfo(`${debugLine} | local: ${msg.slice(0, 80)}`);
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runConnectivityProbe = async () => {
+    setProbing(true);
+    setProbeResult('');
+    const base = resolveApiUrl('/health');
+    try {
+      const t0 = Date.now();
+      const res = await fetch(base, { method: 'GET' });
+      const dt = Date.now() - t0;
+      const txt = await res.text();
+      setProbeResult(`OK ${res.status} (${dt}ms): ${txt.slice(0, 100)}`);
+    } catch (err: any) {
+      setProbeResult(`FAIL: ${String(err?.message || err).slice(0, 160)} | URL: ${base}`);
+    } finally {
+      setProbing(false);
     }
   };
 
@@ -235,11 +263,35 @@ export default function Auth({ onSuccess }: AuthProps) {
             )}
           </AnimatePresence>
 
+          {debugInfo && (
+            <p className="text-[10px] leading-tight font-mono text-rose-200/70 break-all px-1 select-text">
+              debug: {debugInfo}
+            </p>
+          )}
+
           <div className="pt-3">
             <Button type="submit" loading={loading} disabled={mode === 'register' && !consent}>
               {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
             </Button>
           </div>
+
+          {(error || debugInfo) && (
+            <div className="pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={runConnectivityProbe}
+                disabled={probing}
+                className="w-full text-[12px] font-blueprint tracking-wider uppercase py-2 rounded-xl border border-[#4ec9c0]/40 text-[#d8f0ee] bg-[#4ec9c0]/5 active:bg-[#4ec9c0]/10 disabled:opacity-50"
+              >
+                {probing ? 'Проверка…' : 'Проверить связь с сервером'}
+              </button>
+              {probeResult && (
+                <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/80 break-all px-1 select-text">
+                  {probeResult}
+                </p>
+              )}
+            </div>
+          )}
         </form>
 
         <div className="mt-6 text-center">
