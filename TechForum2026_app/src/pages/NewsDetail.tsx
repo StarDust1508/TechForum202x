@@ -9,13 +9,28 @@
 // LINKS: USED_BY(8): App.tsx route /news/:id
 // END_MODULE_CONTRACT
 
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Clock, ArrowRight, ChevronLeft } from 'lucide-react';
 import { NEWS, getSpeakerById } from '../data';
 
 export default function NewsDetail() {
   const { id } = useParams<{ id: string }>();
   const news = NEWS.find((n) => n.id === id);
+  const navigate = useNavigate();
+
+  // Back-stack fix: раньше из /news/:id юзер кликал «К ленте», на это
+  // делался <Link to="/feed"> — это PUSH в history, а не POP. Стек
+  // становился [/feed, /news/123, /feed], и system-back с /feed
+  // возвращал в новость. Теперь идём через navigate(-1) (pop) с
+  // fallback на /feed если истории нет.
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/feed');
+    }
+  };
 
   if (!news) {
     return (
@@ -44,14 +59,16 @@ export default function NewsDetail() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
       }}
     >
-      {/* Back arrow with text label — собственная кнопка, не floating BackButton */}
-      <Link
-        to="/feed"
+      {/* Back via navigate(-1) — не накапливает history, корректно
+          возвращает на предыдущую страницу (Feed). */}
+      <button
+        type="button"
+        onClick={goBack}
         className="inline-flex items-center gap-2 mb-6 text-white/65 hover:text-white text-[13px] font-semibold"
       >
         <ChevronLeft className="w-4 h-4" />
         К ленте новостей
-      </Link>
+      </button>
 
       <article className="space-y-5">
         <div className="flex items-center gap-2 flex-wrap">

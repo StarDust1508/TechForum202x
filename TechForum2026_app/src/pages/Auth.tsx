@@ -294,36 +294,17 @@ export default function Auth({ onSuccess }: AuthProps) {
           <EventBadge />
         </div>
 
-        {/* Слот заголовка фиксированной высоты — иначе AnimatePresence на h2
-            даёт скачок при смене режима. */}
-        <div className="relative mt-6 mb-4 h-9">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.h2
-              key={`title-${mode}`}
-              initial={{ opacity: 0, x: 14 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -14 }}
-              transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-              className="absolute inset-0 font-display-cyrl text-[28px] font-semibold text-[#d8f0ee] tracking-wide"
-            >
-              {mode === 'login' ? 'Войти' : 'Регистрация'}
-            </motion.h2>
-          </AnimatePresence>
-        </div>
+        {/* Заголовок — без motion-анимаций. Раньше slide+blur при key-change
+            юзер воспринимал как «шрифт меняется на ходу». */}
+        <h2 className="mt-6 mb-4 font-display-cyrl text-[28px] font-semibold text-[#d8f0ee] tracking-wide">
+          {mode === 'login' ? 'Войти' : 'Регистрация'}
+        </h2>
 
-        {/* Слот формы фиксированной мин-высоты — переход login(2 поля)→register(3)
-            не дёргает кнопку CTA. */}
+        {/* Форма — без AnimatePresence. Третье поле (passwordConfirm) просто
+            рендерится условно. minHeight гарантирует что CTA не прыгает. */}
         <div className="relative" style={{ minHeight: 248 }}>
           <form onSubmit={handleSubmit} className="space-y-3.5">
-            <AnimatePresence initial={false} mode="wait">
-              <motion.div
-                key={mode}
-                initial={{ opacity: 0, x: mode === 'register' ? 24 : -24 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: mode === 'register' ? -24 : 24 }}
-                transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
-                className="space-y-3.5"
-              >
+            <div className="space-y-3.5">
                 <Input
                   ref={emailRef}
                   icon={Mail}
@@ -365,8 +346,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                     onChange={(e) => setForm({ ...form, passwordConfirm: e.target.value })}
                   />
                 )}
-              </motion.div>
-            </AnimatePresence>
+              </div>
 
             {mode === 'login' && (
               <div className="text-right">

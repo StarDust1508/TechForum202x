@@ -94,6 +94,41 @@ export default function Profile({ user: initialUser }: ProfileProps) {
     }
   };
 
+  // Сжимает изображение до max 1024×1024 jpeg ~85% quality. Современные
+  // телефоны делают фото 4-12MB, что упирается в 6MB multer лимит и 8MB
+  // nginx — пользователь видит upload_failed_413. Resize+jpeg даёт типичный
+  // итог 100-300KB, проходит спокойно. Если canvas/blob недоступен (старый
+  // WebView) — падаем на исходный файл и серверный лимит примет/отвергнет.
+  const compressImage = async (file: File): Promise<Blob> => {
+    if (!('createImageBitmap' in window) || typeof OffscreenCanvas === 'undefined') {
+      return file;
+    }
+    try {
+      const bmp = await createImageBitmap(file);
+      const MAX = 1024;
+      const ratio = Math.min(1, MAX / Math.max(bmp.width, bmp.height));
+      const w = Math.round(bmp.width * ratio);
+      const h = Math.round(bmp.height * ratio);
+      const canvas = new OffscreenCanvas(w, h);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return file;
+      ctx.drawImage(bmp, 0, 0, w, h);
+      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+      return blob;
+    } catch {
+      return file;
+    }
+  };
+
+  const friendlyAvatarError = (raw: string): string => {
+    if (raw.includes('413') || raw === 'LIMIT_FILE_SIZE') return 'Файл слишком большой. Попробуйте меньше 5 МБ.';
+    if (raw.includes('unsupported_mime')) return 'Формат не поддерживается. Используйте JPG, PNG или WEBP.';
+    if (raw.includes('file_required')) return 'Файл не выбран.';
+    if (raw.includes('Не авторизован') || raw.includes('401')) return 'Сессия истекла, войдите снова.';
+    if (/network|failed to fetch|load failed|typeerror/i.test(raw)) return 'Нет соединения с сервером.';
+    return `Не удалось загрузить: ${raw}`;
+  };
+
   // FormData без явного Content-Type — браузер сам выставит multipart с boundary.
   const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -101,8 +136,14 @@ export default function Profile({ user: initialUser }: ProfileProps) {
     setAvatarError(null);
     setUploadingAvatar(true);
     try {
+      const compressed = await compressImage(file);
+      // Если получился Blob (а не File) — оборачиваем в File с правильным
+      // именем/типом, чтобы multer проставил mime корректно.
+      const upload = compressed instanceof File
+        ? compressed
+        : new File([compressed], 'avatar.jpg', { type: 'image/jpeg' });
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', upload);
       const res = await fetch(resolveApiUrl('/me/avatar'), {
         method: 'POST',
         credentials: 'include',
@@ -117,7 +158,8 @@ export default function Profile({ user: initialUser }: ProfileProps) {
       setAvatarVersion((v) => v + 1);
     } catch (err) {
       console.error('Avatar upload failed', err);
-      setAvatarError(err instanceof Error ? err.message : 'upload_failed');
+      const raw = err instanceof Error ? err.message : 'upload_failed';
+      setAvatarError(friendlyAvatarError(raw));
     } finally {
       setUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

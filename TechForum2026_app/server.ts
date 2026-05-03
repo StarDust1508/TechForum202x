@@ -505,7 +505,9 @@ async function startServer(): Promise<void> {
   }
   const upload = multer({
     dest: uploadDir,
-    limits: { fileSize: 5 * 1024 * 1024 },
+    // 6MB на серверной стороне — чуть меньше nginx 8MB, чтобы multer
+    // первый отдал понятную ошибку, а не EPIPE из nginx.
+    limits: { fileSize: 6 * 1024 * 1024 },
   });
   app.use('/uploads', express.static(uploadDir));
 

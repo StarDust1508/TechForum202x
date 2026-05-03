@@ -34,8 +34,12 @@ export default function BackButton({ floating = true, to, label = 'Назад' }
     }
   };
 
+  // Floating BackButton — `fixed` относительно viewport, чтобы координаты
+  // были одинаковые на ВСЕХ страницах независимо от parent-`position`.
+  // Раньше `absolute` давал «летающую» позицию (зависел от того, есть ли
+  // у внешнего div страницы position: relative).
   const positionClass = floating
-    ? 'absolute left-4 z-30'
+    ? 'fixed left-4 z-40'
     : 'relative';
 
   return (
