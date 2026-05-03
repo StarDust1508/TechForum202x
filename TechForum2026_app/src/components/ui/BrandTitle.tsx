@@ -1,15 +1,13 @@
 import type { CSSProperties } from 'react';
 import { motion } from 'motion/react';
+import { EVENT_BRAND, EVENT_YEAR } from '@/src/lib/event';
 
 interface BrandTitleProps {
   className?: string;
   style?: CSSProperties;
-  /** При true — год набирается посимвольно (Splash, Auth). На Home лучше false. */
+  /** Год набирается посимвольно (Splash, Auth). На Home обычно false. */
   animateYear?: boolean;
 }
-
-// Год вынесен в константу: ровно одно место для апдейта при ребрендинге раз в полгода.
-const EVENT_YEAR = '2026';
 
 export default function BrandTitle({ className = '', style, animateYear = true }: BrandTitleProps) {
   return (
@@ -23,7 +21,7 @@ export default function BrandTitle({ className = '', style, animateYear = true }
         ...style,
       }}
     >
-      TechForum
+      {EVENT_BRAND}
       <span aria-label={EVENT_YEAR} className="block mt-1">
         {animateYear
           ? EVENT_YEAR.split('').map((d, i) => (

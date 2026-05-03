@@ -97,10 +97,16 @@ function AppContent() {
 
   useEffect(() => {
     let isMounted = true;
-    // Минимальное время Splash-экрана при холодном старте — 1.4с,
-    // чтобы юзер успел увидеть brand-полотно + анимацию свечения.
+    // Splash минимально 1.4с при холодном старте; warm-restart (юзер свернул
+    // и открыл в течение 30 минут) — без задержки, чтобы не было ощущения
+    // тормоза. Метку времени держим в sessionStorage (живёт пока tab-контекст
+    // не пересоздан, что для Capacitor WebView ≈ life of activity).
     const startAt = Date.now();
-    const MIN_SPLASH_MS = 1400;
+    let lastBootAt = 0;
+    try { lastBootAt = parseInt(sessionStorage.getItem('techforum_last_boot') || '0', 10) || 0; } catch { /* noop */ }
+    const isWarmRestart = lastBootAt > 0 && (Date.now() - lastBootAt) < 30 * 60 * 1000;
+    try { sessionStorage.setItem('techforum_last_boot', String(Date.now())); } catch { /* noop */ }
+    const MIN_SPLASH_MS = isWarmRestart ? 0 : 1400;
 
     // BUG_FIX_CONTEXT: П6 — рандомный сброс на онбординг. Onboarding раньше
     // делал PUT /me/interests fire-and-forget, и если запрос падал, выбор

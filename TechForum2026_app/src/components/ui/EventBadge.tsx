@@ -1,5 +1,6 @@
 import { CalendarDays, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { EVENT_DATE, EVENT_CITY } from '@/src/lib/event';
 
 interface EventBadgeProps {
   to?: string;
@@ -9,8 +10,8 @@ interface EventBadgeProps {
 
 export default function EventBadge({
   to,
-  date = '20–21 МАЯ',
-  city = 'САРАТОВ',
+  date = EVENT_DATE,
+  city = EVENT_CITY,
 }: EventBadgeProps) {
   const content = (
     <span className="inline-flex items-center gap-2.5 rounded-full border border-[#4ec9c0]/35 bg-[#0a2f38]/55 px-5 py-2.5 text-[12px] font-semibold uppercase tracking-[0.18em] text-[#d8f0ee] backdrop-blur-sm">

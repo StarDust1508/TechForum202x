@@ -81,7 +81,7 @@ export default function Giveaways() {
             <Gift className="w-4 h-4" />
             ЗОНА ПРИЗОВ
           </p>
-          <h1 className="text-4xl font-extrabold tracking-tighter text-primary">Розыгрыши</h1>
+          <h1 className="text-4xl font-extrabold tracking-tighter text-[#d8f0ee]">Розыгрыши</h1>
         </div>
 
         <div className="bg-accent/10 border border-accent/20 rounded-3xl p-5 relative overflow-hidden group">
@@ -89,8 +89,8 @@ export default function Giveaways() {
             <Trophy className="w-16 h-16 text-accent" />
           </div>
           <div className="relative z-10 space-y-2">
-            <h2 className="text-lg font-black text-primary leading-tight">Испытай удачу!</h2>
-            <p className="text-[11px] text-muted leading-relaxed max-w-[80%] uppercase font-black tracking-widest">
+            <h2 className="text-lg font-semibold text-[#d8f0ee] leading-tight">Испытай удачу!</h2>
+            <p className="text-[11px] text-[#7aa8a4] leading-relaxed max-w-[80%] uppercase font-semibold tracking-widest">
               Учувствуй в розыгрышах гаджетов от наших партнеров. Победители будут объявлены на главной сцене.
             </p>
           </div>
@@ -103,7 +103,7 @@ export default function Giveaways() {
             key={giveaway.id}
             className={cn(
               "bg-[#0a2f38]/40 backdrop-blur-xl border rounded-[2rem] overflow-hidden transition-all group",
-              participatingIds.includes(giveaway.id) ? "border-green-500/30" : "border-card-border hover:border-accent/40"
+              participatingIds.includes(giveaway.id) ? "border-green-500/30" : "border-[#4ec9c0]/28 hover:border-accent/40"
             )}
           >
             <div className="relative h-48 overflow-hidden">
@@ -116,12 +116,12 @@ export default function Giveaways() {
               <div className="absolute inset-0 bg-gradient-to-t from-[#0b0e14] to-transparent" />
               <div className="absolute top-4 left-4 flex gap-2">
                 {giveaway.featured && (
-                  <span className="bg-accent text-surface text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg shadow-accent/20">
+                  <span className="bg-accent text-[#03161c] text-[9px] font-semibold px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg shadow-accent/20">
                     <Sparkles className="w-3 h-3" />
                     MAIN PRIZE
                   </span>
                 )}
-                <span className="bg-[#0b0e14]/80 backdrop-blur-md text-primary text-[9px] font-black px-3 py-1 rounded-full border border-white/10 uppercase tracking-widest flex items-center gap-1">
+                <span className="bg-[#0b0e14]/80 backdrop-blur-md text-[#d8f0ee] text-[9px] font-semibold px-3 py-1 rounded-full border border-white/10 uppercase tracking-widest flex items-center gap-1">
                   <Clock className="w-3 h-3 text-accent" />
                   {giveaway.endTime}
                 </span>
@@ -130,22 +130,22 @@ export default function Giveaways() {
 
             <div className="p-6 space-y-4">
               <div className="space-y-1">
-                <h3 className="text-xl font-black text-white leading-tight">
+                <h3 className="text-xl font-semibold text-white leading-tight">
                   {giveaway.item}
                 </h3>
-                <p className="text-xs text-muted font-medium">{giveaway.title}</p>
+                <p className="text-xs text-[#7aa8a4] font-medium">{giveaway.title}</p>
               </div>
 
-              <p className="text-[11px] leading-relaxed text-muted/80">
+              <p className="text-[11px] leading-relaxed text-[#7aa8a4]/80">
                 {giveaway.description}
               </p>
 
               <div className="flex items-center justify-between pt-2">
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-accent uppercase tracking-widest">Участников</span>
+                  <span className="text-[10px] font-semibold text-accent uppercase tracking-widest">Участников</span>
                   <div className="flex items-center gap-1">
                     <Zap className="w-3 h-3 text-accent" />
-                    <span className="text-sm font-mono font-bold text-primary">{giveaway.participants + (participatingIds.includes(giveaway.id) ? 1 : 0)}</span>
+                    <span className="text-sm font-mono font-bold text-[#d8f0ee]">{giveaway.participants + (participatingIds.includes(giveaway.id) ? 1 : 0)}</span>
                   </div>
                 </div>
 
@@ -153,10 +153,10 @@ export default function Giveaways() {
                   onClick={() => toggleParticipation(giveaway.id)}
                   disabled={participatingIds.includes(giveaway.id)}
                   className={cn(
-                    "px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2",
+                    "px-6 py-3 rounded-2xl text-[10px] font-semibold uppercase tracking-widest transition-all active:scale-95 flex items-center gap-2",
                     participatingIds.includes(giveaway.id)
                       ? "bg-green-500/10 border border-green-500/20 text-green-500"
-                      : "bg-accent text-surface shadow-lg shadow-accent/20 hover:brightness-110"
+                      : "bg-accent text-[#03161c] shadow-lg shadow-accent/20 hover:brightness-110"
                   )}
                 >
                   {participatingIds.includes(giveaway.id) ? (
@@ -183,13 +183,13 @@ export default function Giveaways() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 20 }}
-            className="fixed bottom-24 left-6 right-6 z-50 bg-green-500 text-surface p-4 rounded-2xl shadow-2xl flex items-center gap-4 border-2 border-white/10"
+            className="fixed bottom-24 left-6 right-6 z-50 bg-green-500 text-[#03161c] p-4 rounded-2xl shadow-2xl flex items-center gap-4 border-2 border-white/10"
           >
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
               <Trophy className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-[11px] font-black uppercase tracking-widest">Вы в деле!</p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest">Вы в деле!</p>
               <p className="text-xs font-bold opacity-90">Ваш билет №{Math.floor(Math.random() * 9000) + 1000} зарегистрирован.</p>
             </div>
           </motion.div>

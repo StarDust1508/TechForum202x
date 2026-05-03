@@ -84,11 +84,11 @@ export default function Ticket() {
       <header className="flex items-center gap-4 mb-8">
         <button
           onClick={() => navigate(-1)}
-          className="w-10 h-10 flex items-center justify-center rounded-2xl bg-card border border-card-border active:scale-90 transition-all"
+          className="w-10 h-10 flex items-center justify-center rounded-2xl bg-card border border-[#4ec9c0]/28 active:scale-90 transition-all"
         >
-          <ArrowLeft className="w-6 h-6 text-primary" />
+          <ArrowLeft className="w-6 h-6 text-[#d8f0ee]" />
         </button>
-        <h1 className="text-2xl font-extrabold tracking-tight text-primary">Мой билет</h1>
+        <h1 className="text-2xl font-extrabold tracking-tight text-[#d8f0ee]">Мой билет</h1>
       </header>
 
       <div className="flex-1 space-y-6 overflow-y-auto scrollbar-hide pt-4">
@@ -96,7 +96,7 @@ export default function Ticket() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="bg-card border border-card-border rounded-[2.5rem] overflow-hidden shadow-2xl shadow-black/60"
+          className="bg-card border border-[#4ec9c0]/28 rounded-[2.5rem] overflow-hidden shadow-2xl shadow-black/60"
         >
           <div className="p-10 space-y-12">
             <div className="flex flex-col items-center gap-6">
@@ -117,19 +117,19 @@ export default function Ticket() {
                 </div>
               </div>
               {ticket && (
-                <p className="text-sm text-muted font-bold tracking-[0.5em] uppercase opacity-60">
+                <p className="text-sm text-[#7aa8a4] font-bold tracking-[0.5em] uppercase opacity-60">
                   ТФ26 · {ticketShortId}
                 </p>
               )}
             </div>
 
-            <div className="text-center space-y-2 py-6 border-t border-card-border/50">
-              <p className="text-[10px] text-muted font-black uppercase tracking-[0.3em]">Владелец билета</p>
-              <h2 className="text-xl font-black text-primary tracking-tight leading-tight px-4">
+            <div className="text-center space-y-2 py-6 border-t border-[#4ec9c0]/22">
+              <p className="text-[10px] text-[#7aa8a4] font-semibold uppercase tracking-[0.3em]">Владелец билета</p>
+              <h2 className="text-xl font-semibold text-[#d8f0ee] tracking-tight leading-tight px-4">
                 {ticket?.name ?? '—'}
               </h2>
               {ticket && (
-                <p className="text-[11px] text-muted/70 tracking-wider mt-1">{ticket.email}</p>
+                <p className="text-[11px] text-[#7aa8a4]/70 tracking-wider mt-1">{ticket.email}</p>
               )}
             </div>
           </div>

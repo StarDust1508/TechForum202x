@@ -217,14 +217,14 @@ export default function Schedule() {
             <Cpu className="w-4 h-4" />
             ДАННЫЕ ГРАФИКА
           </p>
-          <h1 className="text-4xl font-extrabold tracking-tighter text-primary">Расписание</h1>
+          <h1 className="text-4xl font-extrabold tracking-tighter text-[#d8f0ee]">Расписание</h1>
         </div>
 
         {/* Day tabs.
             BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
             между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
             Таб "Мои записи" остаётся справа. */}
-        <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
+        <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/28 shadow-inner">
           {[
             ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
             { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
@@ -235,10 +235,10 @@ export default function Schedule() {
               key={tab.id}
               onClick={() => setSelectedDayId(tab.id)}
               className={cn(
-                'flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest leading-none transition-all',
+                'flex-1 py-3.5 rounded-2xl text-[10px] font-semibold uppercase tracking-widest leading-none transition-all',
                 selectedDayId === tab.id
-                  ? 'bg-accent text-surface shadow-xl shadow-accent/20'
-                  : 'text-muted hover:text-primary',
+                  ? 'bg-accent text-[#03161c] shadow-xl shadow-accent/20'
+                  : 'text-[#7aa8a4] hover:text-[#d8f0ee]',
               )}
             >
               {tab.label}
@@ -267,8 +267,8 @@ export default function Schedule() {
                 key={h.id}
                 onClick={() => setActiveHallId(h.id)}
                 className={cn(
-                  'px-6 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none',
-                  active ? 'bg-primary border-primary text-surface' : 'bg-surface border-card-border text-muted/60',
+                  'px-6 py-3 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none',
+                  active ? 'bg-[#4ec9c0] border-[#4ec9c0] text-[#03161c]' : 'bg-[#03161c] border-[#4ec9c0]/28 text-[#7aa8a4]/60',
                 )}
               >
                 {h.name}
@@ -286,8 +286,8 @@ export default function Schedule() {
                 key={t.id}
                 onClick={() => setActiveTrackId(t.id)}
                 className={cn(
-                  'px-4 py-2 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
-                  active ? 'text-surface' : 'bg-surface text-muted/70 border-card-border',
+                  'px-4 py-2 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
+                  active ? 'text-[#03161c]' : 'bg-[#03161c] text-[#7aa8a4]/70 border-[#4ec9c0]/28',
                 )}
                 style={active ? { backgroundColor: t.color, borderColor: t.color, boxShadow: `0 0 18px ${t.color}55` } : undefined}
               >
@@ -309,7 +309,7 @@ export default function Schedule() {
             return (
               <div
                 key={session.id}
-                className="mb-5 bg-[#0a2f38]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden"
+                className="mb-5 bg-[#0a2f38]/40 backdrop-blur-xl border border-[#4ec9c0]/28 p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden"
               >
                 <div
                   className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
@@ -319,44 +319,44 @@ export default function Schedule() {
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2 text-sm font-bold text-accent">
                     <div className="w-1.5 h-1.5 bg-accent rounded-full" />
-                    <span className="font-mono tracking-tighter text-primary/80">
+                    <span className="font-mono tracking-tighter text-[#d8f0ee]/80">
                       {session.startTime} — {session.endTime}
                     </span>
                   </div>
                   {session.status === 'Live' && (
-                    <span className="bg-red-500/10 text-red-500 text-[10px] font-black px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
+                    <span className="bg-red-500/10 text-red-500 text-[10px] font-semibold px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
                       В ЭФИРЕ
                     </span>
                   )}
                 </div>
 
-                <h3 className="text-xl font-black leading-tight tracking-tight text-white">
+                <h3 className="text-xl font-semibold leading-tight tracking-tight text-white">
                   {session.title}
                 </h3>
 
                 {session.speakerIds.length > 0 && (
                   <div className="flex flex-wrap gap-5 pt-1">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-surface border border-card-border flex items-center justify-center text-accent font-black text-[11px] shadow-sm">
+                      <div className="w-10 h-10 rounded-2xl bg-[#03161c] border border-[#4ec9c0]/28 flex items-center justify-center text-accent font-semibold text-[11px] shadow-sm">
                         {session.speakerName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-xs font-bold text-primary tracking-tight">{session.speakerName}</span>
-                        <span className="text-[10px] font-bold text-muted uppercase tracking-widest">
+                        <span className="text-xs font-bold text-[#d8f0ee] tracking-tight">{session.speakerName}</span>
+                        <span className="text-[10px] font-bold text-[#7aa8a4] uppercase tracking-widest">
                           {session.format === 'workshop' ? 'Воркшоп' : session.format === 'panel' ? 'Панель' : session.format === 'keynote' ? 'Keynote' : 'Доклад'}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-muted text-xs font-medium bg-surface/40 px-3 py-1.5 rounded-xl border border-card-border/50">
+                    <div className="flex items-center gap-2 text-[#7aa8a4] text-xs font-medium bg-[#03161c]/40 px-3 py-1.5 rounded-xl border border-[#4ec9c0]/22">
                       <MapPin className="w-3 h-3 text-accent" />
                       <span className="tracking-tight">{session.location}</span>
                     </div>
                   </div>
                 )}
 
-                <div className="pt-2 flex justify-between items-center bg-surface/30 -mx-6 -mb-6 px-6 py-4 border-t border-card-border/50 gap-3">
+                <div className="pt-2 flex justify-between items-center bg-[#03161c]/30 -mx-6 -mb-6 px-6 py-4 border-t border-[#4ec9c0]/22 gap-3">
                   <span
-                    className="text-[10px] font-black uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
+                    className="text-[10px] font-semibold uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
                     style={{ borderColor: trackColor, color: trackColor }}
                   >
                     {session.track}
@@ -367,7 +367,7 @@ export default function Schedule() {
                         href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
                         download={`techforum2026-${session.id}.ics`}
                         title="Добавить в календарь"
-                        className="text-[10px] font-black uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-card-border text-muted/70 hover:text-accent hover:border-accent/30 transition-all"
+                        className="text-[10px] font-semibold uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[#7aa8a4]/70 hover:text-accent hover:border-accent/30 transition-all"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </a>
@@ -376,10 +376,10 @@ export default function Schedule() {
                       <button
                         onClick={() => handleRegisterClick(session)}
                         className={cn(
-                          'text-[10px] font-black uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
+                          'text-[10px] font-semibold uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
                           isRegistered
                             ? 'bg-card border border-accent/40 text-accent'
-                            : 'bg-accent text-surface shadow-accent/10 hover:brightness-110',
+                            : 'bg-accent text-[#03161c] shadow-accent/10 hover:brightness-110',
                         )}
                       >
                         {isRegistered ? 'Уже иду' : 'Пойду'}
@@ -394,10 +394,10 @@ export default function Schedule() {
 
         {filteredSessions.length === 0 && (
           <div className="py-20 text-center space-y-4">
-            <div className="w-16 h-16 bg-card border border-card-border rounded-3xl flex items-center justify-center mx-auto text-muted/30">
+            <div className="w-16 h-16 bg-card border border-[#4ec9c0]/28 rounded-3xl flex items-center justify-center mx-auto text-[#7aa8a4]/30">
               {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
             </div>
-            <p className="text-muted font-medium">
+            <p className="text-[#7aa8a4] font-medium">
               {selectedDayId === MY_TAB_ID
                 ? 'Вы ещё не записались ни на одну сессию'
                 : selectedDayId === RECOMMENDED_TAB_ID
@@ -431,11 +431,11 @@ export default function Schedule() {
                   <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
                     <AlertTriangle className="w-5 h-5 text-amber-400" />
                   </div>
-                  <h2 className="text-base font-black text-white tracking-tight">Конфликт времени</h2>
+                  <h2 className="text-base font-semibold text-white tracking-tight">Конфликт времени</h2>
                 </div>
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="w-8 h-8 rounded-xl bg-card border border-card-border flex items-center justify-center text-muted hover:text-primary"
+                  className="w-8 h-8 rounded-xl bg-card border border-[#4ec9c0]/28 flex items-center justify-center text-[#7aa8a4] hover:text-[#d8f0ee]"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -456,7 +456,7 @@ export default function Schedule() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="flex-1 py-3 rounded-2xl bg-card border border-card-border text-[12px] font-semibold text-white/75 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[12px] font-semibold text-white/75 active:scale-[0.98]"
                 >
                   Отмена
                 </button>

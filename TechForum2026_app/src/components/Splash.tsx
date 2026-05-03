@@ -1,9 +1,8 @@
 import { motion } from 'motion/react';
+import { EVENT_YEAR } from '@/src/lib/event';
 
 // Splash экран — встречает юзера при холодном старте.
 // Источник изображения: эталон от заказчика (HUD-композиция с глобусом + лог).
-// Картинка покрывает весь экран в режиме cover; поверх — анимированный год "2026"
-// (поразрядное появление, единый стиль с заголовками /auth и /home).
 export default function Splash() {
   return (
     <div
@@ -16,7 +15,6 @@ export default function Splash() {
         aria-hidden="true"
         className="absolute inset-0 h-full w-full object-cover"
       />
-      {/* Лёгкая нижняя виньетка, чтобы год не дрался с гравировкой "TechForum" на фоне. */}
       <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_55%,rgba(3,22,28,0.55)_85%,rgba(3,22,28,0.85)_100%)]" />
 
       <div
@@ -37,11 +35,11 @@ export default function Splash() {
             ─ ◆ ─
           </motion.span>
           <h1
-            aria-label="2026"
+            aria-label={EVENT_YEAR}
             className="font-display text-[#4ec9c0] tracking-[0.18em] flex gap-1 drop-shadow-[0_0_24px_rgba(78,201,192,0.6)]"
             style={{ fontSize: 'clamp(48px, 14vw, 72px)', lineHeight: 1, fontWeight: 600 }}
           >
-            {['2', '0', '2', '6'].map((d, i) => (
+            {EVENT_YEAR.split('').map((d, i) => (
               <motion.span
                 key={i}
                 initial={{ opacity: 0, y: 12, filter: 'blur(8px)' }}

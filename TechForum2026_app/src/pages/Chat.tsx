@@ -156,14 +156,14 @@ export default function Chat() {
             onClick={togglePlay}
             className={cn(
               'w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0',
-              role === 'user' ? 'bg-white text-accent' : 'bg-accent text-surface'
+              role === 'user' ? 'bg-white text-accent' : 'bg-accent text-[#03161c]'
             )}
           >
             {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-1" />}
           </button>
           <div className="flex-1 space-y-1">
             <div ref={wavesurferRef} />
-            <div className="flex justify-between text-[8px] font-black uppercase tracking-widest opacity-40">
+            <div className="flex justify-between text-[8px] font-semibold uppercase tracking-widest opacity-40">
               <span>VOICE_LOG</span>
             </div>
           </div>
@@ -426,29 +426,29 @@ export default function Chat() {
   const selectedContactObj = contacts.find((c) => c.id === selectedContact);
 
   return (
-    <div className="flex flex-col h-full bg-surface relative overflow-hidden">
+    <div className="flex flex-col h-full bg-[#03161c] relative overflow-hidden">
       {/* Sticky header */}
       <header
-        className="sticky top-0 z-30 bg-surface/85 backdrop-blur-xl border-b border-card-border"
+        className="sticky top-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-b border-[#4ec9c0]/28"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)' }}
       >
         <BackButton />
         <div className="px-5 pb-3 space-y-3">
           <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold tracking-tight text-primary">
+            <h1 className="text-2xl font-bold tracking-tight text-[#d8f0ee]">
               {activeTab === 'Личные' && selectedContactObj ? selectedContactObj.name : 'Чат'}
             </h1>
             {activeTab === 'Ассистент' && (
               <button
                 onClick={handleSaveChat}
-                className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/20 rounded-xl text-accent text-[10px] font-black uppercase tracking-widest hover:bg-accent/20 transition-all active:scale-95"
+                className="flex items-center gap-2 px-3 py-1.5 bg-accent/10 border border-accent/20 rounded-xl text-accent text-[10px] font-semibold uppercase tracking-widest hover:bg-accent/20 transition-all active:scale-95"
               >
                 <Save className="w-3.5 h-3.5" />
                 Новый чат
               </button>
             )}
           </div>
-          <div className="flex bg-card/50 border border-card-border p-1 rounded-2xl overflow-x-auto scrollbar-hide">
+          <div className="flex bg-[#0a2f38]/55/50 border border-[#4ec9c0]/28 p-1 rounded-2xl overflow-x-auto scrollbar-hide">
             {['Мероприятие', 'Личные', 'Ассистент', 'История'].map((tab) => (
               <button
                 key={tab}
@@ -457,8 +457,8 @@ export default function Chat() {
                   if (tab !== 'Личные') setSelectedContact(null);
                 }}
                 className={cn(
-                  'flex-1 py-2 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap',
-                  activeTab === tab ? 'bg-accent text-surface shadow-lg shadow-accent/20' : 'text-muted hover:text-primary'
+                  'flex-1 py-2 px-3 rounded-xl text-[9px] font-semibold uppercase tracking-widest transition-all whitespace-nowrap',
+                  activeTab === tab ? 'bg-accent text-[#03161c] shadow-lg shadow-accent/20' : 'text-[#7aa8a4] hover:text-[#d8f0ee]'
                 )}
               >
                 {tab}
@@ -473,7 +473,7 @@ export default function Chat() {
         <div className="p-5">
           {activeTab === 'Ассистент' ? (
             // BUG_FIX_CONTEXT: Ассистент теперь в стиле «Мероприятие» — имя
-            // сверху, time-stamp, bubble bg-card/40 rounded-3xl rounded-tl-none.
+            // сверху, time-stamp, bubble bg-[#0a2f38]/55/40 rounded-3xl rounded-tl-none.
             // Унифицировано по требованию заказчика. AI bot слева, user тоже
             // слева (одна колонка), различимы по аватару и имени.
             <div className="flex flex-col gap-4">
@@ -484,18 +484,18 @@ export default function Chat() {
                   <div key={i} className="flex gap-4 group">
                     <div className={cn(
                       'w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border',
-                      isUser ? 'bg-accent text-surface border-accent shadow-lg shadow-accent/20' : 'bg-card border-card-border text-accent'
+                      isUser ? 'bg-accent text-[#03161c] border-accent shadow-lg shadow-accent/20' : 'bg-card border-[#4ec9c0]/28 text-accent'
                     )}>
                       {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
                     </div>
                     <div className="space-y-1.5 flex-1 min-w-0">
                       <div className="flex items-center gap-3">
-                        <span className={cn('text-xs font-black uppercase tracking-widest', isUser ? 'text-accent' : 'text-primary')}>
+                        <span className={cn('text-xs font-semibold uppercase tracking-widest', isUser ? 'text-accent' : 'text-[#d8f0ee]')}>
                           {name}
                         </span>
-                        <span className="text-[9px] font-mono text-muted/40">{msg.time}</span>
+                        <span className="text-[9px] font-mono text-[#7aa8a4]/40">{msg.time}</span>
                       </div>
-                      <div className="bg-card/40 border border-card-border p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-primary/85">
+                      <div className="bg-[#0a2f38]/55/40 border border-[#4ec9c0]/28 p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-[#d8f0ee]/85">
                         {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
                         {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
                       </div>
@@ -505,12 +505,12 @@ export default function Chat() {
               })}
               {loading && (
                 <div className="flex gap-4">
-                  <div className="w-10 h-10 rounded-2xl bg-card border border-card-border flex items-center justify-center text-accent shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-card border border-[#4ec9c0]/28 flex items-center justify-center text-accent shrink-0">
                     <Bot className="w-5 h-5" />
                   </div>
-                  <div className="bg-card/40 border border-card-border px-4 py-3 rounded-3xl rounded-tl-none flex items-center gap-3">
+                  <div className="bg-[#0a2f38]/55/40 border border-[#4ec9c0]/28 px-4 py-3 rounded-3xl rounded-tl-none flex items-center gap-3">
                     <Loader2 className="w-4 h-4 text-accent animate-spin" />
-                    <span className="text-[11px] text-muted font-bold uppercase tracking-widest">Думаю...</span>
+                    <span className="text-[11px] text-[#7aa8a4] font-bold uppercase tracking-widest">Думаю...</span>
                   </div>
                 </div>
               )}
@@ -534,8 +534,8 @@ export default function Chat() {
                       }
                     }}
                     className={cn(
-                      'w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center text-sm font-black shrink-0 border transition-transform active:scale-90',
-                      msg.isStaff ? 'bg-accent text-surface border-accent shadow-lg shadow-accent/20' : 'bg-card border-card-border text-primary hover:border-accent'
+                      'w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center text-sm font-semibold shrink-0 border transition-transform active:scale-90',
+                      msg.isStaff ? 'bg-accent text-[#03161c] border-accent shadow-lg shadow-accent/20' : 'bg-card border-[#4ec9c0]/28 text-[#d8f0ee] hover:border-accent'
                     )}
                   >
                     <img src={avatarUrl(msg.user)} alt={msg.user} className="w-full h-full object-cover" />
@@ -549,21 +549,21 @@ export default function Chat() {
                             setActiveTab('Личные');
                           }
                         }}
-                        className={cn('text-xs font-black uppercase tracking-widest hover:text-accent transition-colors text-left', msg.isStaff ? 'text-accent' : 'text-primary')}
+                        className={cn('text-xs font-semibold uppercase tracking-widest hover:text-accent transition-colors text-left', msg.isStaff ? 'text-accent' : 'text-[#d8f0ee]')}
                       >
                         {msg.user}
                         {msg.isStaff && <span className="ml-2 text-[8px] bg-accent/10 border border-accent/20 px-1.5 py-0.5 rounded italic font-bold">STAFF</span>}
                       </button>
-                      <span className="text-[9px] font-mono text-muted/40">{msg.time}</span>
+                      <span className="text-[9px] font-mono text-[#7aa8a4]/40">{msg.time}</span>
                     </div>
-                    <div className="bg-card/40 border border-card-border p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-primary/80">
+                    <div className="bg-[#0a2f38]/55/40 border border-[#4ec9c0]/28 p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-[#d8f0ee]/80">
                       {msg.text}
                     </div>
                   </div>
                 </div>
               ))}
               <div className="py-4 text-center">
-                <span className="text-[10px] text-muted font-black uppercase tracking-[0.3em] opacity-30">КОНЕЦ ИСТОРИИ</span>
+                <span className="text-[10px] text-[#7aa8a4] font-semibold uppercase tracking-[0.3em] opacity-30">КОНЕЦ ИСТОРИИ</span>
               </div>
               <div ref={messagesEndRef} />
             </div>
@@ -575,10 +575,10 @@ export default function Chat() {
                     <button
                       key={contact.id}
                       onClick={() => setSelectedContact(contact.id)}
-                      className="w-full flex items-center gap-4 bg-card/30 border border-card-border p-4 rounded-3xl hover:border-accent/40 active:scale-[0.98] transition-all group"
+                      className="w-full flex items-center gap-4 bg-[#0a2f38]/55/30 border border-[#4ec9c0]/28 p-4 rounded-3xl hover:border-accent/40 active:scale-[0.98] transition-all group"
                     >
                       <div className="relative">
-                        <div className="w-12 h-12 bg-card border border-card-border rounded-2xl overflow-hidden flex items-center justify-center">
+                        <div className="w-12 h-12 bg-card border border-[#4ec9c0]/28 rounded-2xl overflow-hidden flex items-center justify-center">
                           <img src={avatarUrl(contact.name)} alt={contact.name} className="w-full h-full object-cover" />
                         </div>
                         {contact.online && (
@@ -587,12 +587,12 @@ export default function Chat() {
                       </div>
                       <div className="flex-1 text-left min-w-0">
                         <div className="flex justify-between items-center mb-0.5">
-                          <span className="text-sm font-bold text-primary">{contact.name}</span>
-                          <span className="text-[9px] text-muted">15:30</span>
+                          <span className="text-sm font-bold text-[#d8f0ee]">{contact.name}</span>
+                          <span className="text-[9px] text-[#7aa8a4]">15:30</span>
                         </div>
-                        <p className="text-[11px] text-muted truncate pr-4">{contact.lastMsg}</p>
+                        <p className="text-[11px] text-[#7aa8a4] truncate pr-4">{contact.lastMsg}</p>
                       </div>
-                      <ChevronRight className="w-4 h-4 text-muted group-hover:text-accent transition-colors" />
+                      <ChevronRight className="w-4 h-4 text-[#7aa8a4] group-hover:text-accent transition-colors" />
                     </button>
                   ))}
                 </div>
@@ -600,23 +600,23 @@ export default function Chat() {
                 <div className="space-y-3 flex flex-col">
                   <button
                     onClick={() => setSelectedContact(null)}
-                    className="flex items-center gap-2 text-accent text-[10px] font-black uppercase tracking-widest hover:opacity-70 transition-opacity self-start"
+                    className="flex items-center gap-2 text-accent text-[10px] font-semibold uppercase tracking-widest hover:opacity-70 transition-opacity self-start"
                   >
                     <ChevronRight className="w-4 h-4 rotate-180" />
                     Назад к списку
                   </button>
                   {selectedContactObj && (
-                    <div className="flex items-center gap-3 pb-3 border-b border-card-border">
-                      <img src={avatarUrl(selectedContactObj.name)} alt={selectedContactObj.name} className="w-10 h-10 rounded-2xl border border-card-border object-cover" />
+                    <div className="flex items-center gap-3 pb-3 border-b border-[#4ec9c0]/28">
+                      <img src={avatarUrl(selectedContactObj.name)} alt={selectedContactObj.name} className="w-10 h-10 rounded-2xl border border-[#4ec9c0]/28 object-cover" />
                       <div>
-                        <p className="text-sm font-bold text-primary">{selectedContactObj.name}</p>
-                        <p className="text-[10px] text-muted uppercase tracking-widest">{selectedContactObj.role}</p>
+                        <p className="text-sm font-bold text-[#d8f0ee]">{selectedContactObj.name}</p>
+                        <p className="text-[10px] text-[#7aa8a4] uppercase tracking-widest">{selectedContactObj.role}</p>
                       </div>
                     </div>
                   )}
 
                   {/* BUG_FIX_CONTEXT: Личные DM теперь в стиле «Мероприятие» —
-                      имя сверху, time-stamp, bubble bg-card/40 rounded-3xl
+                      имя сверху, time-stamp, bubble bg-[#0a2f38]/55/40 rounded-3xl
                       rounded-tl-none. Унифицировано по требованию заказчика. */}
                   <div className="flex flex-col gap-4 pt-2">
                     {(privateMessages[selectedContact] || []).map((msg, i) => {
@@ -627,7 +627,7 @@ export default function Chat() {
                         <div key={i} className="flex gap-4 group">
                           <div className={cn(
                             'w-10 h-10 rounded-2xl overflow-hidden flex items-center justify-center shrink-0 border',
-                            isUser ? 'bg-accent text-surface border-accent shadow-lg shadow-accent/20' : 'bg-card border-card-border'
+                            isUser ? 'bg-accent text-[#03161c] border-accent shadow-lg shadow-accent/20' : 'bg-card border-[#4ec9c0]/28'
                           )}>
                             {isUser ? (
                               <User className="w-5 h-5" />
@@ -637,12 +637,12 @@ export default function Chat() {
                           </div>
                           <div className="space-y-1.5 flex-1 min-w-0">
                             <div className="flex items-center gap-3">
-                              <span className={cn('text-xs font-black uppercase tracking-widest', isUser ? 'text-accent' : 'text-primary')}>
+                              <span className={cn('text-xs font-semibold uppercase tracking-widest', isUser ? 'text-accent' : 'text-[#d8f0ee]')}>
                                 {name}
                               </span>
-                              <span className="text-[9px] font-mono text-muted/40">{msg.time}</span>
+                              <span className="text-[9px] font-mono text-[#7aa8a4]/40">{msg.time}</span>
                             </div>
-                            <div className="bg-card/40 border border-card-border p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-primary/85">
+                            <div className="bg-[#0a2f38]/55/40 border border-[#4ec9c0]/28 p-4 rounded-3xl rounded-tl-none text-[13px] leading-relaxed text-[#d8f0ee]/85">
                               {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
                               {msg.media && <MediaMessage media={msg.media} role={msg.role} />}
                             </div>
@@ -659,37 +659,37 @@ export default function Chat() {
             <div className="space-y-4">
               {savedChats.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                  <div className="w-16 h-16 bg-card border border-card-border rounded-3xl flex items-center justify-center text-muted/30">
+                  <div className="w-16 h-16 bg-card border border-[#4ec9c0]/28 rounded-3xl flex items-center justify-center text-[#7aa8a4]/30">
                     <History className="w-8 h-8" />
                   </div>
                   <div className="space-y-1">
-                    <p className="text-primary font-bold">История пуста</p>
-                    <p className="text-[10px] text-muted uppercase tracking-widest">Сохраненные чаты появятся здесь</p>
+                    <p className="text-[#d8f0ee] font-bold">История пуста</p>
+                    <p className="text-[10px] text-[#7aa8a4] uppercase tracking-widest">Сохраненные чаты появятся здесь</p>
                   </div>
                 </div>
               ) : (
                 savedChats.map((chat) => (
                   <div
                     key={chat.id}
-                    className="bg-card border border-card-border rounded-3xl p-5 hover:border-accent/40 transition-all group relative overflow-hidden"
+                    className="bg-card border border-[#4ec9c0]/28 rounded-3xl p-5 hover:border-accent/40 transition-all group relative overflow-hidden"
                   >
                     <div className="flex justify-between items-start mb-3">
                       <div className="space-y-1 flex-1 min-w-0 pr-4">
-                        <p className="text-[9px] text-accent font-black uppercase tracking-widest leading-none">{chat.date}</p>
-                        <h4 className="text-sm font-bold text-primary truncate">{chat.title}</h4>
+                        <p className="text-[9px] text-accent font-semibold uppercase tracking-widest leading-none">{chat.date}</p>
+                        <h4 className="text-sm font-bold text-[#d8f0ee] truncate">{chat.title}</h4>
                       </div>
                       <button
                         onClick={() => deleteSavedChat(chat.id)}
-                        className="p-2 text-muted hover:text-red-500 transition-colors active:scale-95"
+                        className="p-2 text-[#7aa8a4] hover:text-red-500 transition-colors active:scale-95"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                     <div className="flex justify-between items-end">
-                      <p className="text-[10px] text-muted font-medium">{chat.messages.length} сообщений</p>
+                      <p className="text-[10px] text-[#7aa8a4] font-medium">{chat.messages.length} сообщений</p>
                       <button
                         onClick={() => loadSavedChat(chat)}
-                        className="flex items-center gap-2 px-4 py-2 bg-accent/10 border border-accent/20 rounded-xl text-accent text-[10px] font-black uppercase tracking-widest hover:bg-accent/20 transition-all active:scale-95"
+                        className="flex items-center gap-2 px-4 py-2 bg-accent/10 border border-accent/20 rounded-xl text-accent text-[10px] font-semibold uppercase tracking-widest hover:bg-accent/20 transition-all active:scale-95"
                       >
                         Открыть
                         <ChevronRight className="w-3 h-3" />
@@ -725,10 +725,10 @@ export default function Chat() {
                 />
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-500/90 px-2 py-1 rounded-full">
                   <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                  <span className="text-[9px] font-black text-white uppercase tracking-widest">REC</span>
+                  <span className="text-[9px] font-semibold text-white uppercase tracking-widest">REC</span>
                 </div>
               </div>
-              <div className="text-white font-mono text-2xl font-black">{fmtTimer(recordingTime)}</div>
+              <div className="text-white font-mono text-2xl font-semibold">{fmtTimer(recordingTime)}</div>
               <div className="flex items-center gap-4">
                 <button
                   onClick={cancelRecording}
@@ -739,7 +739,7 @@ export default function Chat() {
                 </button>
                 <button
                   onClick={stopMediaRecording}
-                  className="w-16 h-16 bg-accent rounded-full flex items-center justify-center text-surface shadow-lg shadow-accent/30 active:scale-95"
+                  className="w-16 h-16 bg-accent rounded-full flex items-center justify-center text-[#03161c] shadow-lg shadow-accent/30 active:scale-95"
                   aria-label="Стоп"
                 >
                   <Square className="w-7 h-7 fill-current" />
@@ -753,7 +753,7 @@ export default function Chat() {
       {/* Sticky input bar */}
       {showInputBar && (
         <div
-          className="sticky bottom-0 left-0 right-0 px-4 pt-3 bg-[#0f1218]/95 backdrop-blur-xl border-t border-card-border z-30"
+          className="sticky bottom-0 left-0 right-0 px-4 pt-3 bg-[#0f1218]/95 backdrop-blur-xl border-t border-[#4ec9c0]/28 z-30"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
         >
           <AnimatePresence>
@@ -777,7 +777,7 @@ export default function Chat() {
                 )}
                 <button
                   onClick={() => sendMultimediaMessage(mediaPreview.type, mediaPreview.url)}
-                  className="mt-2 w-full py-2 bg-accent text-surface text-[10px] font-black uppercase tracking-widest rounded-xl"
+                  className="mt-2 w-full py-2 bg-accent text-[#03161c] text-[10px] font-semibold uppercase tracking-widest rounded-xl"
                 >
                   Отправить медиа
                 </button>
@@ -794,16 +794,16 @@ export default function Chat() {
             >
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                <span className="text-sm font-mono font-black text-primary">{fmtTimer(recordingTime)}</span>
+                <span className="text-sm font-mono font-semibold text-[#d8f0ee]">{fmtTimer(recordingTime)}</span>
               </div>
               <div className="flex-1 text-center">
-                <span className="text-[10px] text-muted font-bold uppercase tracking-widest">
+                <span className="text-[10px] text-[#7aa8a4] font-bold uppercase tracking-widest">
                   Слайд влево чтобы отменить
                 </span>
               </div>
               <button
                 onClick={cancelRecording}
-                className="w-9 h-9 bg-white/5 border border-card-border rounded-xl flex items-center justify-center text-muted active:scale-95"
+                className="w-9 h-9 bg-white/5 border border-[#4ec9c0]/28 rounded-xl flex items-center justify-center text-[#7aa8a4] active:scale-95"
                 aria-label="Отмена"
               >
                 <X className="w-4 h-4" />
@@ -828,7 +828,7 @@ export default function Chat() {
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="w-11 h-11 bg-card border border-card-border rounded-[1.25rem] flex items-center justify-center text-muted hover:text-accent transition-colors active:scale-95 shrink-0"
+                className="w-11 h-11 bg-card border border-[#4ec9c0]/28 rounded-[1.25rem] flex items-center justify-center text-[#7aa8a4] hover:text-accent transition-colors active:scale-95 shrink-0"
                 aria-label="Прикрепить"
               >
                 <Paperclip className="w-5 h-5" />
@@ -844,21 +844,21 @@ export default function Chat() {
                   'Спросить ассистента...'
                 }
                 rows={1}
-                className="flex-1 bg-[#1a1e2a] border border-card-border rounded-[1.5rem] px-5 py-3 text-sm focus:outline-none focus:border-accent/40 text-primary placeholder:text-muted/60 resize-none min-h-[44px] max-h-32"
+                className="flex-1 bg-[#1a1e2a] border border-[#4ec9c0]/28 rounded-[1.5rem] px-5 py-3 text-sm focus:outline-none focus:border-accent/40 text-[#d8f0ee] placeholder:text-[#7aa8a4]/60 resize-none min-h-[44px] max-h-32"
               />
 
               {!input.trim() ? (
                 <div className="flex gap-2 shrink-0">
                   <button
                     onClick={() => startMediaRecording('audio')}
-                    className="w-11 h-11 bg-card border border-card-border rounded-[1.25rem] flex items-center justify-center text-muted hover:text-accent transition-colors active:scale-95"
+                    className="w-11 h-11 bg-card border border-[#4ec9c0]/28 rounded-[1.25rem] flex items-center justify-center text-[#7aa8a4] hover:text-accent transition-colors active:scale-95"
                     aria-label="Запись аудио"
                   >
                     <Mic className="w-5 h-5" />
                   </button>
                   <button
                     onClick={() => startMediaRecording('video')}
-                    className="w-11 h-11 bg-card border border-card-border rounded-[1.25rem] flex items-center justify-center text-muted hover:text-accent transition-colors active:scale-95"
+                    className="w-11 h-11 bg-card border border-[#4ec9c0]/28 rounded-[1.25rem] flex items-center justify-center text-[#7aa8a4] hover:text-accent transition-colors active:scale-95"
                     aria-label="Видео-сообщение"
                   >
                     <Camera className="w-5 h-5" />
@@ -868,7 +868,7 @@ export default function Chat() {
                 <button
                   onClick={handleSend}
                   disabled={loading}
-                  className="w-11 h-11 bg-accent rounded-[1.25rem] flex items-center justify-center text-surface disabled:opacity-30 disabled:grayscale transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent/20 shrink-0"
+                  className="w-11 h-11 bg-accent rounded-[1.25rem] flex items-center justify-center text-[#03161c] disabled:opacity-30 disabled:grayscale transition-all hover:scale-105 active:scale-95 shadow-lg shadow-accent/20 shrink-0"
                   aria-label="Отправить"
                 >
                   <Send className="w-5 h-5" />

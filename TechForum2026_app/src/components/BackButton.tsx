@@ -43,7 +43,7 @@ export default function BackButton({ floating = true, to, label = 'Назад' }
       type="button"
       onClick={handleClick}
       aria-label={label}
-      className={`${positionClass} h-10 w-10 flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-md text-white/85 hover:text-white hover:bg-white/[0.12] active:scale-90 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]`}
+      className={`${positionClass} h-10 w-10 flex items-center justify-center rounded-[12px] border border-[#4ec9c0]/35 bg-[#03161c]/60 backdrop-blur-md text-[#4ec9c0] hover:text-[#d8f0ee] hover:border-[#4ec9c0]/60 hover:bg-[#0a2f38]/70 active:scale-90 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]`}
       style={floating ? { top: 'calc(env(safe-area-inset-top, 0px) + 12px)' } : undefined}
     >
       <ArrowLeft className="h-5 w-5" />

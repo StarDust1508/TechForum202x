@@ -102,7 +102,7 @@ export default function NewsDetail() {
               О спикере
             </p>
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-black text-lg">
+              <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-semibold text-lg">
                 {speaker.avatarLetter}
               </div>
               <div className="flex-1 min-w-0">
