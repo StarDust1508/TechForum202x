@@ -40,6 +40,40 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import multer from 'multer';
+import { ZodError, type ZodTypeAny } from 'zod';
+import {
+  authRegisterSchema,
+  authLoginSchema,
+  authMePatchSchema,
+  meInterestsPutSchema,
+  postCreateSchema,
+  commentCreateSchema,
+  statusCreateSchema,
+  aiChatSchema,
+} from './src/lib/validation.js';
+import { log } from './src/lib/log.js';
+
+/**
+ * Express-middleware для валидации req.body через zod-схему. На ошибке
+ * возвращает 400 с массивом field-level сообщений. На успехе — мутирует
+ * req.body на типизированный результат parse, чтобы handler ниже работал
+ * с гарантированно валидным объектом без повторных приведений типов.
+ */
+function validateBody<T extends ZodTypeAny>(schema: T) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      const issues = (parsed.error as ZodError).issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      res.status(400).json({ error: 'invalid_body', issues });
+      return;
+    }
+    (req as Request & { body: unknown }).body = parsed.data;
+    next();
+  };
+}
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { eq, desc, and } from 'drizzle-orm';
@@ -188,7 +222,7 @@ async function startServer(): Promise<void> {
   }
   const sessionSecret = configuredSessionSecret || crypto.randomBytes(32).toString('hex');
   if (!isProduction && !configuredSessionSecret) {
-    console.warn('SESSION_SECRET is not set. Using ephemeral dev secret.');
+    log.warn('boot', 'SESSION_SECRET is not set. Using ephemeral dev secret.');
   }
 
   // BUG_FIX_CONTEXT: trust proxy=1 включаем ТОЛЬКО когда мы реально за reverse-proxy
@@ -205,6 +239,31 @@ async function startServer(): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // BUG_FIX_CONTEXT (FIND-012): CSP только в production. В dev Vite инжектит
+    // inline-скрипты для HMR/react-refresh — strict 'self' их блокирует и
+    // страница остаётся пустой. 'unsafe-inline' для script — index.html
+    // содержит inline `<script>navigator.serviceWorker.register(...)</script>`.
+    if (isProduction) {
+      res.setHeader(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          "img-src 'self' data: blob: https://api.dicebear.com http://72.56.9.90:3100 https://72.56.9.90:3100",
+          "script-src 'self' 'unsafe-inline'",
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "font-src 'self' data: https://fonts.gstatic.com",
+          "connect-src 'self' http://72.56.9.90:3100 https://72.56.9.90:3100 ws://72.56.9.90:3100 wss://72.56.9.90:3100 capacitor://localhost",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join('; ')
+      );
+      // BUG_FIX_CONTEXT: HSTS отключён пока backend на cleartext IP.
+      // С HSTS WebView-кеш заставляет upgrade http://72.56.9.90:3100 →
+      // https://72.56.9.90:3100, которого нет → "ERR_CONNECTION_REFUSED".
+      // Юзер видит "нет сети". Включим обратно когда будет domain + cert.
+      // res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     next();
   });
   // BUG_FIX_CONTEXT: Пока у нас нет domain + Let's Encrypt сертификата, APK
@@ -217,7 +276,7 @@ async function startServer(): Promise<void> {
     : cookieSecureEnv === 'false' ? false
     : isProduction;
   if (isProduction && !cookieSecure) {
-    console.warn('[security] COOKIE_SECURE=false in production. OK ONLY for HTTP-only deployments without HTTPS — switch to true after getting a domain + cert.');
+    log.warn('security', 'COOKIE_SECURE=false in production. OK ONLY for HTTP-only deployments — switch to true after domain+cert.');
   }
 
   // BUG_FIX_CONTEXT: До v2.1 express-session использовал дефолтный MemoryStore —
@@ -276,6 +335,30 @@ async function startServer(): Promise<void> {
     console.warn('CORS_ALLOW_ORIGINS is not set in production. Browser cross-origin requests will be rejected.');
   }
 
+  // BUG_FIX_CONTEXT (FIND-008): Origin-based CSRF mitigation. Для mutating
+  // методов (POST/PUT/PATCH/DELETE) проверяем Origin/Referer:
+  //   - Если Origin есть и НЕ в allowedOrigins → 403. CORS-блок ниже всё
+  //     равно отбросит ответ браузеру, но Origin-check срабатывает РАНЬШЕ
+  //     bus-логики — не даём атакующему даже вычислить ответ через side
+  //     effects (БД insert, AI quota).
+  //   - Если Origin отсутствует (server-to-server, native APK без Origin)
+  //     — пропускаем. Capacitor APK ставит Origin=capacitor://localhost,
+  //     который мы добавили в CORS_ALLOW_ORIGINS.
+  // Cross-site cookie-сессионная атака с другого домена не пройдёт:
+  // (a) браузер не отдаст cookie на cross-site POST с SameSite=lax,
+  // (b) этот middleware дополнительно режет на уровне Origin.
+  const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  app.use((req, res, next) => {
+    if (!MUTATING_METHODS.has(req.method)) { next(); return; }
+    const origin = req.header('origin');
+    if (!origin) { next(); return; }
+    if (!allowedOrigins.includes(origin)) {
+      res.status(403).json({ error: 'origin_not_allowed', message: `Origin ${origin} blocked by CSRF guard` });
+      return;
+    }
+    next();
+  });
+
   app.use((req, res, next) => {
     const origin = req.header('origin');
     if (!origin) {
@@ -318,9 +401,9 @@ async function startServer(): Promise<void> {
   // Sanity-check соединения с БД до старта роутов.
   try {
     await pool.query('SELECT 1');
-    console.log('[db] connection OK');
+    log.info('db', 'connection OK');
   } catch (err) {
-    console.error('[db] connection FAILED — aborting server start:', err);
+    log.error('db', 'connection FAILED — aborting server start', { err: String(err) });
     process.exit(1);
   }
 
@@ -412,14 +495,8 @@ async function startServer(): Promise<void> {
 
   const SYSTEM_INSTRUCTION = `Ты — AI-ассистент конференции TechForum 2026. Отвечай по-русски, кратко (2-4 предложения) и по делу. Используй ТОЛЬКО факты из контекста программы ниже, не выдумывай сессий и спикеров. Если вопрос вне программы — говори "не нашёл этого в программе" и предлагай ближайшую релевантную сессию из контекста.`;
 
-  api.post('/ai/chat', aiRateLimit, requireAuth, async (req, res) => {
-    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    const userContext = typeof req.body?.context === 'string' ? req.body.context.slice(0, 20000) : '';
-
-    if (!message) {
-      res.status(400).json({ error: 'message_required' });
-      return;
-    }
+  api.post('/ai/chat', aiRateLimit, requireAuth, validateBody(aiChatSchema), async (req, res) => {
+    const { message, context: userContext } = req.body as import('./src/lib/validation.js').AiChatBody;
 
     if (!gemini) {
       res.status(503).json({ error: 'ai_not_configured' });
@@ -449,7 +526,7 @@ async function startServer(): Promise<void> {
       }
       res.json({ text });
     } catch (error) {
-      console.error('AI chat error:', error);
+      log.error('ai', 'chat error', { err: String(error) });
       res.status(502).json({ error: 'ai_unavailable' });
     }
   });
@@ -458,15 +535,8 @@ async function startServer(): Promise<void> {
   // AUTH
   // ========================================================================
 
-  api.post('/auth/register', authRateLimit, async (req, res) => {
-    const email = normalizeEmail(String(req.body?.email || ''));
-    const password = String(req.body?.password || '');
-    const name = String(req.body?.name || '').trim();
-
-    if (!email || !password || !name) {
-      res.status(400).json({ error: 'Заполните обязательные поля: email, password, name' });
-      return;
-    }
+  api.post('/auth/register', authRateLimit, validateBody(authRegisterSchema), async (req, res) => {
+    const { email, password, name } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
 
     const existing = await findUserByEmail(email);
     if (existing) {
@@ -499,9 +569,8 @@ async function startServer(): Promise<void> {
     res.json({ ...toPublicUser(created), interestsCount: 0 });
   });
 
-  api.post('/auth/login', authRateLimit, async (req, res) => {
-    const email = normalizeEmail(String(req.body?.email || ''));
-    const password = String(req.body?.password || '');
+  api.post('/auth/login', authRateLimit, validateBody(authLoginSchema), async (req, res) => {
+    const { email, password } = req.body as import('./src/lib/validation.js').AuthLoginBody;
     const user = await findUserByEmail(email);
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
@@ -538,7 +607,7 @@ async function startServer(): Promise<void> {
     res.json({ ...toPublicUser(user), interestsCount: myInterests.length });
   });
 
-  api.patch('/auth/me', requireAuth, async (req, res) => {
+  api.patch('/auth/me', requireAuth, validateBody(authMePatchSchema), async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Не авторизован' });
@@ -551,10 +620,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : undefined;
-    const bio = typeof req.body?.bio === 'string' ? req.body.bio : undefined;
-    const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : undefined;
-    const emailRaw = typeof req.body?.email === 'string' ? normalizeEmail(req.body.email) : undefined;
+    const { name, bio, phone, email: emailRaw } = req.body as import('./src/lib/validation.js').AuthMePatchBody;
 
     let nextEmail = user.email;
     if (emailRaw && emailRaw !== user.email) {
@@ -623,17 +689,13 @@ async function startServer(): Promise<void> {
   // POSTS / COMMENTS / LIKES
   // ========================================================================
 
-  api.post('/posts', requireAuth, async (req, res) => {
+  api.post('/posts', requireAuth, validateBody(postCreateSchema), async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
-
-    const type = String(req.body?.type || 'text');
-    const url = String(req.body?.url || '');
-    const text = String(req.body?.text || '');
-
+    const { type, url, text } = req.body as import('./src/lib/validation.js').PostCreateBody;
     const id = crypto.randomUUID();
     await db.insert(posts).values({ id, userId, type, url, text });
 
@@ -751,22 +813,18 @@ async function startServer(): Promise<void> {
     res.json({ likes: totalLikes, liked });
   });
 
-  api.post('/posts/:id/comment', requireAuth, async (req, res) => {
+  api.post('/posts/:id/comment', requireAuth, validateBody(commentCreateSchema), async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
     const postId = String(req.params.id);
-    const text = String(req.body?.text || '').trim();
+    const { text } = req.body as import('./src/lib/validation.js').CommentCreateBody;
 
     const post = (await db.select().from(posts).where(eq(posts.id, postId)).limit(1))[0];
     if (!post) {
       res.status(404).json({ error: 'Пост не найден' });
-      return;
-    }
-    if (!text) {
-      res.status(400).json({ error: 'Комментарий пустой' });
       return;
     }
 
@@ -789,16 +847,14 @@ async function startServer(): Promise<void> {
   // STATUSES (24h-stories)
   // ========================================================================
 
-  api.post('/statuses', requireAuth, async (req, res) => {
+  api.post('/statuses', requireAuth, validateBody(statusCreateSchema), async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
     const id = crypto.randomUUID();
-    const type = String(req.body?.type || 'status');
-    const url = String(req.body?.url || '');
-    const text = String(req.body?.text || '');
+    const { type, url, text } = req.body as import('./src/lib/validation.js').StatusCreateBody;
 
     await db.insert(statuses).values({ id, userId, type, url, text });
     const inserted = (await db.select().from(statuses).where(eq(statuses.id, id)).limit(1))[0];
@@ -842,23 +898,15 @@ async function startServer(): Promise<void> {
     res.json({ interestIds: rows.map(r => r.interestId) });
   });
 
-  api.put('/me/interests', requireAuth, async (req, res) => {
+  api.put('/me/interests', requireAuth, validateBody(meInterestsPutSchema), async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) {
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
-    const raw = req.body?.interestIds;
-    if (!Array.isArray(raw)) {
-      res.status(400).json({ error: 'interestIds must be array' });
-      return;
-    }
+    const { interestIds } = req.body as import('./src/lib/validation.js').MeInterestsPutBody;
     const validIds = new Set(INTERESTS.map((i: { id: string }) => i.id));
-    const incoming = Array.from(new Set(raw.map(String))).filter(id => validIds.has(id));
-    if (incoming.length > 10) {
-      res.status(400).json({ error: 'too_many_interests', message: 'Максимум 10 направлений' });
-      return;
-    }
+    const incoming = Array.from(new Set(interestIds)).filter(id => validIds.has(id));
     // Atomic delete + insert. Drizzle pg-pool поддерживает .transaction().
     await db.transaction(async (tx) => {
       await tx.delete(userInterests).where(eq(userInterests.userId, userId));
