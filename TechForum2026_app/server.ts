@@ -762,8 +762,24 @@ async function startServer(): Promise<void> {
     log.info('forgot-password', `RESET TOKEN issued for ${email}`, { link, ttl: '30m' });
   }
 
+  // Глобальная очистка истёкших reset-токенов. Дешёвая (один DELETE WHERE
+  // expires_at < now()) и предотвращает рост таблицы при долгой истории.
+  // Вызывается при каждом /start — в худшем случае O(rows) раз в сутки.
+  let lastGlobalResetCleanup = 0;
+  async function cleanupExpiredResetTokensIfStale(): Promise<void> {
+    const now = Date.now();
+    if (now - lastGlobalResetCleanup < 60 * 60 * 1000) return; // не чаще раза в час
+    lastGlobalResetCleanup = now;
+    try {
+      await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, new Date()));
+    } catch (err) {
+      log.warn('forgot-password', 'global cleanup failed', { err: String(err) });
+    }
+  }
+
   api.post('/auth/forgot-password/start', forgotRateLimit, validateBody(forgotPasswordStartSchema), async (req, res) => {
     const { email } = req.body as import('./src/lib/validation.js').ForgotPasswordStartBody;
+    await cleanupExpiredResetTokensIfStale();
     const user = await findUserByEmail(email);
 
     // Anti-enumeration: всегда отвечаем 200, даже если юзера нет.
@@ -1232,6 +1248,13 @@ async function startServer(): Promise<void> {
 
   // BUG_FIX_CONTEXT: ICS для одной сессии — анонимный, не требует auth.
   // Полезно когда юзер делится ссылкой "добавить эту сессию" со знакомым.
+  //
+  // TECH_DEBT (audit P0.4): этот хендлер и /sessions/calendar читают сессии
+  // из data.ts (`SESSIONS.find(...)`), а регистрации — из БД. Если data.ts
+  // и БД рассинхронизированы (программу правили без re-seed), юзер увидит
+  // старую информацию. Долгосрочный фикс — JOIN из sessionsEvent + speakers
+  // + halls + days. НЕ сделано в текущем рефакторинге, чтобы не сломать
+  // .ics-формат, который уже работает на проде.
   api.get('/sessions/:id/calendar', (req, res) => {
     const sessionId = String(req.params.id);
     const sess = SESSIONS.find(s => s.id === sessionId);
