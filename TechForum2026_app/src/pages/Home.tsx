@@ -45,7 +45,7 @@ export default function Home() {
         <EventBadge to="/about" />
       </div>
 
-      <section className="mt-9 grid grid-cols-3 gap-x-3 gap-y-7">
+      <section className="mt-9 grid grid-cols-3 place-items-center gap-x-2 gap-y-6">
         {menuItems.map(({ label, icon, to }) => (
           <IconTile key={label} label={label} icon={icon} to={to} />
         ))}

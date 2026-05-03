@@ -23,6 +23,9 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  // BUG_FIX: бэкенд после POST /me/avatar возвращает тот же путь (/uploads/<id>.jpg),
+  // браузер кеширует картинку и не показывает новую. Инкрементим версию-busterа.
+  const [avatarVersion, setAvatarVersion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleLogout = async () => {
@@ -98,6 +101,7 @@ export default function Profile({ user: initialUser }: ProfileProps) {
       }
       const data = await res.json();
       setUser((prev: any) => ({ ...prev, avatar: data.avatar }));
+      setAvatarVersion((v) => v + 1);
     } catch (err) {
       console.error('Avatar upload failed', err);
       setAvatarError(err instanceof Error ? err.message : 'upload_failed');
@@ -107,7 +111,8 @@ export default function Profile({ user: initialUser }: ProfileProps) {
     }
   };
 
-  const avatarSrc = resolveAssetUrl(user.avatar);
+  const avatarBase = resolveAssetUrl(user.avatar);
+  const avatarSrc = avatarBase ? `${avatarBase}${avatarBase.includes('?') ? '&' : '?'}v=${avatarVersion}` : avatarBase;
 
   return (
     <div className="flex-1 pb-24 pt-12 px-6 space-y-8 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
@@ -130,38 +135,40 @@ export default function Profile({ user: initialUser }: ProfileProps) {
           </span>
         </div>
         <div className="space-y-1">
-          <h1 className="text-2xl font-black text-white">{user.name}</h1>
-          <p className="text-[10px] font-black text-accent uppercase tracking-[0.3em]">{user.role || 'Пользователь'}</p>
+          <h1 className="font-display-cyrl text-[26px] font-semibold text-[#d8f0ee] tracking-wide">{user.name}</h1>
+          <p className="font-mono text-[11px] text-[#4ec9c0]/85 uppercase tracking-[0.3em]">{user.role || 'Пользователь'}</p>
         </div>
       </header>
 
       <div className="space-y-4">
-        <div className="bg-[#0a2f38]/40 backdrop-blur-md border border-card-border rounded-[2rem] p-6 space-y-6 shadow-xl">
-          <h2 className="text-[10px] font-black text-white/40 uppercase tracking-[0.4em] mb-2 px-1">Настройки аккаунта</h2>
+        <div className="rounded-[20px] border border-[#4ec9c0]/30 bg-[#0a2f38]/55 backdrop-blur-md p-5 space-y-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+          <h2 className="font-display-cyrl text-[11px] uppercase tracking-[0.32em] text-[#7aa8a4]">
+            Настройки аккаунта
+          </h2>
 
           <div className="space-y-2">
             <button
               onClick={() => setShowEdit(true)}
-              className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-all group"
+              className="w-full flex items-center justify-between p-4 rounded-[14px] border border-[#4ec9c0]/20 bg-[#03161c]/40 hover:border-[#4ec9c0]/45 hover:bg-[#03161c]/60 active:scale-[0.99] transition-all group"
             >
               <div className="flex items-center gap-4">
-                <Settings className="w-5 h-5 text-accent" />
-                <span className="text-xs font-black uppercase tracking-widest text-primary">Био и Профиль</span>
+                <Settings className="w-5 h-5 text-[#4ec9c0]" strokeWidth={1.5} />
+                <span className="font-display-cyrl text-[15px] text-[#d8f0ee]">Профиль</span>
               </div>
-              <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-accent" />
+              <ChevronRight className="w-4 h-4 text-[#7aa8a4] group-hover:text-[#4ec9c0]" strokeWidth={1.6} />
             </button>
 
             <button
               onClick={() => setShowSecurity(true)}
-              className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-all group"
+              className="w-full flex items-center justify-between p-4 rounded-[14px] border border-[#4ec9c0]/20 bg-[#03161c]/40 hover:border-[#4ec9c0]/45 hover:bg-[#03161c]/60 active:scale-[0.99] transition-all group"
             >
               <div className="flex items-center gap-4">
-                <Shield className="w-5 h-5 text-accent" />
-                <span className="text-xs font-black uppercase tracking-widest text-primary">Безопасность</span>
+                <Shield className="w-5 h-5 text-[#4ec9c0]" strokeWidth={1.5} />
+                <span className="font-display-cyrl text-[15px] text-[#d8f0ee]">Безопасность</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black text-accent border border-accent/20 px-1.5 py-0.5 rounded">HIGH</span>
-                <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-accent" />
+                <span className="font-mono text-[9px] tracking-widest text-[#4ec9c0] border border-[#4ec9c0]/35 px-1.5 py-0.5 rounded">152-ФЗ</span>
+                <ChevronRight className="w-4 h-4 text-[#7aa8a4] group-hover:text-[#4ec9c0]" strokeWidth={1.6} />
               </div>
             </button>
           </div>
@@ -169,13 +176,13 @@ export default function Profile({ user: initialUser }: ProfileProps) {
 
         <button
           onClick={handleLogout}
-          className="w-full flex items-center justify-between p-6 bg-red-500/5 border border-red-500/10 rounded-[2rem] hover:bg-red-500/10 transition-all group"
+          className="w-full flex items-center justify-between p-5 rounded-[20px] border border-rose-500/25 bg-rose-500/[0.04] hover:bg-rose-500/[0.10] hover:border-rose-500/40 active:scale-[0.99] transition-all group"
         >
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-red-500/10 rounded-2xl flex items-center justify-center">
-              <LogOut className="w-5 h-5 text-red-500/60" />
+            <div className="w-10 h-10 bg-rose-500/10 border border-rose-500/30 rounded-[10px] flex items-center justify-center">
+              <LogOut className="w-5 h-5 text-rose-300" strokeWidth={1.6} />
             </div>
-            <span className="text-sm font-black uppercase tracking-widest text-red-500/80">Выйти из системы</span>
+            <span className="font-display-cyrl text-[15px] text-rose-200">Выйти из системы</span>
           </div>
         </button>
       </div>
@@ -271,15 +278,28 @@ export default function Profile({ user: initialUser }: ProfileProps) {
                     <div className="relative">
                       <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
                       <input
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        placeholder="+7 (___) ___-__-__"
                         value={editForm.phone}
-                        onChange={e => setEditForm({...editForm, phone: e.target.value})}
+                        onFocus={() => {
+                          // Префилл «+7 » при первом фокусе на пустое поле — чтобы юзер
+                          // сразу видел маску и понимал формат.
+                          if (!editForm.phone.trim()) setEditForm((f) => ({ ...f, phone: '+7 ' }));
+                        }}
+                        onChange={(e) => {
+                          // Не даём стереть префикс «+7 ».
+                          const v = e.target.value;
+                          setEditForm({ ...editForm, phone: v.startsWith('+7') ? v : '+7 ' });
+                        }}
                         className="w-full bg-card border border-card-border rounded-2xl py-4 pl-12 pr-4 text-sm focus:border-accent outline-none"
                       />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">О себе (Био)</label>
+                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">О себе</label>
                     <div className="relative">
                       <Info className="absolute left-4 top-4 w-4 h-4 text-accent" />
                       <textarea

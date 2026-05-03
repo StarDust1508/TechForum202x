@@ -184,26 +184,29 @@ export default function Auth({ onSuccess }: AuthProps) {
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
         }}
       >
-        {/* BACKEND_DIAG: версионный бейдж + кнопка "Тест связи". Удалить
-            после стабилизации cleartext-конфига. */}
-        <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
-          build nsc-debug-fix · diag
-        </div>
-        <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
-          <button
-            type="button"
-            onClick={runConnectivityProbe}
-            disabled={probing}
-            className="text-[10px] font-mono px-2 py-1 rounded border border-[#4ec9c0]/40 text-[#d8f0ee] bg-[#03161c]/80 active:bg-[#4ec9c0]/15 disabled:opacity-50"
-          >
-            {probing ? '…' : 'TEST /health'}
-          </button>
-          {probeResult && (
-            <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/90 break-all bg-[#03161c]/85 px-2 py-1 rounded border border-[#4ec9c0]/20 select-text">
-              {probeResult}
-            </p>
-          )}
-        </div>
+        {/* DIAG-плашки скрыты в production — видны только в dev (npm run dev). */}
+        {import.meta.env.DEV && (
+          <>
+            <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
+              build nsc-debug-fix · diag
+            </div>
+            <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
+              <button
+                type="button"
+                onClick={runConnectivityProbe}
+                disabled={probing}
+                className="text-[10px] font-mono px-2 py-1 rounded border border-[#4ec9c0]/40 text-[#d8f0ee] bg-[#03161c]/80 active:bg-[#4ec9c0]/15 disabled:opacity-50"
+              >
+                {probing ? '…' : 'TEST /health'}
+              </button>
+              {probeResult && (
+                <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/90 break-all bg-[#03161c]/85 px-2 py-1 rounded border border-[#4ec9c0]/20 select-text">
+                  {probeResult}
+                </p>
+              )}
+            </div>
+          </>
+        )}
 
         <BrandTitle />
 
@@ -324,7 +327,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               )}
             </AnimatePresence>
 
-            {debugInfo && (
+            {import.meta.env.DEV && debugInfo && (
               <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/80 break-all bg-[#03161c]/70 border border-[#4ec9c0]/20 rounded p-2 select-text">
                 {debugInfo}
               </p>
