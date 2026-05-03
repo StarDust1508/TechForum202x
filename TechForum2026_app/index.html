@@ -21,13 +21,23 @@
     <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png" />
     <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png" />
 
-    <!-- Регистрация Service Worker (offline + installable) -->
+    <!-- DIAG: SW регистрация ОТКЛЮЧЕНА. Дополнительно агрессивно
+         unregister'им все ранее установленные SW и чистим caches —
+         старый SW из предыдущих APK переживает переустановку
+         (WebView хранит SW-state отдельно) и режет fetch'и. -->
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW register failed', err));
-        });
-      }
+      (async function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) { try { await r.unregister(); } catch (_) {} }
+          }
+          if (typeof caches !== 'undefined' && caches.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k).catch(() => false)));
+          }
+        } catch (_) {}
+      })();
     </script>
   </head>
   <body>

@@ -155,6 +155,29 @@ export default function Auth({ onSuccess }: AuthProps) {
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 28px)',
         }}
       >
+        {/* DIAG: версионный бейдж + всегда-видимая кнопка "Тест связи".
+            Чтобы можно было удостовериться, что установлен именно этот APK,
+            и проверить связь с сервером прямо со старта. Удалить после
+            стабилизации. */}
+        <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
+          build d180647 · diag
+        </div>
+        <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
+          <button
+            type="button"
+            onClick={runConnectivityProbe}
+            disabled={probing}
+            className="text-[10px] font-mono px-2 py-1 rounded border border-[#4ec9c0]/40 text-[#d8f0ee] bg-[#03161c]/80 active:bg-[#4ec9c0]/15 disabled:opacity-50"
+          >
+            {probing ? '…' : 'TEST /health'}
+          </button>
+          {probeResult && (
+            <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/90 break-all bg-[#03161c]/85 px-2 py-1 rounded border border-[#4ec9c0]/20 select-text">
+              {probeResult}
+            </p>
+          )}
+        </div>
+
         <BrandTitle />
 
         <div className="mt-5 flex justify-center">
