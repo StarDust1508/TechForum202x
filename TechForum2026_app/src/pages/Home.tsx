@@ -40,7 +40,7 @@ export default function Home() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
       }}
     >
-      <BrandTitle />
+      <BrandTitle animateYear={false} />
       <div className="mt-5 flex justify-center">
         <EventBadge to="/about" />
       </div>

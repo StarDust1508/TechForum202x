@@ -10,8 +10,8 @@ interface CheckboxProps {
 
 export default function Checkbox({ checked, onChange, children, id }: CheckboxProps) {
   return (
-    <label htmlFor={id} className="flex items-start gap-3 cursor-pointer select-none">
-      <span className="relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border border-[#4ec9c0]/55 bg-[#03161c]/40 transition-colors">
+    <label htmlFor={id} className="flex items-center gap-3 cursor-pointer select-none">
+      <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] border border-[#4ec9c0]/55 bg-[#03161c]/40 transition-colors">
         <input
           id={id}
           type="checkbox"
