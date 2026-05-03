@@ -5,12 +5,7 @@ const config: CapacitorConfig = {
   appName: 'TechForum 2026',
   webDir: 'dist',
   server: {
-    // CRITICAL: androidScheme ОБЯЗАН быть 'http' пока бэкенд по cleartext
-    // http://72.56.9.90:3100 (нет домена + Let's Encrypt). При 'https' WebView
-    // origin = https://localhost, fetch к http://... блокируется как mixed content
-    // (allowMixedContent на Android 9+ для XHR/fetch не помогает). Симптом —
-    // "Нет соединения с сервером" на регистрации/логине. См. ARCHITECTURE.md §8.
-    // НЕ менять обратно на 'https' до полной миграции на HTTPS-домен.
+    // androidScheme: 'http' пока бэкенд по cleartext IP. См. ARCHITECTURE.md §8.
     androidScheme: 'http',
     cleartext: true,
     allowNavigation: [
@@ -20,6 +15,21 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: true,
+  },
+  plugins: {
+    // CRITICAL: CapacitorHttp перехватывает fetch/XHR в WebView и пускает их
+    // через нативный OkHttp-стек. Это:
+    //   - обходит блок WebView'ом cleartext-fetch к raw IP (Failed to fetch)
+    //   - обходит CORS (нативный запрос, не cross-origin)
+    //   - обходит mixed-content блок Android 9+
+    //   - обходит ServiceWorker и любые WebView-cache мисхэппы
+    // БЕЗ него регистрация падала с "Нет соединения с сервером" на всех
+    // мобильных устройствах, хотя бэк жив и curl с ноутбука работает.
+    // Когда переедем на HTTPS-домен, можно отключить и вернуться на стандартный
+    // WebView-fetch, но и так оставить безопасно.
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
 };
 
