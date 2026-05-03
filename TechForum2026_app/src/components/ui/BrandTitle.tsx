@@ -7,14 +7,32 @@ interface BrandTitleProps {
   style?: CSSProperties;
   /** Год набирается посимвольно (Splash, Auth). На Home обычно false. */
   animateYear?: boolean;
+  /** Компактный размер для Home, чтобы все 12 плиток влезли в экран. */
+  compact?: boolean;
+  /** Один ряд (BRAND YEAR через пробел) вместо двух — для узких слотов. */
+  inline?: boolean;
 }
 
-export default function BrandTitle({ className = '', style, animateYear = true }: BrandTitleProps) {
+export default function BrandTitle({ className = '', style, animateYear = true, compact = false, inline = false }: BrandTitleProps) {
+  const sizeClamp = compact ? 'clamp(28px, 8vw, 38px)' : 'clamp(40px, 12.5vw, 60px)';
+  const renderYear = animateYear
+    ? EVENT_YEAR.split('').map((d, i) => (
+        <motion.span
+          key={i}
+          initial={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          transition={{ delay: 0.35 + i * 0.16, duration: 0.38, ease: [0.32, 0.72, 0, 1] }}
+          className="inline-block"
+        >
+          {d}
+        </motion.span>
+      ))
+    : EVENT_YEAR;
   return (
     <h1
       className={`font-display text-center text-[#d8f0ee] drop-shadow-[0_8px_28px_rgba(78,201,192,0.4)] ${className}`}
       style={{
-        fontSize: 'clamp(40px, 12.5vw, 60px)',
+        fontSize: sizeClamp,
         lineHeight: 0.95,
         fontWeight: 600,
         letterSpacing: '0.02em',
@@ -22,21 +40,11 @@ export default function BrandTitle({ className = '', style, animateYear = true }
       }}
     >
       {EVENT_BRAND}
-      <span aria-label={EVENT_YEAR} className="block mt-1">
-        {animateYear
-          ? EVENT_YEAR.split('').map((d, i) => (
-              <motion.span
-                key={i}
-                initial={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ delay: 0.35 + i * 0.16, duration: 0.38, ease: [0.32, 0.72, 0, 1] }}
-                className="inline-block"
-              >
-                {d}
-              </motion.span>
-            ))
-          : EVENT_YEAR}
-      </span>
+      {inline ? (
+        <> <span aria-label={EVENT_YEAR}>{renderYear}</span></>
+      ) : (
+        <span aria-label={EVENT_YEAR} className="block mt-1">{renderYear}</span>
+      )}
     </h1>
   );
 }

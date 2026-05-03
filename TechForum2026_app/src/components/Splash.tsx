@@ -1,57 +1,47 @@
 import { motion } from 'motion/react';
-import { EVENT_YEAR } from '@/src/lib/event';
+import AppBackground from './AppBackground';
+import BrandTitle from './ui/BrandTitle';
+import EventBadge from './ui/EventBadge';
 
 // Splash экран — встречает юзера при холодном старте.
-// Источник изображения: эталон от заказчика (HUD-композиция с глобусом + лог).
+// Раньше использовался splash-bg.jpg с object-cover, но на узких/высоких
+// экранах изображение обрезалось (юзер описывал как «скукоженное»).
+// Теперь — единый brand-фон AppBackground + рендерим BrandTitle поверх,
+// так Splash и Auth выглядят согласованно.
 export default function Splash() {
   return (
-    <div
-      className="relative bg-[#03161c] overflow-hidden"
-      style={{ minHeight: '100lvh' }}
-    >
-      <img
-        src="/splash-bg.jpg"
-        alt=""
-        aria-hidden="true"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_55%,rgba(3,22,28,0.55)_85%,rgba(3,22,28,0.85)_100%)]" />
-
+    <AppBackground>
       <div
-        className="relative z-10 flex h-full w-full items-end justify-center"
+        className="flex flex-1 flex-col items-center justify-center px-6"
         style={{
           minHeight: '100lvh',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
         }}
       >
-        <div className="flex flex-col items-center gap-1">
-          <motion.span
-            aria-hidden
-            className="font-display text-[#d8f0ee]/85 text-[22px] tracking-[0.3em]"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2, duration: 0.5 }}
-          >
-            ─ ◆ ─
-          </motion.span>
-          <h1
-            aria-label={EVENT_YEAR}
-            className="font-display text-[#4ec9c0] tracking-[0.18em] flex gap-1 drop-shadow-[0_0_24px_rgba(78,201,192,0.6)]"
-            style={{ fontSize: 'clamp(48px, 14vw, 72px)', lineHeight: 1, fontWeight: 600 }}
-          >
-            {EVENT_YEAR.split('').map((d, i) => (
-              <motion.span
-                key={i}
-                initial={{ opacity: 0, y: 12, filter: 'blur(8px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                transition={{ delay: 0.45 + i * 0.18, duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-              >
-                {d}
-              </motion.span>
-            ))}
-          </h1>
+        <BrandTitle animateYear />
+
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.5 }}
+          className="mt-6"
+        >
+          <EventBadge />
+        </motion.div>
+
+        {/* Подгрузочный аккорд — три точки-tracker'а в blueprint-стиле. */}
+        <div className="mt-10 flex items-center gap-2">
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="w-1.5 h-1.5 rounded-full bg-[#4ec9c0]"
+              animate={{ opacity: [0.25, 1, 0.25] }}
+              transition={{ delay: i * 0.15, duration: 1.0, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          ))}
         </div>
       </div>
-    </div>
+    </AppBackground>
   );
 }

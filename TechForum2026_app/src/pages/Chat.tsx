@@ -540,8 +540,13 @@ export default function Chat() {
   const selectedContactObj = contacts.find((c) => c.id === selectedContact);
 
   return (
-    <div className="flex flex-col h-full bg-[#03161c] relative overflow-hidden">
-      {/* Sticky header */}
+    // Унифицированная структура для всех 4 вкладок (Мероприятие/Личные/
+    // Ассистент/История): один blueprint-фон через AppBackground, sticky
+    // header с одинаковыми табами, контент-зона. Раньше у каждой вкладки
+    // мог незаметно отличаться bg/padding/scroll — теперь всё в одном
+    // wrapper'е и единой scroll-логике.
+    <div className="flex flex-col h-full relative overflow-hidden">
+      {/* Sticky header — одинаковый bg для всех вкладок */}
       <header
         className="sticky top-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-b border-[#4ec9c0]/28"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)' }}

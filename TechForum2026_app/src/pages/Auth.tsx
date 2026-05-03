@@ -250,12 +250,15 @@ export default function Auth({ onSuccess }: AuthProps) {
         он пересчитывался и пампил контент. Сейчас фикс-высота 100lvh + слоты
         фиксированной высоты под title и форму, tagline absolute.
       */}
+      {/* Без minHeight: 100lvh — позволяем странице расти по контенту, чтобы
+          родительский scroll-контейнер (App.tsx) корректно прокручивал на
+          маленьких экранах. Раньше при появлении клавиатуры контент
+          переворачивался и tagline уезжал за границу. */}
       <div
         className="relative px-6"
         style={{
-          minHeight: '100lvh',
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 36px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
         }}
       >
         {/* DIAG-плашки скрыты в production — видны только в dev (npm run dev). */}
@@ -282,17 +285,18 @@ export default function Auth({ onSuccess }: AuthProps) {
           </>
         )}
 
-        {/* На Auth год не анимируем: каждый возврат с register→login дёргал
-            blur-flash. Сильную анимацию оставляем только на Splash. */}
-        <BrandTitle />
+        {/* На Auth год не анимируем: каждый key-change компонента триггерил
+            blur-reveal по цифрам — юзер воспринимает это как "шрифт меняется
+            на ходу". compact чтобы не съедать половину экрана. */}
+        <BrandTitle animateYear={false} compact />
 
-        <div className="mt-5 flex justify-center">
+        <div className="mt-3 flex justify-center">
           <EventBadge />
         </div>
 
         {/* Слот заголовка фиксированной высоты — иначе AnimatePresence на h2
             даёт скачок при смене режима. */}
-        <div className="relative mt-8 mb-5 h-9">
+        <div className="relative mt-6 mb-4 h-9">
           <AnimatePresence mode="wait" initial={false}>
             <motion.h2
               key={`title-${mode}`}
@@ -426,10 +430,9 @@ export default function Auth({ onSuccess }: AuthProps) {
           </button>
         </div>
 
-        <p
-          className="pointer-events-none absolute bottom-6 right-6 max-w-[220px] text-right font-display-cyrl text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-        >
+        {/* Tagline в обычном flow (не absolute) — чтобы не перекрывал форму
+            на маленьких экранах и корректно прокручивался вместе со всем. */}
+        <p className="mt-10 mx-auto max-w-[260px] text-center font-display-cyrl text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line">
           {sectionTagline}
         </p>
       </div>

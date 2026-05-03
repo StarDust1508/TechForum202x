@@ -34,18 +34,21 @@ const menuItems = [
 export default function Home() {
   return (
     <div
-      className="px-6 pb-10"
+      className="px-5 pb-6"
       style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 28px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
       }}
     >
-      <BrandTitle animateYear={false} />
-      <div className="mt-5 flex justify-center">
+      {/* Компактный размер: 12 плиток должны вмещаться без скролла на
+          стандартных Android (≤6.7"), а если экран совсем маленький —
+          скролл-родитель (App.tsx) корректно прокручивает. */}
+      <BrandTitle animateYear={false} compact />
+      <div className="mt-3 flex justify-center">
         <EventBadge to="/about" />
       </div>
 
-      <section className="mt-9 grid grid-cols-3 place-items-center gap-x-2 gap-y-6">
+      <section className="mt-4 grid grid-cols-3 place-items-center gap-x-2 gap-y-3">
         {menuItems.map(({ label, icon, to }) => (
           <IconTile key={label} label={label} icon={icon} to={to} />
         ))}

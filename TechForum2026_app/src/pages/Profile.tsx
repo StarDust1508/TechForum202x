@@ -124,10 +124,16 @@ export default function Profile({ user: initialUser }: ProfileProps) {
     }
   };
 
-  const avatarBase = resolveAssetUrl(user.avatar);
-  const avatarSrc = avatarBase ? `${avatarBase}${avatarBase.includes('?') ? '&' : '?'}v=${avatarVersion}` : avatarBase;
+  // Аватар считается «своим загруженным» только если URL указывает на наш
+  // /uploads/ — dicebear-фоллбэк (default seed на бэке) не считается реальным
+  // фото. По требованию юзера: пустое нейтральное состояние, пока юзер не
+  // загрузил своё фото.
+  const isUserUploaded = typeof user.avatar === 'string' && user.avatar.startsWith('/uploads/');
+  const avatarBase = isUserUploaded ? resolveAssetUrl(user.avatar) : null;
+  const avatarSrc = avatarBase ? `${avatarBase}${avatarBase.includes('?') ? '&' : '?'}v=${avatarVersion}` : null;
 
-  // HUD-аватар: октагональная рамка с фото, либо инициал.
+  // HUD-аватар: октагональная рамка. Если юзер загрузил фото — показываем,
+  // иначе — нейтральная иконка User (без dicebear-генерёнки).
   const renderAvatar = (sizePx: number) => (
     <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
       {avatarSrc ? (
@@ -136,12 +142,10 @@ export default function Profile({ user: initialUser }: ProfileProps) {
           alt={user.name || 'avatar'}
           className="absolute inset-2 h-[calc(100%-16px)] w-[calc(100%-16px)] object-cover"
           referrerPolicy="no-referrer"
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
         />
-      ) : null}
-      <span className="font-display-cyrl text-3xl font-semibold text-[#4ec9c0] select-none">
-        {String(user.name || '?').trim().charAt(0).toUpperCase()}
-      </span>
+      ) : (
+        <UserIcon className="w-1/2 h-1/2 text-[#4ec9c0]/85" strokeWidth={1.4} aria-hidden="true" />
+      )}
     </HudFrame>
   );
 
