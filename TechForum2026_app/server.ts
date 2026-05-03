@@ -52,6 +52,7 @@ import {
   aiChatSchema,
   forgotPasswordStartSchema,
   forgotPasswordVerifySchema,
+  dmSendSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
 
@@ -85,7 +86,7 @@ function validateBody<T extends ZodTypeAny>(schema: T) {
 }
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { eq, desc, and, sql, inArray, lt } from 'drizzle-orm';
+import { eq, desc, and, or, sql, inArray, lt } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,7 +114,7 @@ const { db, pool } = dbModule;
 const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
-  sessionsEvent, userInterests, passwordResetTokens,
+  sessionsEvent, userInterests, passwordResetTokens, directMessages,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -337,6 +338,29 @@ async function startServer(): Promise<void> {
       httpOnly: true,
     },
   }));
+
+  // DIAG (повторно включено): полный лог auth-flow + interests +
+  // body-summary при ошибках 4xx. Без этого нельзя поймать жалобы вида
+  // «не могу войти / не работает онбординг» с устройств юзеров. Собирает
+  // только public поля (origin/ua/path/method/status); пароли никогда не
+  // попадают — body не сериализуем. Удалить после стабилизации.
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/auth') ||
+        req.path.startsWith('/api/v1/me/interests') ||
+        req.path === '/api/v1/health') {
+      const ua = String(req.header('user-agent') || '').slice(0, 80);
+      const origin = String(req.header('origin') || '<no-origin>');
+      const ip = req.ip || req.socket.remoteAddress || '?';
+      const start = Date.now();
+      res.on('finish', () => {
+        const dt = Date.now() - start;
+        const status = res.statusCode;
+        const tag = status >= 400 ? 'ERR' : 'req';
+        console.log(`[${tag}] ${req.method} ${req.path} → ${status} (${dt}ms) origin=${origin} ip=${ip} ua=${ua}`);
+      });
+    }
+    next();
+  });
 
   const configuredCorsOrigins = String(process.env.CORS_ALLOW_ORIGINS || '')
     .split(',')
@@ -1099,6 +1123,125 @@ async function startServer(): Promise<void> {
       text: inserted.text,
       createdAt: inserted.createdAt,
     });
+  });
+
+  // ========================================================================
+  // DIRECT MESSAGES (Chat «Личные»)
+  // ========================================================================
+  // Простой 1-к-1 polling-DM. Без WS — фронт делает GET /messages/with/:id
+  // каждые 5 сек когда диалог открыт. На событии 30/сессия — нагрузка <1 RPS.
+
+  // POST /messages — отправить DM. Создаём запись, возвращаем её для optimistic UI.
+  api.post('/messages', requireAuth, writeRateLimit, validateBody(dmSendSchema), async (req, res) => {
+    const fromUserId = getSessionUserId(req)!;
+    const { toUserId, text } = req.body as import('./src/lib/validation.js').DmSendBody;
+
+    if (toUserId === fromUserId) {
+      res.status(400).json({ error: 'cannot_message_self' });
+      return;
+    }
+
+    const recipient = await findUserById(toUserId);
+    if (!recipient) {
+      res.status(404).json({ error: 'recipient_not_found' });
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    await db.insert(directMessages).values({ id, fromUserId, toUserId, text });
+    const inserted = (await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1))[0];
+    if (!inserted) {
+      res.status(500).json({ error: 'dm_create_failed' });
+      return;
+    }
+    res.json({
+      id: inserted.id,
+      fromUserId: inserted.fromUserId,
+      toUserId: inserted.toUserId,
+      text: inserted.text,
+      createdAt: inserted.createdAt,
+      readAt: inserted.readAt,
+    });
+  });
+
+  // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.
+  // Также помечает входящие как прочитанные (UPDATE read_at = now()).
+  api.get('/messages/with/:userId', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const otherId = String(req.params.userId);
+
+    const rows = await db.select().from(directMessages)
+      .where(or(
+        and(eq(directMessages.fromUserId, me), eq(directMessages.toUserId, otherId)),
+        and(eq(directMessages.fromUserId, otherId), eq(directMessages.toUserId, me)),
+      ))
+      .orderBy(desc(directMessages.createdAt))
+      .limit(100);
+
+    // Помечаем прочитанным всё что пришло мне от otherId и ещё не read.
+    await db.update(directMessages)
+      .set({ readAt: new Date() })
+      .where(and(
+        eq(directMessages.fromUserId, otherId),
+        eq(directMessages.toUserId, me),
+        sql`${directMessages.readAt} IS NULL`,
+      ));
+
+    // Возвращаем в хроно-порядке (старые → новые) — UI рисует сверху вниз.
+    res.json(rows.reverse().map((m) => ({
+      id: m.id,
+      fromUserId: m.fromUserId,
+      toUserId: m.toUserId,
+      text: m.text,
+      createdAt: m.createdAt,
+      readAt: m.readAt,
+    })));
+  });
+
+  // GET /messages/contacts — список собеседников с last-message + unread.
+  // Используется для левого списка в "Личные".
+  api.get('/messages/contacts', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+
+    // Тянем все мои DM (отправленные и полученные) — для малых объёмов OK.
+    // Для масштаба нужен materialized view.
+    const all = await db.select().from(directMessages)
+      .where(or(eq(directMessages.fromUserId, me), eq(directMessages.toUserId, me)))
+      .orderBy(desc(directMessages.createdAt));
+
+    type ContactSummary = {
+      userId: string;
+      lastText: string;
+      lastAt: Date;
+      unread: number;
+    };
+    const map = new Map<string, ContactSummary>();
+    for (const m of all) {
+      const other = m.fromUserId === me ? m.toUserId : m.fromUserId;
+      const existing = map.get(other);
+      if (!existing) {
+        map.set(other, {
+          userId: other,
+          lastText: m.text,
+          lastAt: m.createdAt,
+          unread: m.toUserId === me && m.readAt === null ? 1 : 0,
+        });
+      } else if (m.toUserId === me && m.readAt === null) {
+        existing.unread += 1;
+      }
+    }
+
+    const contactIds = Array.from(map.keys());
+    const userRows = contactIds.length
+      ? await db.select().from(users).where(inArray(users.id, contactIds))
+      : [];
+    const userById = new Map(userRows.map((u) => [u.id, toPublicUser(u)]));
+
+    const list = Array.from(map.values())
+      .map((c) => ({ ...c, user: userById.get(c.userId) ?? null }))
+      .sort((a, b) => b.lastAt.getTime() - a.lastAt.getTime());
+
+    res.json(list);
   });
 
   // ========================================================================

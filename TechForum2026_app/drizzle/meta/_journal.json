@@ -22,6 +22,13 @@
       "when": 1777800000000,
       "tag": "0002_password_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777810000000,
+      "tag": "0003_direct_messages",
+      "breakpoints": true
     }
   ]
 }

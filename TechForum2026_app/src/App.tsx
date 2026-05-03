@@ -203,7 +203,19 @@ function AppContent() {
     <div className="bg-[#03161c] flex flex-col p-0 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <OfflineBanner />
       <main className="w-full bg-[#03161c] relative overflow-hidden flex flex-col z-10" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
-        <div className="flex-1 overflow-y-auto scrollbar-hide relative" style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}>
+        {/* min-h-0 на flex-child обязательно — без него overflow-y-auto не
+            активируется в flex-контексте (flex по умолчанию даёт
+            min-height: auto, и контейнер растёт по контенту вместо скролла).
+            paddingBottom учитывает Android navigation bar / iOS home indicator,
+            чтобы хвост Schedule/Feed/Partners/Map/Chat не обрезался. */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative"
+          style={{
+            overscrollBehavior: 'none',
+            WebkitOverflowScrolling: 'touch',
+            paddingBottom: 'env(safe-area-inset-bottom, 0)',
+          }}
+        >
           <div className="min-h-full">
             <AnimatePresence mode="wait">
               {loading ? (

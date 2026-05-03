@@ -259,6 +259,29 @@ export const userInterests = pgTable(
 );
 
 // ============================================================================
+// DIRECT MESSAGES (DM в Chat «Личные»)
+// ============================================================================
+// Простая 1-к-1 переписка. Нет групп, нет threads, нет реакций. Удаление —
+// onDelete cascade (если автор/получатель удаляется, его DM физически
+// уходят). readAt — для индикатора непрочитанного.
+export const directMessages = pgTable(
+  'direct_messages',
+  {
+    id: text('id').primaryKey(),
+    fromUserId: text('from_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    toUserId: text('to_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+  },
+  (t) => ({
+    fromIdx: index('dm_from_idx').on(t.fromUserId),
+    toIdx: index('dm_to_idx').on(t.toUserId),
+    createdAtIdx: index('dm_created_at_idx').on(t.createdAt),
+  }),
+);
+
+// ============================================================================
 // PASSWORD RESET (forgot-password flow)
 // ============================================================================
 // Хранит short-lived reset-токены. token хешируется (SHA-256) — в БД лежит

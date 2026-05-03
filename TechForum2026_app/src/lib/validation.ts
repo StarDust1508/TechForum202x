@@ -100,6 +100,12 @@ export const statusCreateSchema = z.object({
   text: z.string().max(500).optional().default(''),
 });
 
+// Direct messages (Chat → Личные)
+export const dmSendSchema = z.object({
+  toUserId: z.string().min(1).max(64),
+  text: z.string().trim().min(1, 'Сообщение пустое').max(2000),
+});
+
 // Forgot-password (см. server.ts /auth/forgot-password/*).
 export const forgotPasswordStartSchema = z.object({
   email: emailSchema,
@@ -125,3 +131,4 @@ export type StatusCreateBody = z.infer<typeof statusCreateSchema>;
 export type AiChatBody = z.infer<typeof aiChatSchema>;
 export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
 export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;
+export type DmSendBody = z.infer<typeof dmSendSchema>;
