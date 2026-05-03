@@ -189,8 +189,13 @@ export interface EventMeta {
 // SECTION: META
 // ============================================================================
 
+// SHARED-SOURCE: бренд-литералы (EVENT_BRAND, EVENT_YEAR) живут в src/lib/event.ts
+// — раз в полгода ребрендим, правится только тот файл. Здесь склеиваем через
+// импорт, чтобы fields data.ts автоматически были синхронизированы.
+import { EVENT_BRAND, EVENT_YEAR } from './lib/event';
+
 export const EVENT_META: EventMeta = {
-  name: 'TechForum 2026',
+  name: `${EVENT_BRAND} ${EVENT_YEAR}`,
   location: 'Технополис «Инновация»',
   city: 'Саратов',
   timezone: 'Europe/Saratov',

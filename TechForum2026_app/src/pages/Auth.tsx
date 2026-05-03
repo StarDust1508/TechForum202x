@@ -37,6 +37,80 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
 
+  // Forgot-password 2-step flow.
+  // Шаг 1: ввести email, бэк создаёт reset-token и (пока stub) пишет в server log.
+  // Шаг 2: ввести token, который выдадут организаторы вручную, + новый пароль.
+  // Когда подключим SMTP — токен будет приходить на email автоматически.
+  type ForgotStep = null | 'start' | 'verify';
+  const [forgotStep, setForgotStep] = useState<ForgotStep>(null);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotToken, setForgotToken] = useState('');
+  const [forgotNewPwd, setForgotNewPwd] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+
+  const handleForgotStart = async () => {
+    if (!forgotEmail.trim()) {
+      toast.show('Введите email');
+      return;
+    }
+    setForgotBusy(true);
+    try {
+      const r = await fetch(resolveApiUrl('/auth/forgot-password/start'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      if (r.ok) {
+        toast.show('Запрос отправлен. Свяжитесь с организаторами для получения кода восстановления.', 4200);
+        setForgotStep('verify');
+      } else if (r.status === 429) {
+        toast.show('Слишком много попыток. Попробуйте позже.');
+      } else {
+        toast.show('Ошибка запроса');
+      }
+    } catch {
+      toast.show('Нет соединения с сервером');
+    } finally {
+      setForgotBusy(false);
+    }
+  };
+
+  const handleForgotVerify = async () => {
+    if (forgotToken.trim().length < 8) { toast.show('Введите код полностью'); return; }
+    if (forgotNewPwd.length < 6) { toast.show('Пароль минимум 6 символов'); return; }
+    setForgotBusy(true);
+    try {
+      const r = await fetch(resolveApiUrl('/auth/forgot-password/verify'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: forgotToken.trim(), newPassword: forgotNewPwd }),
+      });
+      const data = await r.json().catch(() => null);
+      if (r.ok) {
+        toast.show('Пароль изменён. Теперь войдите с новым паролем.', 3500);
+        setForgotStep(null);
+        setForgotToken(''); setForgotNewPwd('');
+        setForm({ ...form, email: forgotEmail, password: forgotNewPwd });
+      } else if (data?.error === 'invalid_token') {
+        toast.show('Неверный код');
+      } else if (data?.error === 'token_expired') {
+        toast.show('Код истёк, начните заново');
+        setForgotStep('start');
+      } else if (data?.error === 'too_many_attempts') {
+        toast.show('Превышено число попыток');
+        setForgotStep(null);
+      } else {
+        toast.show('Не удалось сменить пароль');
+      }
+    } catch {
+      toast.show('Нет соединения с сервером');
+    } finally {
+      setForgotBusy(false);
+    }
+  };
+
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const passwordConfirmRef = useRef<HTMLInputElement>(null);
@@ -295,9 +369,8 @@ export default function Auth({ onSuccess }: AuthProps) {
                 <button
                   type="button"
                   onClick={() => {
-                    // BACKEND_TODO: эндпоинт POST /auth/forgot-password (email→reset-link).
-                    // Пока стаб-toast вместо неправильного редиректа на регистрацию.
-                    toast.show('Восстановление пароля скоро будет доступно. Свяжитесь с организаторами.', 3200);
+                    setForgotEmail(form.email);
+                    setForgotStep('start');
                   }}
                   className="text-[14px] text-[#7aa8a4] hover:text-[#d8f0ee] font-blueprint"
                 >
@@ -360,6 +433,103 @@ export default function Auth({ onSuccess }: AuthProps) {
           {sectionTagline}
         </p>
       </div>
+
+      {/* Forgot-password modal — 2 шага. Бэк: POST /auth/forgot-password/start
+          → создаёт токен (TTL 30мин); /verify {token, newPassword} меняет пароль.
+          Пока SMTP не подключён, токен видят только организаторы в server log. */}
+      <AnimatePresence>
+        {forgotStep && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-[#03161c]/85 backdrop-blur-md"
+            onClick={() => { if (!forgotBusy) setForgotStep(null); }}
+          >
+            <motion.div
+              initial={{ y: 24, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 24, opacity: 0, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-[380px] rounded-3xl border border-[#4ec9c0]/30 bg-[#052830]/95 p-6 shadow-[0_24px_60px_rgba(78,201,192,0.18)]"
+            >
+              <button
+                type="button"
+                onClick={() => setForgotStep(null)}
+                disabled={forgotBusy}
+                className="absolute top-4 right-4 w-9 h-9 rounded-full border border-[#4ec9c0]/30 flex items-center justify-center text-[#7aa8a4] hover:text-[#d8f0ee] disabled:opacity-50"
+                aria-label="Закрыть"
+              >
+                <XIcon className="w-4 h-4" />
+              </button>
+
+              {forgotStep === 'start' ? (
+                <>
+                  <h3 className="font-display-cyrl text-[20px] text-[#d8f0ee] mb-2">Восстановление пароля</h3>
+                  <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
+                    Введи email, на который регистрировался. Получишь код через организаторов — пока интеграция SMS/email в работе.
+                  </p>
+                  <Input
+                    icon={Mail}
+                    type="email"
+                    inputMode="email"
+                    placeholder="email@example.com"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    autoComplete="email"
+                    autoFocus
+                  />
+                  <div className="pt-4">
+                    <Button onClick={handleForgotStart} loading={forgotBusy}>Запросить код</Button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('verify')}
+                    className="w-full mt-3 text-[12px] text-[#7aa8a4] hover:text-[#d8f0ee]"
+                  >
+                    У меня уже есть код →
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h3 className="font-display-cyrl text-[20px] text-[#d8f0ee] mb-2">Введи код</h3>
+                  <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
+                    Код выдают организаторы по запросу. Срок действия — 30 минут.
+                  </p>
+                  <div className="space-y-3">
+                    <Input
+                      icon={Lock}
+                      type="text"
+                      placeholder="Код восстановления"
+                      value={forgotToken}
+                      onChange={(e) => setForgotToken(e.target.value)}
+                      autoFocus
+                    />
+                    <Input
+                      icon={Lock}
+                      type="password"
+                      placeholder="Новый пароль (минимум 6)"
+                      value={forgotNewPwd}
+                      onChange={(e) => setForgotNewPwd(e.target.value)}
+                      toggleablePassword
+                    />
+                  </div>
+                  <div className="pt-4">
+                    <Button onClick={handleForgotVerify} loading={forgotBusy}>Сменить пароль</Button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('start')}
+                    className="w-full mt-3 text-[12px] text-[#7aa8a4] hover:text-[#d8f0ee]"
+                  >
+                    ← Запросить новый код
+                  </button>
+                </>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {showBioOffer && (

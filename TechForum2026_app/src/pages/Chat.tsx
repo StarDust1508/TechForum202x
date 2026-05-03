@@ -7,8 +7,8 @@ import {
 } from 'lucide-react';
 import { SESSIONS, SPEAKERS } from '../data';
 import { cn } from '@/src/lib/utils';
+import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import WaveSurfer from 'wavesurfer.js';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
 import { useToast } from '@/src/components/Toast';
 
@@ -49,21 +49,118 @@ export default function Chat() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
 
-  const [contacts] = useState([
-    { id: '1', name: 'Алексей', role: 'Fullstack Developer', online: true, lastMsg: 'Договорились, встретимся у стенда.' },
-    { id: '2', name: 'Мария', role: 'Product Designer', online: false, lastMsg: 'Выслала обновленные макеты в почту.' },
-    { id: '3', name: 'Игорь', role: 'Tech Investor', online: true, lastMsg: 'Очень интересное выступление!' },
-  ]);
+  // DM теперь живые: contacts, диалоги и отправка идут через /api/v1/messages*.
+  // privateMessages здесь — кэш на текущий tab, обновляется polling'ом.
+  type DmContact = {
+    id: string; // userId собеседника
+    name: string;
+    role: string;
+    online?: boolean;
+    avatar: string;
+    lastMsg: string;
+    unread: number;
+  };
+  const [contacts, setContacts] = useState<DmContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [searchResults, setSearchResults] = useState<DmContact[]>([]);
+  const [meId, setMeId] = useState<string | null>(null);
 
-  const [privateMessages, setPrivateMessages] = useState<Record<string, ChatMessage[]>>({
-    '1': [
-      { role: 'other', text: 'Привет! Ты завтра будешь на воркшопе по AI?', time: '14:20' },
-      { role: 'user', text: 'Да, планирую. А что?', time: '14:25' },
-      { role: 'other', text: 'Хотел обсудить один проект. Договорились, встретимся у стенда.', time: '14:30' },
-    ],
-    '2': [{ role: 'other', text: 'Выслала обновленные макеты в почту.', time: 'Вчера' }],
-    '3': [{ role: 'other', text: 'Очень интересное выступление!', time: '10:05' }],
-  });
+  const [privateMessages, setPrivateMessages] = useState<Record<string, ChatMessage[]>>({});
+
+  // Узнаём свой userId один раз — нужен чтобы отличать свои сообщения
+  // в payload /messages/with/:id (fromUserId === meId → 'user', иначе 'other').
+  useEffect(() => {
+    let mounted = true;
+    void (async () => {
+      try {
+        const r = await fetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
+        if (r.ok) {
+          const me = await r.json();
+          if (mounted) setMeId(me?.id ?? null);
+        }
+      } catch { /* offline — DM не работает, но UI не рушим */ }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Загружаем contacts при заходе на таб "Личные"; рефетчим каждые 10с
+  // чтобы видеть новые входящие.
+  useEffect(() => {
+    if (activeTab !== 'Личные') return;
+    let mounted = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const fetchContacts = async () => {
+      try {
+        setContactsLoading(true);
+        const r = await fetch(resolveApiUrl('/messages/contacts'), { credentials: 'include' });
+        if (!r.ok) return;
+        const data: Array<{ userId: string; lastText: string; lastAt: string; unread: number; user: { name: string; role: string; avatar: string } | null }> = await r.json();
+        if (!mounted) return;
+        setContacts(data.filter((c) => c.user).map((c) => ({
+          id: c.userId,
+          name: c.user!.name,
+          role: c.user!.role || 'Участник',
+          avatar: resolveAssetUrl(c.user!.avatar) || avatarUrl(c.user!.name),
+          lastMsg: c.lastText,
+          unread: c.unread,
+        })));
+      } catch { /* offline */ } finally {
+        if (mounted) setContactsLoading(false);
+      }
+    };
+    void fetchContacts();
+    timer = setInterval(() => { void fetchContacts(); }, 10_000);
+    return () => { mounted = false; if (timer) clearInterval(timer); };
+  }, [activeTab]);
+
+  // Когда выбран собеседник — poll messages раз в 5 секунд.
+  useEffect(() => {
+    if (activeTab !== 'Личные' || !selectedContact || !meId) return;
+    let mounted = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const fetchDialog = async () => {
+      try {
+        const r = await fetch(resolveApiUrl(`/messages/with/${selectedContact}`), { credentials: 'include' });
+        if (!r.ok) return;
+        const arr: Array<{ id: string; fromUserId: string; toUserId: string; text: string; createdAt: string }> = await r.json();
+        if (!mounted) return;
+        const formatted: ChatMessage[] = arr.map((m) => ({
+          role: m.fromUserId === meId ? 'user' : 'other',
+          text: m.text,
+          time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }));
+        setPrivateMessages((prev) => ({ ...prev, [selectedContact]: formatted }));
+      } catch { /* noop */ }
+    };
+    void fetchDialog();
+    timer = setInterval(() => { void fetchDialog(); }, 5_000);
+    return () => { mounted = false; if (timer) clearInterval(timer); };
+  }, [activeTab, selectedContact, meId]);
+
+  // Поиск юзеров для нового диалога — debounced 350мс.
+  useEffect(() => {
+    if (activeTab !== 'Личные' || selectedContact) return;
+    if (searchQ.trim().length < 2) { setSearchResults([]); return; }
+    let mounted = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(resolveApiUrl(`/users/search?q=${encodeURIComponent(searchQ.trim())}`), { credentials: 'include' });
+        if (!r.ok) return;
+        const arr: Array<{ id: string; name: string; role: string; avatar: string }> = await r.json();
+        if (!mounted) return;
+        // Исключаем тех с кем уже есть переписка — они выше в списке.
+        const existingIds = new Set(contacts.map((c) => c.id));
+        setSearchResults(arr.filter((u) => !existingIds.has(u.id)).map((u) => ({
+          id: u.id, name: u.name, role: u.role || 'Участник',
+          avatar: resolveAssetUrl(u.avatar) || avatarUrl(u.name),
+          lastMsg: 'Начать диалог',
+          unread: 0,
+        })));
+      } catch { /* noop */ }
+    }, 350);
+    return () => { mounted = false; clearTimeout(t); };
+  }, [searchQ, activeTab, selectedContact, contacts]);
 
   const [isRecording, setIsRecording] = useState<'audio' | 'video' | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -361,10 +458,27 @@ export default function Chat() {
     setInput('');
 
     if (activeTab === 'Личные' && selectedContact) {
+      // Optimistic UI: сразу показываем своё сообщение, затем шлём POST.
+      // На ошибке — заменяем на "Не доставлено" (toast + красный bubble не
+      // делаем сейчас, чтобы не ломать UI Ганта, просто toast).
       setPrivateMessages((prev) => ({
         ...prev,
-        [selectedContact]: [...(prev[selectedContact] || []), { role: 'user', text: userMsg, time }]
+        [selectedContact]: [...(prev[selectedContact] || []), { role: 'user', text: userMsg, time }],
       }));
+      try {
+        const r = await fetch(resolveApiUrl('/messages'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ toUserId: selectedContact, text: userMsg }),
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => null);
+          toast.show(`Сообщение не доставлено: ${j?.error || r.status}`);
+        }
+      } catch {
+        toast.show('Сообщение не доставлено: нет сети');
+      }
       return;
     }
 
@@ -571,6 +685,40 @@ export default function Chat() {
             <div className="flex flex-col gap-3">
               {!selectedContact ? (
                 <div className="space-y-4">
+                  {/* Поиск юзеров для нового диалога */}
+                  <input
+                    type="text"
+                    value={searchQ}
+                    onChange={(e) => setSearchQ(e.target.value)}
+                    placeholder="Найти участника по имени или email…"
+                    className="w-full bg-[#0a2f38]/40 border border-[#4ec9c0]/28 rounded-2xl px-4 py-3 text-[13px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/60 outline-none focus:border-[#4ec9c0]/55"
+                  />
+                  {searchResults.length > 0 && (
+                    <div className="space-y-2 pb-2 border-b border-[#4ec9c0]/15">
+                      <p className="text-[10px] uppercase tracking-widest text-[#7aa8a4]">Начать новый диалог</p>
+                      {searchResults.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => { setSelectedContact(r.id); setSearchQ(''); setSearchResults([]); }}
+                          className="w-full flex items-center gap-3 bg-[#0a2f38]/30 border border-[#4ec9c0]/15 p-3 rounded-2xl hover:border-[#4ec9c0]/40 transition-all"
+                        >
+                          <img src={r.avatar} alt={r.name} className="w-10 h-10 rounded-2xl border border-[#4ec9c0]/28 object-cover" />
+                          <div className="flex-1 text-left">
+                            <p className="text-[13px] font-semibold text-[#d8f0ee]">{r.name}</p>
+                            <p className="text-[10px] text-[#7aa8a4] uppercase tracking-widest">{r.role}</p>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-[#4ec9c0]" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {contacts.length === 0 && !contactsLoading && searchQ.trim().length < 2 && (
+                    <div className="text-center py-8 text-[12px] text-[#7aa8a4]">
+                      Здесь появятся ваши переписки.<br/>Найдите участника выше, чтобы начать диалог.
+                    </div>
+                  )}
+
                   {contacts.map((contact) => (
                     <button
                       key={contact.id}
@@ -579,10 +727,10 @@ export default function Chat() {
                     >
                       <div className="relative">
                         <div className="w-12 h-12 bg-card border border-[#4ec9c0]/28 rounded-2xl overflow-hidden flex items-center justify-center">
-                          <img src={avatarUrl(contact.name)} alt={contact.name} className="w-full h-full object-cover" />
+                          <img src={contact.avatar} alt={contact.name} className="w-full h-full object-cover" />
                         </div>
-                        {contact.online && (
-                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-4 border-surface rounded-full" />
+                        {contact.unread > 0 && (
+                          <div className="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] px-1 bg-[#4ec9c0] border-2 border-[#03161c] rounded-full text-[9px] font-bold text-[#03161c] flex items-center justify-center">{contact.unread}</div>
                         )}
                       </div>
                       <div className="flex-1 text-left min-w-0">

@@ -1126,6 +1126,30 @@ async function startServer(): Promise<void> {
   });
 
   // ========================================================================
+  // USERS (search для DM new-dialog)
+  // ========================================================================
+  // Простой prefix-поиск по email/name — нужен в Chat «Личные» когда юзер
+  // хочет начать новый диалог. Минимум 2 символа в q. Возвращает только
+  // public-поля (id, name, email, avatar, role) без password_hash.
+  api.get('/users/search', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const q = String(req.query?.q || '').trim();
+    if (q.length < 2) {
+      res.json([]);
+      return;
+    }
+    const limitRaw = Number(req.query?.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 20;
+    const escaped = q.replace(/[%_]/g, '\\$&');
+    const pattern = `%${escaped}%`;
+    const rows = await db.select().from(users)
+      .where(sql`(${users.name} ILIKE ${pattern} OR ${users.email} ILIKE ${pattern}) AND ${users.id} <> ${me}`)
+      .orderBy(users.name)
+      .limit(limit);
+    res.json(rows.map(toPublicUser));
+  });
+
+  // ========================================================================
   // DIRECT MESSAGES (Chat «Личные»)
   // ========================================================================
   // Простой 1-к-1 polling-DM. Без WS — фронт делает GET /messages/with/:id

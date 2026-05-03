@@ -55,14 +55,17 @@ export const authLoginSchema = z.object({
 // Phone — нормализуем к виду +<digits>. Принимаем любой формат
 // '+7 (912) 345-67-89', '8-912-345-67-89', '+79123456789' и т.п.,
 // убираем всё кроме цифр и ведущего +. Российские номера с ведущей 8
-// нормализуем к +7. Пустая строка → null (поле опциональное).
+// нормализуем к +7. Пустая или неполная строка (<10 значимых цифр) → null
+// — НЕ ошибка валидации, чтобы PATCH /auth/me с другим полем не падал.
 const phoneSchema = z.string().trim().max(32)
   .transform((raw) => {
     if (!raw) return null;
-    let digits = raw.replace(/[^\d+]/g, '');
-    if (digits.startsWith('8') && digits.length === 11) digits = `+7${digits.slice(1)}`;
-    if (!digits.startsWith('+') && digits.length >= 10) digits = `+${digits}`;
-    return digits || null;
+    const onlyDigits = raw.replace(/\D/g, '');
+    if (onlyDigits.length < 10) return null;
+    let d = onlyDigits;
+    if (d.startsWith('8') && d.length === 11) d = `7${d.slice(1)}`;
+    if (d.length === 10) d = `7${d}`; // мобильные без кода страны
+    return `+${d}`;
   })
   .refine((v) => v === null || /^\+\d{10,15}$/.test(v), {
     message: 'Некорректный номер телефона',
