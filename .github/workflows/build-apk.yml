@@ -92,6 +92,21 @@ jobs:
           sed -i 's/android:usesCleartextTraffic="false"/android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
           grep usesCleartextTraffic android/app/src/main/AndroidManifest.xml
 
+      # CRITICAL: Capacitor 8 при `cap sync` авто-генерирует
+      # android/app/src/debug/res/xml/network_security_config_debug.xml
+      # с domain-config только для localhost/10.0.2.2/devServer — БЕЗ нашего
+      # production-сервера. При assembleDebug этот файл ПЕРЕОПРЕДЕЛЯЕТ main
+      # NSC, и OkHttp ловит "Cleartext HTTP traffic to <ip> not permitted".
+      # Принудительно зеркалим main NSC в debug, чтобы permissive
+      # cleartextTrafficPermitted=true применялся и в debug-варианте.
+      - name: Force permissive NSC in debug build variant
+        run: |
+          mkdir -p android/app/src/debug/res/xml
+          cp android/app/src/main/res/xml/network_security_config.xml \
+             android/app/src/debug/res/xml/network_security_config_debug.xml
+          echo "--- debug NSC after override ---"
+          cat android/app/src/debug/res/xml/network_security_config_debug.xml
+
       - name: Gradle assembleDebug
         run: |
           cd android
