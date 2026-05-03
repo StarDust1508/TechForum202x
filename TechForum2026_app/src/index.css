@@ -37,23 +37,29 @@
 }
 
 @theme {
-  --color-accent: #5eead4;
-  --color-surface: #080512;
-  --color-card: #120a20;
-  --color-card-border: rgba(255, 255, 255, 0.08);
-  --color-primary: #ffffff;
-  --color-muted: #a8a0bb;
+  /* Brand palette — blueprint TechForum 2026 (matches mockup) */
+  --color-bg-deep: #03161c;
+  --color-bg-mid: #0a2f38;
+  --color-bg-top: #052830;
+  --color-accent: #4ec9c0;
+  --color-accent-soft: #7ed6d0;
+  --color-surface: #03161c;
+  --color-card: rgba(10, 47, 56, 0.55);
+  --color-card-border: rgba(78, 201, 192, 0.28);
+  --color-primary: #d8f0ee;
+  --color-muted: #7aa8a4;
   --font-sans: "Cormorant Garamond", ui-serif, Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  /* font-blueprint — основной brand-шрифт TechForum 2026.
-     Используется в Auth, заголовках разделов, кнопках главного действия. */
+  /* font-blueprint — техн./body GOST Type A. */
   --font-blueprint: "GOST Type A", "Cormorant Garamond", ui-serif, Georgia, serif;
+  /* font-display — serif с засечками для H1 "TechForum 2026" (макет). */
+  --font-display: "Cinzel", "Cormorant Garamond", Georgia, serif;
 }
 
 :root {
   --font-elite: "Cinzel", Georgia, serif;
-  background-color: #04020f;
-  color: white;
+  background-color: #03161c;
+  color: #d8f0ee;
 }
 
 /*
@@ -103,7 +109,7 @@ html, body, #root {
   height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  background-color: #04020f;
+  background-color: #03161c;
   overscroll-behavior: none;
 }
 
@@ -118,6 +124,12 @@ body {
 
 .font-elite {
   font-family: var(--font-elite);
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-feature-settings: "kern" on, "liga" on;
+  letter-spacing: 0.02em;
 }
 
 .font-blueprint {
