@@ -179,11 +179,13 @@ async function seedReferenceTables(): Promise<void> {
 }
 
 async function seedDevUser(): Promise<void> {
-  // BUG_FIX_CONTEXT: dev-юзер v@tech.com / 123 был встроен в server.ts
-  // как массив-инициализация. После перехода на БД заводим его через seed,
-  // чтобы dev-окружение всегда имело предсказуемый login для тестов.
+  // BUG_FIX_CONTEXT: zod-валидация в server.ts требует password.min(6).
+  // Прежний пароль '123' (3 символа) не проходил login → 400 "invalid_body".
+  // Поднимаем до 'demo1234' (8 символов) и upsert hash при каждом seed,
+  // чтобы существующие dev/prod записи всегда имели валидный pass.
   const id = '00000000-0000-0000-0000-000000000001';
-  const passwordHash = hashPassword('123');
+  const password = 'demo1234';
+  const passwordHash = hashPassword(password);
   await db.insert(users).values({
     id,
     email: 'v@tech.com',
@@ -193,8 +195,17 @@ async function seedDevUser(): Promise<void> {
     bio: 'Tech Lead',
     isPrivate: false,
     role: 'Участник',
-  }).onConflictDoNothing();
-  console.log('[seed] dev user v@tech.com / 123 (id=00000000-0000-0000-0000-000000000001) ensured');
+  }).onConflictDoUpdate({
+    target: users.email,
+    set: {
+      passwordHash,  // re-set — на случай если хеш устарел или валидация поменялась
+      name: 'Дмитрий Волков',
+      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Dmitry',
+      bio: 'Tech Lead',
+      role: 'Участник',
+    },
+  });
+  console.log(`[seed] dev user v@tech.com / ${password} (id=${id}) password rotated`);
 }
 
 async function main(): Promise<void> {
