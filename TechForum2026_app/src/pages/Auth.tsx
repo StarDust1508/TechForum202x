@@ -160,7 +160,7 @@ export default function Auth({ onSuccess }: AuthProps) {
             и проверить связь с сервером прямо со старта. Удалить после
             стабилизации. */}
         <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
-          build d180647 · diag
+          build :80-fix · diag
         </div>
         <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
           <button
