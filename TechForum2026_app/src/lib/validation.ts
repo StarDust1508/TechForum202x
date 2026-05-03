@@ -52,19 +52,40 @@ export const authLoginSchema = z.object({
   password: passwordSchema,
 });
 
+// Phone — нормализуем к виду +<digits>. Принимаем любой формат
+// '+7 (912) 345-67-89', '8-912-345-67-89', '+79123456789' и т.п.,
+// убираем всё кроме цифр и ведущего +. Российские номера с ведущей 8
+// нормализуем к +7. Пустая строка → null (поле опциональное).
+const phoneSchema = z.string().trim().max(32)
+  .transform((raw) => {
+    if (!raw) return null;
+    let digits = raw.replace(/[^\d+]/g, '');
+    if (digits.startsWith('8') && digits.length === 11) digits = `+7${digits.slice(1)}`;
+    if (!digits.startsWith('+') && digits.length >= 10) digits = `+${digits}`;
+    return digits || null;
+  })
+  .refine((v) => v === null || /^\+\d{10,15}$/.test(v), {
+    message: 'Некорректный номер телефона',
+  });
+
 export const authMePatchSchema = z.object({
   name: nameSchema.optional(),
   bio: z.string().max(500).optional(),
-  phone: z.string().trim().max(32).optional(),
+  phone: phoneSchema.optional(),
   email: emailSchema.optional(),
 });
 
+// Бизнес-инвариант onboarding: 3..10 направлений. Раньше был только max(10)
+// — через curl можно было записать 1 интерес, фронт-recommended ломался.
 export const meInterestsPutSchema = z.object({
-  interestIds: z.array(z.string().min(1).max(64)).max(10, 'Максимум 10 направлений'),
+  interestIds: z.array(z.string().min(1).max(64))
+    .min(3, 'Выбери минимум 3 направления')
+    .max(10, 'Максимум 10 направлений'),
 });
 
+// type ограничиваем enum, чтобы фронт не получал произвольные строки.
 export const postCreateSchema = z.object({
-  type: z.string().max(32).optional().default('text'),
+  type: z.enum(['text', 'photo', 'video']).optional().default('text'),
   url: z.string().max(2048).optional().default(''),
   text: z.string().max(2000).optional().default(''),
 });
@@ -74,9 +95,19 @@ export const commentCreateSchema = z.object({
 });
 
 export const statusCreateSchema = z.object({
-  type: z.string().max(32).optional().default('text'),
+  type: z.enum(['text', 'photo', 'video']).optional().default('text'),
   url: z.string().max(2048).optional().default(''),
   text: z.string().max(500).optional().default(''),
+});
+
+// Forgot-password (см. server.ts /auth/forgot-password/*).
+export const forgotPasswordStartSchema = z.object({
+  email: emailSchema,
+});
+
+export const forgotPasswordVerifySchema = z.object({
+  token: z.string().min(8).max(128),
+  newPassword: passwordSchema,
 });
 
 export const aiChatSchema = z.object({
@@ -92,3 +123,5 @@ export type PostCreateBody = z.infer<typeof postCreateSchema>;
 export type CommentCreateBody = z.infer<typeof commentCreateSchema>;
 export type StatusCreateBody = z.infer<typeof statusCreateSchema>;
 export type AiChatBody = z.infer<typeof aiChatSchema>;
+export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
+export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;

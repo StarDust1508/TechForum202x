@@ -257,3 +257,25 @@ export const userInterests = pgTable(
     userIdx: index('user_interests_user_idx').on(t.userId),
   }),
 );
+
+// ============================================================================
+// PASSWORD RESET (forgot-password flow)
+// ============================================================================
+// Хранит short-lived reset-токены. token хешируется (SHA-256) — в БД лежит
+// только digest, raw token уходит в email/SMS пользователю один раз. После
+// успешной смены пароля или истечения TTL запись удаляется.
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    attempts: integer('attempts').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('password_reset_user_idx').on(t.userId),
+    tokenHashIdx: index('password_reset_token_hash_idx').on(t.tokenHash),
+  }),
+);

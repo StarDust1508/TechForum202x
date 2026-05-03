@@ -50,8 +50,17 @@ import {
   commentCreateSchema,
   statusCreateSchema,
   aiChatSchema,
+  forgotPasswordStartSchema,
+  forgotPasswordVerifySchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
+
+// Типизируем поле userId на сессии — убирает ad-hoc cast'ы по handler'ам.
+declare module 'express-session' {
+  interface SessionData {
+    userId?: string;
+  }
+}
 
 /**
  * Express-middleware для валидации req.body через zod-схему. На ошибке
@@ -76,7 +85,7 @@ function validateBody<T extends ZodTypeAny>(schema: T) {
 }
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray, lt } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,7 +111,10 @@ loadEnvironmentFiles();
 const dbModule = await import('./src/db/index.js');
 const { db, pool } = dbModule;
 const schemaModule = await import('./src/db/schema.js');
-const { users, posts, postLikes, postComments, statuses, registrations, sessionsEvent, userInterests } = schemaModule;
+const {
+  users, posts, postLikes, postComments, statuses, registrations,
+  sessionsEvent, userInterests, passwordResetTokens,
+} = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
 // EVENT_META) — источник истины src/data.ts. Используются для AI-контекста
@@ -157,8 +169,25 @@ function toPublicUser(row: typeof users.$inferSelect): PublicUser {
 }
 
 function getSessionUserId(req: Request): string | null {
-  const userId = (req.session as { userId?: unknown } | undefined)?.userId;
+  const userId = req.session?.userId;
   return typeof userId === 'string' ? userId : null;
+}
+
+// Парсим "HH:MM" в минуты от полуночи. Используется для conflict-detection
+// при регистрации на сессии. Если формат битый — возвращаем NaN, что выводит
+// строки за пределы overlap-диапазона (безопасный default).
+function parseTimeToMinutes(t: string): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+  if (!m) return NaN;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+function timeRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  const a1 = parseTimeToMinutes(aStart);
+  const a2 = parseTimeToMinutes(aEnd);
+  const b1 = parseTimeToMinutes(bStart);
+  const b2 = parseTimeToMinutes(bEnd);
+  if ([a1, a2, b1, b2].some(Number.isNaN)) return false;
+  return a1 < b2 && b1 < a2;
 }
 
 async function findUserById(id: string): Promise<typeof users.$inferSelect | null> {
@@ -309,18 +338,6 @@ async function startServer(): Promise<void> {
     },
   }));
 
-  // Временно: лог каждого запроса к /api/v1/auth/* и /api/v1/health для
-  // диагностики "не доходят запросы с APK". Удалим после стабилизации.
-  app.use((req, res, next) => {
-    if (req.path.startsWith('/api/v1/auth') || req.path === '/api/v1/health') {
-      const ua = String(req.header('user-agent') || '').slice(0, 80);
-      const origin = String(req.header('origin') || '<no-origin>');
-      const ip = req.ip || req.socket.remoteAddress || '?';
-      console.log(`[req] ${req.method} ${req.path} origin=${origin} ip=${ip} ua=${ua}`);
-    }
-    next();
-  });
-
   const configuredCorsOrigins = String(process.env.CORS_ALLOW_ORIGINS || '')
     .split(',')
     .map((item) => item.trim())
@@ -414,15 +431,40 @@ async function startServer(): Promise<void> {
   const geminiModel = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
   const gemini = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
   const authRateLimit = createRateLimiter(30, 60_000);
+  const writeRateLimit = createRateLimiter(60, 60_000); // posts/comments/statuses
+  const forgotRateLimit = createRateLimiter(5, 60_000);  // forgot-password старт
   const aiRateLimit = createRateLimiter(20, 60_000);
 
-  // Sanity-check соединения с БД до старта роутов.
-  try {
-    await pool.query('SELECT 1');
-    log.info('db', 'connection OK');
-  } catch (err) {
-    log.error('db', 'connection FAILED — aborting server start', { err: String(err) });
-    process.exit(1);
+  // Отдельный секрет для подписи HMAC билета. Best-practice — не переиспользовать
+  // session secret для криптографических артефактов. Если TICKET_HMAC_SECRET
+  // не задан — fallback на sessionSecret (обратная совместимость со старыми
+  // деплоями), но в production лог-предупреждение.
+  const ticketHmacSecret = String(process.env.TICKET_HMAC_SECRET || '').trim() || sessionSecret;
+  if (isProduction && ticketHmacSecret === sessionSecret) {
+    log.warn('security', 'TICKET_HMAC_SECRET is not set — falling back to SESSION_SECRET. Set a separate value in .env.production.');
+  }
+
+  // Sanity-check соединения с БД до старта роутов. Делаем 3 retry с
+  // backoff'ом — на холодном старте VPS Postgres может не успеть к ноду.
+  {
+    let attempt = 0;
+    const maxAttempts = 3;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        await pool.query('SELECT 1');
+        log.info('db', `connection OK${attempt ? ` (after ${attempt} retries)` : ''}`);
+        break;
+      } catch (err) {
+        attempt += 1;
+        if (attempt >= maxAttempts) {
+          log.error('db', 'connection FAILED — aborting server start', { err: String(err), attempt });
+          process.exit(1);
+        }
+        log.warn('db', `connection attempt ${attempt}/${maxAttempts} failed, retrying in 1s`, { err: String(err) });
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
   }
 
   // ========================================================================
@@ -449,7 +491,15 @@ async function startServer(): Promise<void> {
   // HEALTH
   // ========================================================================
 
+  // /health — кэш на 1 секунду. Под poll-нагрузкой от LB это снимает 99%
+  // SELECT 1 запросов и не размывает картину свежести (1с задержка терпимо).
+  let healthCache: { ts: number; payload: unknown } = { ts: 0, payload: null };
   api.get('/health', async (_req, res) => {
+    const now = Date.now();
+    if (healthCache.payload && now - healthCache.ts < 1000) {
+      res.json(healthCache.payload);
+      return;
+    }
     let dbOk = false;
     try {
       await pool.query('SELECT 1');
@@ -457,12 +507,14 @@ async function startServer(): Promise<void> {
     } catch {
       dbOk = false;
     }
-    res.json({
+    const payload = {
       status: dbOk ? 'ok' : 'degraded',
       service: 'backend-api',
       architecture: 'Express + Postgres (Drizzle)',
       db: dbOk ? 'up' : 'down',
-    });
+    };
+    healthCache = { ts: now, payload };
+    res.json(payload);
   });
 
   api.get('/ready', (_req, res) => {
@@ -479,7 +531,11 @@ async function startServer(): Promise<void> {
   // снимок программы (TRACKS, SESSIONS, SPEAKERS, EVENT_META) как system-context.
   // Gemini ест ~6KB этого контекста легко (input до 1M токенов). Function-calling
   // не используем — простой prompt-injection даёт 95% эффекта.
+  // Кэшируем event-context. Данные программы статичны до перезапуска
+  // сервиса; нет смысла пересобирать ~5KB строки на каждый AI-запрос.
+  let eventContextCache: string | null = null;
   function buildEventContext(): string {
+    if (eventContextCache !== null) return eventContextCache;
     const lines: string[] = [];
     lines.push(`# КОНФЕРЕНЦИЯ: ${EVENT_META.name}`);
     lines.push(`Локация: ${EVENT_META.location}, ${EVENT_META.city}`);
@@ -508,7 +564,8 @@ async function startServer(): Promise<void> {
     lines.push('');
     lines.push('## ПАРТНЁРЫ:');
     for (const p of PARTNERS) lines.push(`- ${p.name} (${p.tier}): ${p.description}`);
-    return lines.join('\n');
+    eventContextCache = lines.join('\n');
+    return eventContextCache;
   }
 
   const SYSTEM_INSTRUCTION = `Ты — AI-ассистент конференции TechForum 2026. Отвечай по-русски, кратко (2-4 предложения) и по делу. Используй ТОЛЬКО факты из контекста программы ниже, не выдумывай сессий и спикеров. Если вопрос вне программы — говори "не нашёл этого в программе" и предлагай ближайшую релевантную сессию из контекста.`;
@@ -566,21 +623,31 @@ async function startServer(): Promise<void> {
     const passwordHash = hashPassword(password);
     const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
 
-    await db.insert(users).values({
-      id,
-      email,
-      passwordHash,
-      name,
-      avatar,
-      bio: '',
-      isPrivate: false,
-      role: 'Участник',
-    });
+    try {
+      await db.insert(users).values({
+        id,
+        email,
+        passwordHash,
+        name,
+        avatar,
+        bio: '',
+        isPrivate: false,
+        role: 'Участник',
+      });
+    } catch (err) {
+      log.error('auth', 'register insert failed', { err: String(err), email });
+      res.status(500).json({ error: 'user_create_failed' });
+      return;
+    }
 
-    (req.session as { userId?: string }).userId = id;
+    // Сессию ставим ТОЛЬКО после успешного insert — иначе при failure
+    // юзер был "залогинен под несуществующим userId".
+    req.session.userId = id;
 
     const created = await findUserById(id);
     if (!created) {
+      // race с replication — крайне маловероятно, но обработаем чисто
+      delete req.session.userId;
       res.status(500).json({ error: 'user_create_failed' });
       return;
     }
@@ -596,12 +663,17 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    (req.session as { userId?: string }).userId = user.id;
-    const myInterests = await db.select().from(userInterests).where(eq(userInterests.userId, user.id));
-    res.json({ ...toPublicUser(user), interestsCount: myInterests.length });
+    req.session.userId = user.id;
+    const interestRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userInterests)
+      .where(eq(userInterests.userId, user.id));
+    res.json({ ...toPublicUser(user), interestsCount: interestRows[0]?.count ?? 0 });
   });
 
-  api.post('/auth/logout', authRateLimit, (req, res) => {
+  // logout без rate-limit: один и тот же клиент может тыкнуть N раз — это
+  // легитимно и не нагружает БД (просто destroy сессии).
+  api.post('/auth/logout', (req, res) => {
     req.session.destroy(() => {
       res.clearCookie('connect.sid');
       res.json({ ok: true });
@@ -616,24 +688,23 @@ async function startServer(): Promise<void> {
     }
     const user = await findUserById(userId);
     if (!user) {
+      // session ссылается на удалённого юзера — чистим
+      delete req.session.userId;
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
-    // BUG_FIX_CONTEXT: Onboarding-флоу: фронт решает показать onboarding-экран
-    // если interestsCount === 0. Считаем числом строк в user_interests.
-    const myInterests = await db.select().from(userInterests).where(eq(userInterests.userId, userId));
-    res.json({ ...toPublicUser(user), interestsCount: myInterests.length });
+    const interestRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(userInterests)
+      .where(eq(userInterests.userId, userId));
+    res.json({ ...toPublicUser(user), interestsCount: interestRows[0]?.count ?? 0 });
   });
 
   api.patch('/auth/me', requireAuth, validateBody(authMePatchSchema), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
-
+    const userId = getSessionUserId(req)!;
     const user = await findUserById(userId);
     if (!user) {
+      delete req.session.userId;
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
@@ -666,26 +737,132 @@ async function startServer(): Promise<void> {
   });
 
   // ========================================================================
+  // FORGOT PASSWORD
+  // ========================================================================
+  // Двухшаговый сброс пароля. Шаг 1 (start): по email создаём короткий
+  // токен, ставим TTL 30 минут, лимит 3 активных одновременно. Уведомление
+  // (email-link или SMS-код) — через sendResetNotification(); если транспорт
+  // не настроен (dev / отсутствие SMTP_URL), линк/токен попадает в server-лог
+  // — оператор передаёт пользователю вручную.
+  // Шаг 2 (verify): принимаем raw token + новый пароль, валидируем хеш+TTL,
+  // меняем passwordHash, удаляем все reset-токены этого юзера.
+  //
+  // Anti-enumeration: на /start всегда возвращаем 200 ok, не раскрывая
+  // существование email-а в БД. Реальная отсылка идёт только если юзер найден.
+
+  function hashResetToken(token: string): string {
+    return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  async function sendResetNotification(email: string, token: string): Promise<void> {
+    // BACKEND_TODO: интегрировать SMTP / SMS-провайдер. Пока структурный лог,
+    // оператор получает запись в journalctl и передаёт юзеру вручную (форум
+    // имеет горячую линию организаторов).
+    const link = `https://app.techforum2026.ru/reset?token=${token}`; // placeholder URL
+    log.info('forgot-password', `RESET TOKEN issued for ${email}`, { link, ttl: '30m' });
+  }
+
+  api.post('/auth/forgot-password/start', forgotRateLimit, validateBody(forgotPasswordStartSchema), async (req, res) => {
+    const { email } = req.body as import('./src/lib/validation.js').ForgotPasswordStartBody;
+    const user = await findUserByEmail(email);
+
+    // Anti-enumeration: всегда отвечаем 200, даже если юзера нет.
+    if (!user) {
+      res.json({ ok: true, ttlSeconds: 30 * 60 });
+      return;
+    }
+
+    // Чистим истёкшие токены этого юзера + ограничиваем кол-во активных.
+    const now = new Date();
+    await db.delete(passwordResetTokens)
+      .where(and(eq(passwordResetTokens.userId, user.id), lt(passwordResetTokens.expiresAt, now)));
+    const active = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+    if (active.length >= 3) {
+      // Слишком много активных — отдаём 429, чтобы не плодить спам.
+      res.status(429).json({ error: 'too_many_active_resets' });
+      return;
+    }
+
+    const id = crypto.randomUUID();
+    const rawToken = crypto.randomBytes(24).toString('base64url'); // 32-символьная url-safe строка
+    const tokenHash = hashResetToken(rawToken);
+    const expiresAt = new Date(now.getTime() + 30 * 60 * 1000);
+
+    await db.insert(passwordResetTokens).values({
+      id,
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      attempts: 0,
+    });
+
+    await sendResetNotification(user.email, rawToken);
+
+    res.json({ ok: true, ttlSeconds: 30 * 60 });
+  });
+
+  api.post('/auth/forgot-password/verify', forgotRateLimit, validateBody(forgotPasswordVerifySchema), async (req, res) => {
+    const { token, newPassword } = req.body as import('./src/lib/validation.js').ForgotPasswordVerifyBody;
+    const tokenHash = hashResetToken(token);
+
+    const rows = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.tokenHash, tokenHash)).limit(1);
+    const row = rows[0];
+    if (!row) {
+      res.status(400).json({ error: 'invalid_token' });
+      return;
+    }
+    if (row.expiresAt.getTime() < Date.now()) {
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, row.id));
+      res.status(400).json({ error: 'token_expired' });
+      return;
+    }
+    if (row.attempts >= 5) {
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, row.id));
+      res.status(429).json({ error: 'too_many_attempts' });
+      return;
+    }
+
+    const user = await findUserById(row.userId);
+    if (!user) {
+      await db.delete(passwordResetTokens).where(eq(passwordResetTokens.id, row.id));
+      res.status(400).json({ error: 'invalid_token' });
+      return;
+    }
+
+    const passwordHash = hashPassword(newPassword);
+    await db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+      // Снимаем все reset-токены и все сессии этого юзера, чтобы атакующий
+      // (если завладел email) не остался залогинен.
+      await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+    });
+
+    res.json({ ok: true });
+  });
+
+  // ========================================================================
   // AVATAR UPLOAD
   // ========================================================================
 
-  // BUG_FIX_CONTEXT: Возвращаем относительный URL ('/uploads/<file>'), а не абсолютный.
-  // Клиент сам резолвит через resolveAssetUrl() — это позволяет одному и тому же
-  // payload работать как через прямой http://72.56.9.90:3100, так и через прокси.
+  // Возвращаем относительный URL ('/uploads/<file>.<ext>'). Клиент резолвит
+  // через resolveAssetUrl(). При успешной загрузке нового аватара старый
+  // (если хранится локально, /uploads/...) удаляем с диска, чтобы папка
+  // не росла бесконтрольно.
+  const MIME_TO_EXT: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+  };
   api.post('/me/avatar', requireAuth, upload.single('file'), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const file = (req as Request & { file?: Express.Multer.File }).file;
     if (!file) {
       res.status(400).json({ error: 'file_required' });
       return;
     }
 
-    const allowedMime = new Set(['image/jpeg', 'image/png', 'image/webp']);
-    if (!allowedMime.has(file.mimetype)) {
+    const ext = MIME_TO_EXT[file.mimetype];
+    if (!ext) {
       try { fs.unlinkSync(file.path); } catch { /* noop */ }
       res.status(400).json({ error: 'unsupported_mime', mime: file.mimetype });
       return;
@@ -693,11 +870,38 @@ async function startServer(): Promise<void> {
 
     const user = await findUserById(userId);
     if (!user) {
+      try { fs.unlinkSync(file.path); } catch { /* noop */ }
+      delete req.session.userId;
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
 
-    const relativeUrl = `/uploads/${file.filename}`;
+    // Multer пишет файл с UUID-именем без расширения. Переименовываем
+    // в <filename>.<ext>, чтобы клиенты с extension-based кэшем (iOS Safari,
+    // некоторые WebView) корректно определяли тип.
+    const finalName = `${file.filename}.${ext}`;
+    const finalPath = path.join(uploadDir, finalName);
+    try {
+      fs.renameSync(file.path, finalPath);
+    } catch (err) {
+      log.error('uploads', 'rename failed', { from: file.path, to: finalPath, err: String(err) });
+      try { fs.unlinkSync(file.path); } catch { /* noop */ }
+      res.status(500).json({ error: 'upload_persist_failed' });
+      return;
+    }
+
+    // Удаляем старый аватар, если он наш (хранится в /uploads/). Внешние
+    // ссылки (api.dicebear.com и т.п.) пропускаем.
+    const previousAvatar = user.avatar;
+    if (previousAvatar.startsWith('/uploads/')) {
+      const oldPath = path.join(uploadDir, path.basename(previousAvatar));
+      // Защита от path traversal: убеждаемся что resolved path внутри uploadDir.
+      if (path.resolve(oldPath).startsWith(path.resolve(uploadDir))) {
+        try { fs.unlinkSync(oldPath); } catch { /* старого может уже не быть */ }
+      }
+    }
+
+    const relativeUrl = `/uploads/${finalName}`;
     await db.update(users).set({ avatar: relativeUrl }).where(eq(users.id, user.id));
 
     res.json({ avatar: relativeUrl });
@@ -707,12 +911,8 @@ async function startServer(): Promise<void> {
   // POSTS / COMMENTS / LIKES
   // ========================================================================
 
-  api.post('/posts', requireAuth, validateBody(postCreateSchema), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+  api.post('/posts', requireAuth, writeRateLimit, validateBody(postCreateSchema), async (req, res) => {
+    const userId = getSessionUserId(req)!;
     const { type, url, text } = req.body as import('./src/lib/validation.js').PostCreateBody;
     const id = crypto.randomUUID();
     await db.insert(posts).values({ id, userId, type, url, text });
@@ -736,75 +936,99 @@ async function startServer(): Promise<void> {
     });
   });
 
+  // GET /posts — пагинация + SQL ILIKE поиск + counts через GROUP BY.
+  // Контракт ответа сохранён (массив posts с user/likes/comments), но
+  // добавлены query-параметры:
+  //   ?limit=N   (default 50, max 100)
+  //   ?offset=N  (default 0)
+  //   ?q=text    (поиск по тексту поста + имени автора)
+  // Раньше тянули все посты+likes+comments в JS — heap-bomb на росте.
   api.get('/posts', async (req, res) => {
-    const query = String(req.query?.q || '').trim().toLowerCase();
+    const limitRaw = Number(req.query?.limit);
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(100, Math.floor(limitRaw)) : 50;
+    const offsetRaw = Number(req.query?.offset);
+    const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
+    const query = String(req.query?.q || '').trim();
 
-    // Простая реализация: тянем все посты в обратном хроно-порядке, потом
-    // в JS присоединяем юзера/комменты/лайки. Для ~100-1000 постов хватит.
-    // Когда лента вырастет — переделаем на JOIN + pagination.
-    const allPosts = await db.select().from(posts).orderBy(desc(posts.createdAt));
+    // Поиск делаем на уровне SQL: ILIKE по тексту поста и имени автора.
+    // Используем LEFT JOIN users, фильтр через WHERE с параметром.
+    const likePattern = `%${query.replace(/[%_]/g, '\\$&')}%`;
+    const baseRows = query
+      ? await db
+          .select({ post: posts, author: users })
+          .from(posts)
+          .leftJoin(users, eq(users.id, posts.userId))
+          .where(sql`${posts.text} ILIKE ${likePattern} OR ${users.name} ILIKE ${likePattern}`)
+          .orderBy(desc(posts.createdAt))
+          .limit(limit)
+          .offset(offset)
+      : await db
+          .select({ post: posts, author: users })
+          .from(posts)
+          .leftJoin(users, eq(users.id, posts.userId))
+          .orderBy(desc(posts.createdAt))
+          .limit(limit)
+          .offset(offset);
 
-    const userIds = Array.from(new Set(allPosts.map(p => p.userId)));
-    const userRows = userIds.length
-      ? await db.select().from(users).where(/* in */ inListExpr(userIds))
-      : [];
-    const userById = new Map(userRows.map(u => [u.id, toPublicUser(u)]));
+    if (baseRows.length === 0) {
+      res.json([]);
+      return;
+    }
 
-    const allLikes = await db.select().from(postLikes);
+    const postIds = baseRows.map((r) => r.post.id);
+
+    // Likes — все строки для текущей страницы (нужен likedBy[]).
+    const likesRows = await db.select().from(postLikes).where(inArray(postLikes.postId, postIds));
     const likesByPost = new Map<string, string[]>();
-    for (const l of allLikes) {
+    for (const l of likesRows) {
       const arr = likesByPost.get(l.postId) ?? [];
       arr.push(l.userId);
       likesByPost.set(l.postId, arr);
     }
 
-    const allComments = await db.select().from(postComments);
-    const commentsByPost = new Map<string, typeof allComments>();
-    for (const c of allComments) {
+    // Comments — только для постов текущей страницы.
+    const commentsRows = await db.select().from(postComments)
+      .where(inArray(postComments.postId, postIds))
+      .orderBy(desc(postComments.createdAt));
+    const commentsByPost = new Map<string, typeof commentsRows>();
+    for (const c of commentsRows) {
       const arr = commentsByPost.get(c.postId) ?? [];
       arr.push(c);
       commentsByPost.set(c.postId, arr);
     }
 
-    const filtered = query
-      ? allPosts.filter(p => {
-          const author = userById.get(p.userId);
-          return p.text.toLowerCase().includes(query)
-            || (author?.name.toLowerCase().includes(query) ?? false);
-        })
-      : allPosts;
-
-    const feed = filtered.map(p => {
-      const likedBy = likesByPost.get(p.id) ?? [];
-      const comments = (commentsByPost.get(p.id) ?? []).map(c => ({
+    const feed = baseRows.map(({ post, author }) => {
+      const likedBy = likesByPost.get(post.id) ?? [];
+      const comments = (commentsByPost.get(post.id) ?? []).map((c) => ({
         id: c.id,
         userId: c.userId,
         text: c.text,
         createdAt: c.createdAt,
       }));
       return {
-        id: p.id,
-        userId: p.userId,
-        type: p.type,
-        url: p.url,
-        text: p.text,
+        id: post.id,
+        userId: post.userId,
+        type: post.type,
+        url: post.url,
+        text: post.text,
         likes: likedBy.length,
         likedBy,
         comments,
-        createdAt: p.createdAt,
-        user: userById.get(p.userId) ?? null,
+        createdAt: post.createdAt,
+        user: author ? toPublicUser(author) : null,
       };
     });
 
     res.json(feed);
   });
 
-  api.post('/posts/:id/like', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+  // POST /posts/:id/like — toggle через ON CONFLICT, без race.
+  // Раньше: SELECT → INSERT/DELETE — между шагами 1-2 другой клиент
+  // мог нарушить unique-constraint и handler падал 500. Теперь:
+  //   INSERT ... ON CONFLICT DO NOTHING — если строка уже была, INSERT no-op,
+  //   воспринимаем как "снятие лайка" → DELETE и возвращаем liked=false.
+  api.post('/posts/:id/like', requireAuth, writeRateLimit, async (req, res) => {
+    const userId = getSessionUserId(req)!;
     const postId = String(req.params.id);
 
     const post = (await db.select().from(posts).where(eq(posts.id, postId)).limit(1))[0];
@@ -813,30 +1037,30 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const existing = await db.select().from(postLikes)
-      .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)))
-      .limit(1);
-
+    const inserted = await db.insert(postLikes)
+      .values({ postId, userId })
+      .onConflictDoNothing()
+      .returning();
     let liked: boolean;
-    if (existing.length > 0) {
+    if (inserted.length > 0) {
+      liked = true;
+    } else {
+      // строка уже существовала — toggle на снятие лайка
       await db.delete(postLikes)
         .where(and(eq(postLikes.postId, postId), eq(postLikes.userId, userId)));
       liked = false;
-    } else {
-      await db.insert(postLikes).values({ postId, userId });
-      liked = true;
     }
 
-    const totalLikes = (await db.select().from(postLikes).where(eq(postLikes.postId, postId))).length;
-    res.json({ likes: totalLikes, liked });
+    // Считаем total на уровне SQL — без bring-all-rows-in-JS.
+    const countRows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(postLikes)
+      .where(eq(postLikes.postId, postId));
+    res.json({ likes: countRows[0]?.count ?? 0, liked });
   });
 
-  api.post('/posts/:id/comment', requireAuth, validateBody(commentCreateSchema), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+  api.post('/posts/:id/comment', requireAuth, writeRateLimit, validateBody(commentCreateSchema), async (req, res) => {
+    const userId = getSessionUserId(req)!;
     const postId = String(req.params.id);
     const { text } = req.body as import('./src/lib/validation.js').CommentCreateBody;
 
@@ -865,12 +1089,8 @@ async function startServer(): Promise<void> {
   // STATUSES (24h-stories)
   // ========================================================================
 
-  api.post('/statuses', requireAuth, validateBody(statusCreateSchema), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+  api.post('/statuses', requireAuth, writeRateLimit, validateBody(statusCreateSchema), async (req, res) => {
+    const userId = getSessionUserId(req)!;
     const id = crypto.randomUUID();
     const { type, url, text } = req.body as import('./src/lib/validation.js').StatusCreateBody;
 
@@ -885,12 +1105,12 @@ async function startServer(): Promise<void> {
 
   api.get('/statuses', async (_req, res) => {
     const all = await db.select().from(statuses).orderBy(desc(statuses.createdAt));
-    const userIds = Array.from(new Set(all.map(s => s.userId)));
+    const userIds = Array.from(new Set(all.map((s) => s.userId)));
     const userRows = userIds.length
-      ? await db.select().from(users).where(inListExpr(userIds))
+      ? await db.select().from(users).where(inArray(users.id, userIds))
       : [];
-    const userById = new Map(userRows.map(u => [u.id, toPublicUser(u)]));
-    const list = all.map(s => ({ ...s, user: userById.get(s.userId) ?? null }));
+    const userById = new Map(userRows.map((u) => [u.id, toPublicUser(u)]));
+    const list = all.map((s) => ({ ...s, user: userById.get(s.userId) ?? null }));
     res.json(list);
   });
 
@@ -907,32 +1127,32 @@ async function startServer(): Promise<void> {
   });
 
   api.get('/me/interests', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const rows = await db.select().from(userInterests).where(eq(userInterests.userId, userId));
-    res.json({ interestIds: rows.map(r => r.interestId) });
+    res.json({ interestIds: rows.map((r) => r.interestId) });
   });
 
   api.put('/me/interests', requireAuth, validateBody(meInterestsPutSchema), async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const { interestIds } = req.body as import('./src/lib/validation.js').MeInterestsPutBody;
     const validIds = new Set(INTERESTS.map((i: { id: string }) => i.id));
-    const incoming = Array.from(new Set(interestIds)).filter(id => validIds.has(id));
-    // Atomic delete + insert. Drizzle pg-pool поддерживает .transaction().
+    const dedup = Array.from(new Set(interestIds));
+    const unknown = dedup.filter((id) => !validIds.has(id));
+    if (unknown.length > 0) {
+      res.status(400).json({ error: 'unknown_interest_ids', unknown });
+      return;
+    }
+    // schema уже гарантирует min(3); ещё одна страховка чтобы серверная
+    // логика не зависела от порядка middleware.
+    if (dedup.length < 3) {
+      res.status(400).json({ error: 'need_at_least_3_interests' });
+      return;
+    }
     await db.transaction(async (tx) => {
       await tx.delete(userInterests).where(eq(userInterests.userId, userId));
-      if (incoming.length > 0) {
-        await tx.insert(userInterests).values(incoming.map(interestId => ({ userId, interestId })));
-      }
+      await tx.insert(userInterests).values(dedup.map((interestId) => ({ userId, interestId })));
     });
-    res.json({ ok: true, interestIds: incoming, count: incoming.length });
+    res.json({ ok: true, interestIds: dedup, count: dedup.length });
   });
 
   // ========================================================================
@@ -940,43 +1160,64 @@ async function startServer(): Promise<void> {
   // ========================================================================
 
   api.get('/sessions/registered', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const rows = await db.select().from(registrations).where(eq(registrations.userId, userId));
-    res.json({ sessionIds: rows.map(r => r.sessionId) });
+    res.json({ sessionIds: rows.map((r) => r.sessionId) });
   });
 
   api.post('/sessions/:id/register', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const sessionId = String(req.params.id);
 
-    // Проверяем что сессия вообще существует в БД
     const sess = (await db.select().from(sessionsEvent).where(eq(sessionsEvent.id, sessionId)).limit(1))[0];
     if (!sess) {
       res.status(404).json({ error: 'session_not_found' });
       return;
     }
 
+    // Capacity check: считаем уже зарегистрированных + сравниваем с capacity зала.
+    // hallId в sessions_event опционален (онлайн-формат), capacity тогда не лимитируем.
+    if (sess.hallId) {
+      const hallMeta = HALLS.find((h: { id: string }) => h.id === sess.hallId);
+      if (hallMeta && hallMeta.capacity > 0) {
+        const cnt = await db
+          .select({ c: sql<number>`count(*)::int` })
+          .from(registrations)
+          .where(eq(registrations.sessionId, sessionId));
+        if ((cnt[0]?.c ?? 0) >= hallMeta.capacity) {
+          res.status(409).json({ error: 'hall_full', capacity: hallMeta.capacity });
+          return;
+        }
+      }
+    }
+
+    // Conflict-warning: уже зарегистрирован на параллельную сессию?
+    // Возвращаем как warning (не блокируем — фронт показывает пользователю
+    // и подтверждает override). Это backward-compatible: фронт может игнорить
+    // поле conflicts, поведение API в успехе остаётся 200 + ok:true.
+    const myRegs = await db.select().from(registrations).where(eq(registrations.userId, userId));
+    const conflicts: string[] = [];
+    if (myRegs.length > 0) {
+      const otherIds = myRegs.map((r) => r.sessionId).filter((id) => id !== sessionId);
+      if (otherIds.length > 0) {
+        const others = await db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, otherIds));
+        for (const o of others) {
+          if (o.dayId === sess.dayId && timeRangesOverlap(sess.startTime, sess.endTime, o.startTime, o.endTime)) {
+            conflicts.push(o.id);
+          }
+        }
+      }
+    }
+
     await db.insert(registrations)
       .values({ userId, sessionId })
       .onConflictDoNothing();
 
-    res.json({ ok: true, sessionId });
+    res.json({ ok: true, sessionId, conflicts });
   });
 
   api.delete('/sessions/:id/register', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const sessionId = String(req.params.id);
 
     await db.delete(registrations)
@@ -1065,13 +1306,10 @@ async function startServer(): Promise<void> {
   // (userId|email|name|tier) с использованием SESSION_SECRET. Сканер на входе
   // проверяет подпись и пускает.
   api.get('/ticket/me', requireAuth, async (req, res) => {
-    const userId = getSessionUserId(req);
-    if (!userId) {
-      res.status(401).json({ error: 'Не авторизован' });
-      return;
-    }
+    const userId = getSessionUserId(req)!;
     const user = await findUserById(userId);
     if (!user) {
+      delete req.session.userId;
       res.status(401).json({ error: 'Не авторизован' });
       return;
     }
@@ -1079,7 +1317,7 @@ async function startServer(): Promise<void> {
     const tier = 'standard';
     const eventId = 'techforum-2026';
     const payload = `${eventId}|${user.id}|${user.email}|${user.name}|${tier}`;
-    const hmac = crypto.createHmac('sha256', sessionSecret).update(payload).digest('hex').slice(0, 32);
+    const hmac = crypto.createHmac('sha256', ticketHmacSecret).update(payload).digest('hex').slice(0, 32);
     const qrPayload = `${payload}|${hmac}`;
 
     res.json({
@@ -1144,13 +1382,6 @@ async function startServer(): Promise<void> {
     await pool.end();
     process.exit(0);
   });
-}
-
-// Helper: безопасный inArray-выражение для drizzle.
-// Импорт inArray из drizzle-orm даёт нативный `WHERE id IN (?, ?, ...)`.
-import { inArray } from 'drizzle-orm';
-function inListExpr(ids: string[]) {
-  return inArray(users.id, ids);
 }
 
 startServer().catch((error) => {

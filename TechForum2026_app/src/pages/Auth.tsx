@@ -208,7 +208,9 @@ export default function Auth({ onSuccess }: AuthProps) {
           </>
         )}
 
-        <BrandTitle />
+        {/* На Auth год не анимируем: каждый возврат с register→login дёргал
+            blur-flash. Сильную анимацию оставляем только на Splash. */}
+        <BrandTitle animateYear={false} />
 
         <div className="mt-5 flex justify-center">
           <EventBadge />

@@ -15,6 +15,13 @@
       "when": 1777736018188,
       "tag": "0001_add_interests",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0002_password_reset",
+      "breakpoints": true
     }
   ]
 }
