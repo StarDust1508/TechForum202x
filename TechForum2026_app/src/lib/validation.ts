@@ -103,10 +103,16 @@ export const statusCreateSchema = z.object({
   text: z.string().max(500).optional().default(''),
 });
 
-// Direct messages (Chat → Личные)
+// Direct messages (Chat → Личные).
+// Сообщение должно содержать text ИЛИ media (или оба). Чистая отправка
+// «пустого» сообщения без вложения отвергается.
 export const dmSendSchema = z.object({
   toUserId: z.string().min(1).max(64),
-  text: z.string().trim().min(1, 'Сообщение пустое').max(2000),
+  text: z.string().trim().max(2000).optional().default(''),
+  mediaUrl: z.string().max(512).optional(),
+  mediaType: z.enum(['image', 'audio', 'video']).optional(),
+}).refine((d) => (d.text && d.text.length > 0) || (d.mediaUrl && d.mediaType), {
+  message: 'Сообщение пустое',
 });
 
 // Forgot-password (см. server.ts /auth/forgot-password/*).

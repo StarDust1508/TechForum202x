@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { Search, Send, Bot, User as UserIcon, ChevronRight, Sparkles } from 'lucide-react';
+import { Search, Send, Bot, User as UserIcon, ChevronRight, Sparkles, Paperclip, Mic, Square, Image as ImageIcon, Video as VideoIcon, Play, Pause, X as XIcon } from 'lucide-react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
 
@@ -29,6 +29,8 @@ type ChatMessage = {
   id: string;
   fromMe: boolean;
   text: string;
+  mediaUrl?: string | null;
+  mediaType?: 'image' | 'audio' | 'video' | null;
   createdAt: string;
 };
 
@@ -289,11 +291,13 @@ function DmRoom({ userId }: { userId: string }) {
     try {
       const r = await fetch(resolveApiUrl(`/messages/with/${userId}`), { credentials: 'include' });
       if (!r.ok) return;
-      const arr: Array<{ id: string; fromUserId: string; text: string; createdAt: string }> = await r.json();
+      const arr: Array<{ id: string; fromUserId: string; text: string; mediaUrl: string | null; mediaType: 'image' | 'audio' | 'video' | null; createdAt: string }> = await r.json();
       setMessages(arr.map((m) => ({
         id: m.id,
         fromMe: m.fromUserId === meId,
         text: m.text,
+        mediaUrl: m.mediaUrl,
+        mediaType: m.mediaType,
         createdAt: m.createdAt,
       })));
     } catch { /* noop */ }
@@ -311,15 +315,18 @@ function DmRoom({ userId }: { userId: string }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length]);
 
-  const handleSend = async () => {
-    const text = input.trim();
-    if (!text || sending) return;
+  // ====== Send: text or media ======
+  const sendMessage = async (payload: { text?: string; mediaUrl?: string; mediaType?: 'image' | 'audio' | 'video' }) => {
+    if (sending) return;
+    if (!payload.text && !payload.mediaUrl) return;
     setSending(true);
-    setInput('');
-    // Optimistic
     const optimisticId = `tmp_${Date.now()}`;
     const optimistic: ChatMessage = {
-      id: optimisticId, fromMe: true, text, createdAt: new Date().toISOString(),
+      id: optimisticId, fromMe: true,
+      text: payload.text || '',
+      mediaUrl: payload.mediaUrl ?? null,
+      mediaType: payload.mediaType ?? null,
+      createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimistic]);
     try {
@@ -327,14 +334,17 @@ function DmRoom({ userId }: { userId: string }) {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toUserId: userId, text }),
+        body: JSON.stringify({
+          toUserId: userId,
+          text: payload.text || '',
+          mediaUrl: payload.mediaUrl,
+          mediaType: payload.mediaType,
+        }),
       });
       if (!r.ok) {
-        // откатываем optimistic
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-        setInput(text); // вернём для повторной отправки
+        if (payload.text) setInput(payload.text);
       } else {
-        // подменяем optimistic настоящим id из ответа
         const real = await r.json();
         setMessages((prev) => prev.map((m) => m.id === optimisticId
           ? { ...m, id: real.id, createdAt: real.createdAt }
@@ -343,11 +353,126 @@ function DmRoom({ userId }: { userId: string }) {
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
-      setInput(text);
+      if (payload.text) setInput(payload.text);
     } finally {
       setSending(false);
     }
   };
+
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text) return;
+    setInput('');
+    await sendMessage({ text });
+  };
+
+  // ====== Media: file picker (image / video) ======
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handlePickFile = (accept: string) => {
+    if (!fileInputRef.current) return;
+    fileInputRef.current.accept = accept;
+    fileInputRef.current.click();
+  };
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    await uploadAndSend(file);
+  };
+  const uploadAndSend = async (blob: Blob | File) => {
+    const fd = new FormData();
+    const f = blob instanceof File ? blob : new File([blob], 'media', { type: blob.type || 'application/octet-stream' });
+    fd.append('file', f);
+    try {
+      const r = await fetch(resolveApiUrl('/messages/upload-media'), {
+        method: 'POST', credentials: 'include', body: fd,
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        // eslint-disable-next-line no-alert
+        alert(err.error === 'unsupported_mime' ? 'Формат не поддерживается' : `Загрузка не удалась: ${err.error || r.status}`);
+        return;
+      }
+      const data: { url: string; type: 'image' | 'audio' | 'video' } = await r.json();
+      await sendMessage({ mediaUrl: data.url, mediaType: data.type });
+    } catch {
+      // eslint-disable-next-line no-alert
+      alert('Нет соединения');
+    }
+  };
+
+  // ====== Media: voice / video record via MediaRecorder ======
+  const [recording, setRecording] = useState<null | 'audio' | 'video'>(null);
+  const [recordSec, setRecordSec] = useState(0);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recorderChunks = useRef<Blob[]>([]);
+  const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const startRecord = async (kind: 'audio' | 'video') => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(
+        kind === 'audio' ? { audio: true } : { audio: true, video: { width: 640, height: 480 } },
+      );
+      streamRef.current = stream;
+      const mime = kind === 'audio'
+        ? (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4')
+        : (MediaRecorder.isTypeSupported('video/webm') ? 'video/webm' : 'video/mp4');
+      const rec = new MediaRecorder(stream, { mimeType: mime });
+      recorderChunks.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size > 0) recorderChunks.current.push(e.data); };
+      rec.onstop = async () => {
+        const blob = new Blob(recorderChunks.current, { type: mime });
+        recorderChunks.current = [];
+        if (streamRef.current) {
+          for (const t of streamRef.current.getTracks()) t.stop();
+          streamRef.current = null;
+        }
+        await uploadAndSend(blob);
+      };
+      rec.start();
+      recorderRef.current = rec;
+      setRecording(kind);
+      setRecordSec(0);
+      recordTimer.current = setInterval(() => setRecordSec((s) => {
+        // авто-стоп через 60 секунд
+        if (s >= 59) { stopRecord(); return 60; }
+        return s + 1;
+      }), 1000);
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      alert(`Микрофон/камера недоступны: ${(err as Error).message || 'permission_denied'}`);
+    }
+  };
+
+  const stopRecord = () => {
+    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.stop();
+    }
+    setRecording(null);
+  };
+
+  const cancelRecord = () => {
+    if (recordTimer.current) { clearInterval(recordTimer.current); recordTimer.current = null; }
+    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+      recorderRef.current.ondataavailable = null;
+      recorderRef.current.onstop = null;
+      recorderRef.current.stop();
+    }
+    if (streamRef.current) {
+      for (const t of streamRef.current.getTracks()) t.stop();
+      streamRef.current = null;
+    }
+    recorderChunks.current = [];
+    setRecording(null);
+  };
+
+  useEffect(() => () => {
+    // cleanup on unmount
+    if (recordTimer.current) clearInterval(recordTimer.current);
+    if (streamRef.current) for (const t of streamRef.current.getTracks()) t.stop();
+  }, []);
 
   return (
     <div className="flex flex-col h-full" style={{ minHeight: '100dvh' }}>
@@ -382,47 +507,121 @@ function DmRoom({ userId }: { userId: string }) {
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-[78%] rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed ${
+              className={`max-w-[80%] rounded-2xl text-[14px] leading-relaxed overflow-hidden ${
                 m.fromMe
                   ? 'bg-[#4ec9c0]/85 text-[#03161c] rounded-br-md'
                   : 'bg-[#0a2f38]/75 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
               }`}
             >
-              <p className="whitespace-pre-wrap break-words">{m.text}</p>
-              <span className={`block text-[9px] mt-1 ${m.fromMe ? 'text-[#03161c]/60 text-right' : 'text-[#7aa8a4]'}`}>
-                {formatTime(m.createdAt)}
-              </span>
+              {m.mediaUrl && m.mediaType === 'image' && (
+                <a href={resolveAssetUrl(m.mediaUrl)} target="_blank" rel="noreferrer" className="block">
+                  <img src={resolveAssetUrl(m.mediaUrl)} alt="" className="max-w-full max-h-72 object-cover" />
+                </a>
+              )}
+              {m.mediaUrl && m.mediaType === 'audio' && (
+                <audio src={resolveAssetUrl(m.mediaUrl)} controls className="block max-w-full px-2 pt-2" />
+              )}
+              {m.mediaUrl && m.mediaType === 'video' && (
+                <video src={resolveAssetUrl(m.mediaUrl)} controls playsInline className="block max-w-full max-h-72" />
+              )}
+              <div className="px-3.5 py-2">
+                {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+                <span className={`block text-[9px] mt-1 ${m.fromMe ? 'text-[#03161c]/60 text-right' : 'text-[#7aa8a4]'}`}>
+                  {formatTime(m.createdAt)}
+                </span>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Input */}
+      {/* Input + media controls */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileSelected}
+      />
       <div
-        className="sticky bottom-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-t border-[#4ec9c0]/22 px-3 py-2 flex items-end gap-2"
+        className="sticky bottom-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-t border-[#4ec9c0]/22 px-3 py-2"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
       >
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              void handleSend();
-            }
-          }}
-          placeholder="Сообщение…"
-          rows={1}
-          className="flex-1 bg-[#0a2f38]/55 border border-[#4ec9c0]/28 rounded-2xl px-4 py-2.5 text-[14px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/70 outline-none focus:border-[#4ec9c0]/55 resize-none max-h-32"
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={!input.trim() || sending}
-          className="h-11 w-11 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] disabled:opacity-40 active:scale-90 transition-transform"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+        {recording ? (
+          <div className="flex items-center gap-3 py-2 px-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+            <span className="font-mono text-[14px] text-[#d8f0ee]">
+              {recording === 'audio' ? 'Запись аудио' : 'Запись видео'} · {String(Math.floor(recordSec / 60)).padStart(2, '0')}:{String(recordSec % 60).padStart(2, '0')}
+            </span>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={cancelRecord}
+              className="h-10 w-10 flex items-center justify-center rounded-2xl border border-rose-400/35 text-rose-300 active:scale-90"
+              aria-label="Отмена"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={stopRecord}
+              className="h-10 w-10 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90"
+              aria-label="Стоп и отправить"
+            >
+              <Square className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => handlePickFile('image/*')}
+              className="h-10 w-10 flex items-center justify-center rounded-2xl border border-[#4ec9c0]/30 text-[#4ec9c0] active:scale-90"
+              aria-label="Прикрепить фото"
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => handlePickFile('video/*')}
+              className="h-10 w-10 flex items-center justify-center rounded-2xl border border-[#4ec9c0]/30 text-[#4ec9c0] active:scale-90"
+              aria-label="Прикрепить видео"
+            >
+              <VideoIcon className="w-4 h-4" />
+            </button>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
+              placeholder="Сообщение…"
+              rows={1}
+              className="flex-1 bg-[#0a2f38]/55 border border-[#4ec9c0]/28 rounded-2xl px-4 py-2.5 text-[14px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/70 outline-none focus:border-[#4ec9c0]/55 resize-none max-h-32"
+            />
+            {input.trim() ? (
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={sending}
+                className="h-11 w-11 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] disabled:opacity-40 active:scale-90"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startRecord('audio')}
+                className="h-11 w-11 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90"
+                aria-label="Записать голосовое"
+              >
+                <Mic className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1158,9 +1158,11 @@ async function startServer(): Promise<void> {
   // каждые 5 сек когда диалог открыт. На событии 30/сессия — нагрузка <1 RPS.
 
   // POST /messages — отправить DM. Создаём запись, возвращаем её для optimistic UI.
+  // Поддерживается text + media (image/audio/video) одновременно.
+  // Media предварительно загружается через POST /messages/upload-media.
   api.post('/messages', requireAuth, writeRateLimit, validateBody(dmSendSchema), async (req, res) => {
     const fromUserId = getSessionUserId(req)!;
-    const { toUserId, text } = req.body as import('./src/lib/validation.js').DmSendBody;
+    const { toUserId, text, mediaUrl, mediaType } = req.body as import('./src/lib/validation.js').DmSendBody;
 
     if (toUserId === fromUserId) {
       res.status(400).json({ error: 'cannot_message_self' });
@@ -1174,7 +1176,12 @@ async function startServer(): Promise<void> {
     }
 
     const id = crypto.randomUUID();
-    await db.insert(directMessages).values({ id, fromUserId, toUserId, text });
+    await db.insert(directMessages).values({
+      id, fromUserId, toUserId,
+      text: text || '',
+      mediaUrl: mediaUrl ?? null,
+      mediaType: mediaType ?? null,
+    });
     const inserted = (await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1))[0];
     if (!inserted) {
       res.status(500).json({ error: 'dm_create_failed' });
@@ -1185,9 +1192,50 @@ async function startServer(): Promise<void> {
       fromUserId: inserted.fromUserId,
       toUserId: inserted.toUserId,
       text: inserted.text,
+      mediaUrl: inserted.mediaUrl,
+      mediaType: inserted.mediaType,
       createdAt: inserted.createdAt,
       readAt: inserted.readAt,
     });
+  });
+
+  // POST /messages/upload-media — заливка вложения для DM.
+  // Принимает один файл (image/audio/video, до 6MB после nginx), сохраняет
+  // в /var/data/uploads/<uuid>.<ext>, возвращает {url, type}.
+  // Клиент потом шлёт /messages с {mediaUrl, mediaType}.
+  const DM_MEDIA_MIME: Record<string, { type: 'image' | 'audio' | 'video'; ext: string }> = {
+    'image/jpeg': { type: 'image', ext: 'jpg' },
+    'image/png':  { type: 'image', ext: 'png' },
+    'image/webp': { type: 'image', ext: 'webp' },
+    'audio/webm': { type: 'audio', ext: 'webm' },
+    'audio/ogg':  { type: 'audio', ext: 'ogg' },
+    'audio/mp4':  { type: 'audio', ext: 'm4a' },
+    'audio/mpeg': { type: 'audio', ext: 'mp3' },
+    'video/webm': { type: 'video', ext: 'webm' },
+    'video/mp4':  { type: 'video', ext: 'mp4' },
+  };
+  api.post('/messages/upload-media', requireAuth, writeRateLimit, upload.single('file'), async (req, res) => {
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    if (!file) {
+      res.status(400).json({ error: 'file_required' });
+      return;
+    }
+    const meta = DM_MEDIA_MIME[file.mimetype];
+    if (!meta) {
+      try { fs.unlinkSync(file.path); } catch { /* noop */ }
+      res.status(400).json({ error: 'unsupported_mime', mime: file.mimetype });
+      return;
+    }
+    const finalName = `${file.filename}.${meta.ext}`;
+    const finalPath = path.join(uploadDir, finalName);
+    try { fs.renameSync(file.path, finalPath); }
+    catch (err) {
+      log.error('uploads', 'dm media rename failed', { err: String(err) });
+      try { fs.unlinkSync(file.path); } catch { /* noop */ }
+      res.status(500).json({ error: 'upload_persist_failed' });
+      return;
+    }
+    res.json({ url: `/uploads/${finalName}`, type: meta.type });
   });
 
   // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.
@@ -1219,6 +1267,8 @@ async function startServer(): Promise<void> {
       fromUserId: m.fromUserId,
       toUserId: m.toUserId,
       text: m.text,
+      mediaUrl: m.mediaUrl,
+      mediaType: m.mediaType,
       createdAt: m.createdAt,
       readAt: m.readAt,
     })));

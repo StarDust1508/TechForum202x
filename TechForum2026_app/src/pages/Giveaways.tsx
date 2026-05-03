@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Gift, Zap, Laptop, Headphones, Trophy, ChevronRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
+import { Gift, Zap, Laptop as LaptopIcon, Headphones, Watch, Trophy, ChevronRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import BackButton from '@/src/components/BackButton';
 
@@ -8,42 +8,46 @@ interface Giveaway {
   id: string;
   title: string;
   item: string;
-  image: string;
+  Icon: typeof LaptopIcon;
   description: string;
   endTime: string;
   participants: number;
   featured?: boolean;
 }
 
+// Список призов от партнёров. Раньше использовались picsum.photos placeholders
+// и придуманные счётчики «1240 участников» — заглушки. Когда заказчик пришлёт
+// финальный список призов с реальными счётчиками — переедем на серверный
+// эндпоинт /giveaways. Пока — иконки lucide вместо stock-фото.
 const GIVEAWAYS: Giveaway[] = [
   {
     id: 'g1',
-    title: 'Главный приз форума',
-    item: 'MacBook Pro 16" M3 Max',
-    image: 'https://picsum.photos/seed/macbook/800/600',
-    description: 'Вершина производительности для разработчиков и дизайнеров. 128GB RAM, 2TB SSD.',
-    endTime: 'Сегодня, 18:00',
-    participants: 1240,
-    featured: true
+    title: 'Главный приз',
+    item: 'Топовый ноутбук от партнёра',
+    Icon: LaptopIcon,
+    description: 'Розыгрыш ноутбука среди всех участников форума, прошедших регистрацию на месте.',
+    endTime: '21 мая, 18:00',
+    participants: 0,
+    featured: true,
   },
   {
     id: 'g2',
     title: 'Звук будущего',
-    item: 'AirPods Max',
-    image: 'https://picsum.photos/seed/airpods/800/600',
-    description: 'Кристально чистый звук и адаптивное шумоподавление. Цвет "Космический серый".',
-    endTime: '21 мая, 12:00',
-    participants: 856
+    item: 'Беспроводные наушники',
+    Icon: Headphones,
+    description: 'Премиальные наушники с активным шумоподавлением от партнёра форума.',
+    endTime: '21 мая, 16:00',
+    participants: 0,
   },
   {
     id: 'g3',
     title: 'Для активных',
-    item: 'Apple Watch Ultra 2',
-    image: 'https://picsum.photos/seed/watch/800/600',
-    description: 'Самые прочные и функциональные часы для экстремальных условий.',
+    item: 'Smart-часы',
+    Icon: Watch,
+    description: 'Часы с продвинутым health-tracking от технологического партнёра.',
     endTime: '21 мая, 15:00',
-    participants: 432
-  }
+    participants: 0,
+  },
 ];
 
 export default function Giveaways() {
@@ -106,23 +110,26 @@ export default function Giveaways() {
               participatingIds.includes(giveaway.id) ? "border-green-500/30" : "border-[#4ec9c0]/28 hover:border-accent/40"
             )}
           >
-            <div className="relative h-48 overflow-hidden">
-              <img 
-                src={giveaway.image} 
-                alt={giveaway.item}
-                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0b0e14] to-transparent" />
+            <div className="relative h-48 overflow-hidden flex items-center justify-center bg-gradient-to-br from-[#0a2f38]/80 to-[#03161c]">
+              {/* Декоративная сетка вместо stock-фото */}
+              <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id={`grid-${giveaway.id}`} width="28" height="28" patternUnits="userSpaceOnUse">
+                    <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#4ec9c0" strokeWidth="0.4" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill={`url(#grid-${giveaway.id})`} />
+              </svg>
+              <giveaway.Icon className="w-20 h-20 text-[#4ec9c0] drop-shadow-[0_0_24px_rgba(78,201,192,0.55)]" strokeWidth={1.2} />
               <div className="absolute top-4 left-4 flex gap-2">
                 {giveaway.featured && (
-                  <span className="bg-accent text-[#03161c] text-[9px] font-semibold px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1 shadow-lg shadow-accent/20">
+                  <span className="bg-[#4ec9c0] text-[#03161c] text-[9px] font-semibold px-3 py-1 rounded-full uppercase tracking-widest flex items-center gap-1">
                     <Sparkles className="w-3 h-3" />
-                    MAIN PRIZE
+                    Главный приз
                   </span>
                 )}
-                <span className="bg-[#0b0e14]/80 backdrop-blur-md text-[#d8f0ee] text-[9px] font-semibold px-3 py-1 rounded-full border border-white/10 uppercase tracking-widest flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-accent" />
+                <span className="bg-[#03161c]/80 backdrop-blur-md text-[#d8f0ee] text-[9px] font-semibold px-3 py-1 rounded-full border border-[#4ec9c0]/22 uppercase tracking-widest flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-[#4ec9c0]" />
                   {giveaway.endTime}
                 </span>
               </div>
