@@ -71,7 +71,7 @@ export default function NewsDetail() {
           )}
         </div>
 
-        <h1 className="font-elite text-3xl leading-tight text-white">{news.title}</h1>
+        <h1 className="font-display text-3xl leading-tight text-white">{news.title}</h1>
 
         <div className="flex items-center gap-3 text-[12px] text-white/55 font-semibold">
           <Clock className="w-3.5 h-3.5" />

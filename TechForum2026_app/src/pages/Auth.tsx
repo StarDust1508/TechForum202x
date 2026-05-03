@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, Loader2, Fingerprint, X as XIcon } from 'lucide-react';
 import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@/src/lib/localAuth';
@@ -29,6 +29,16 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [pendingUser, setPendingUser] = useState<unknown | null>(null);
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
+
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const passwordConfirmRef = useRef<HTMLInputElement>(null);
+
+  // Автофокус на первое поле при монтировании / переключении режима
+  useEffect(() => {
+    const t = setTimeout(() => emailRef.current?.focus(), 320);
+    return () => clearTimeout(t);
+  }, [mode]);
 
   useEffect(() => {
     let mounted = true;
@@ -123,30 +133,43 @@ export default function Auth({ onSuccess }: AuthProps) {
           <EventBadge />
         </div>
 
-        <h2 className="mt-8 mb-5 font-display text-[28px] font-semibold text-[#d8f0ee] tracking-wide">
-          {mode === 'login' ? 'Войти' : 'Регистрация'}
-        </h2>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.h2
+            key={`title-${mode}`}
+            initial={{ opacity: 0, x: 14 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -14 }}
+            transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+            className="mt-8 mb-5 font-display text-[28px] font-semibold text-[#d8f0ee] tracking-wide"
+          >
+            {mode === 'login' ? 'Войти' : 'Регистрация'}
+          </motion.h2>
+        </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <AnimatePresence initial={false} mode="wait">
             <motion.div
               key={mode}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
+              initial={{ opacity: 0, x: mode === 'register' ? 24 : -24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: mode === 'register' ? -24 : 24 }}
+              transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
               className="space-y-3.5"
             >
               <Input
+                ref={emailRef}
                 icon={Mail}
                 type="email"
                 placeholder="@mail или телефон"
                 required
                 autoComplete="email"
+                inputMode="email"
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); passwordRef.current?.focus(); } }}
               />
               <Input
+                ref={passwordRef}
                 icon={Lock}
                 type="password"
                 placeholder={mode === 'register' ? 'Придумайте пароль' : 'Пароль'}
@@ -155,9 +178,15 @@ export default function Auth({ onSuccess }: AuthProps) {
                 toggleablePassword
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (mode === 'register') { e.preventDefault(); passwordConfirmRef.current?.focus(); }
+                  }
+                }}
               />
               {mode === 'register' && (
                 <Input
+                  ref={passwordConfirmRef}
                   icon={Lock}
                   type="password"
                   placeholder="Подтвердите пароль"
@@ -194,9 +223,11 @@ export default function Auth({ onSuccess }: AuthProps) {
           <AnimatePresence>
             {error && (
               <motion.p
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
+                key={error}
+                initial={{ opacity: 0, y: -6, x: 0 }}
+                animate={{ opacity: 1, y: 0, x: [0, -6, 6, -4, 4, 0] }}
                 exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1] }}
                 className="text-[14px] font-semibold text-rose-300 text-center font-blueprint"
               >
                 {error}

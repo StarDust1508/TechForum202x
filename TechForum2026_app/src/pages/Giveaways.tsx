@@ -76,7 +76,7 @@ export default function Giveaways() {
       <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">
-          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent glow-accent" />
+          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent" />
           <p className="italic text-accent text-sm tracking-wide flex items-center gap-2">
             <Gift className="w-4 h-4" />
             ЗОНА ПРИЗОВ
@@ -102,7 +102,7 @@ export default function Giveaways() {
           <div 
             key={giveaway.id}
             className={cn(
-              "bg-[#13161f]/40 backdrop-blur-xl border rounded-[2rem] overflow-hidden transition-all group",
+              "bg-[#0a2f38]/40 backdrop-blur-xl border rounded-[2rem] overflow-hidden transition-all group",
               participatingIds.includes(giveaway.id) ? "border-green-500/30" : "border-card-border hover:border-accent/40"
             )}
           >

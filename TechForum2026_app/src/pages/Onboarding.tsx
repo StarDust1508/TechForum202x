@@ -91,7 +91,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
   return (
     <div
-      className="relative bg-[#04020f] text-white overflow-y-auto"
+      className="relative bg-[#03161c] text-white overflow-y-auto"
       style={{
         minHeight: '100dvh',
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
@@ -102,7 +102,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
       <div className="relative z-10 px-7 space-y-6">
         <div className="space-y-3 pt-4">
-          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#ccfbf1]">
+          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#d8f0ee]">
             Что тебе интересно?
           </h1>
           <p className="text-[14px] text-white/65 leading-relaxed">
@@ -120,7 +120,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                 onClick={() => toggle(it.id)}
                 className={cn(
                   'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
-                  active ? 'text-[#04020f]' : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
+                  active ? 'text-[#03161c]' : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
                 )}
                 style={
                   active
@@ -136,14 +136,14 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
         <div className="flex items-center justify-between pt-2 text-[13px] font-medium">
           <span className="text-white/55">
-            Выбрано: <span className="text-[#5eead4] font-bold">{selected.size}</span> / {MAX_PICK}
+            Выбрано: <span className="text-[#4ec9c0] font-bold">{selected.size}</span> / {MAX_PICK}
           </span>
           {remaining > 0 ? (
             <span className="text-amber-300/80 font-semibold">
               Нужно ещё {remaining}, чтобы продолжить
             </span>
           ) : (
-            <span className="text-[#5eead4] font-semibold">Можно продолжать</span>
+            <span className="text-[#4ec9c0] font-semibold">Можно продолжать</span>
           )}
         </div>
 
@@ -156,7 +156,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
       {/* Sticky submit */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-20 px-7 pt-3 bg-gradient-to-t from-[#04020f] via-[#04020f]/95 to-transparent"
+        className="fixed bottom-0 left-0 right-0 z-20 px-7 pt-3 bg-gradient-to-t from-[#03161c] via-[#03161c]/95 to-transparent"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
       >
         <div className="max-w-[420px] mx-auto">
@@ -164,7 +164,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            className="w-full bg-gradient-to-r from-[#5eead4] to-[#2dd4bf] text-[#04020f] py-4 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40 shadow-[0_8px_28px_rgba(94,234,212,0.35)]"
+            className="w-full border border-[#4ec9c0]/55 bg-[#0a2f38]/70 text-[#d8f0ee] py-4 rounded-[14px] text-[15px] font-semibold uppercase tracking-[0.04em] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 shadow-[0_8px_24px_rgba(78,201,192,0.18)] hover:border-[#4ec9c0]/80 font-display"
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />

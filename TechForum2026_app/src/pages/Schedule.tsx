@@ -212,7 +212,7 @@ export default function Schedule() {
       <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">
-          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent glow-accent" />
+          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent" />
           <p className="italic text-accent text-sm tracking-wide flex items-center gap-2">
             <Cpu className="w-4 h-4" />
             ДАННЫЕ ГРАФИКА
@@ -224,7 +224,7 @@ export default function Schedule() {
             BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
             между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
             Таб "Мои записи" остаётся справа. */}
-        <div className="flex bg-[#13161f] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
+        <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
           {[
             ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
             { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
@@ -251,7 +251,7 @@ export default function Schedule() {
           <a
             href={resolveApiUrl('/sessions/calendar')}
             download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#5eead4]/10 border border-[#5eead4]/30 text-[#5eead4] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+            className="flex items-center justify-center gap-2 bg-[#4ec9c0]/10 border border-[#4ec9c0]/30 text-[#4ec9c0] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
           >
             <Download className="w-4 h-4" />
             Все мои сессии в календарь
@@ -279,7 +279,7 @@ export default function Schedule() {
 
         {/* Track filter pills */}
         <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все треки', color: '#5eead4' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
+          {[{ id: 'all', name: 'Все треки', color: '#4ec9c0' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
             const active = activeTrackId === t.id;
             return (
               <button
@@ -302,14 +302,14 @@ export default function Schedule() {
         <div>
           {filteredSessions.map((session) => {
             const track = getTrackById(session.trackId);
-            const trackColor = track?.color ?? '#5eead4';
+            const trackColor = track?.color ?? '#4ec9c0';
             const isRegistered = registeredIds.includes(session.id);
             const isCommonFormat = session.format === 'break' || session.format === 'opening' || session.format === 'closing';
 
             return (
               <div
                 key={session.id}
-                className="mb-5 bg-[#13161f]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden circuit-border"
+                className="mb-5 bg-[#0a2f38]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden"
               >
                 <div
                   className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
@@ -424,7 +424,7 @@ export default function Schedule() {
               exit={{ y: 40, opacity: 0 }}
               transition={{ type: 'spring', damping: 24, stiffness: 280 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-[#13161f] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
+              className="w-full max-w-sm bg-[#0a2f38] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">

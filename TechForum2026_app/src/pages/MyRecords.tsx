@@ -83,7 +83,7 @@ export default function MyRecords() {
       <BackButton />
       <header className="space-y-1.5">
         <p className="text-[11px] uppercase tracking-[0.22em] text-accent/85 font-semibold">Личный кабинет</p>
-        <h1 className="font-elite text-4xl leading-none text-white">Мои записи</h1>
+        <h1 className="font-display text-4xl leading-none text-white">Мои записи</h1>
       </header>
 
       {registeredSessions.length === 0 ? (
@@ -96,7 +96,7 @@ export default function MyRecords() {
           <a
             href={resolveApiUrl('/sessions/calendar')}
             download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#5eead4]/10 border border-[#5eead4]/30 text-[#5eead4] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+            className="flex items-center justify-center gap-2 bg-[#4ec9c0]/10 border border-[#4ec9c0]/30 text-[#4ec9c0] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
           >
             <Download className="w-4 h-4" />
             Все мои сессии в календарь
@@ -123,7 +123,7 @@ export default function MyRecords() {
                       <a
                         href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
                         download={`techforum2026-${session.id}.ics`}
-                        className="inline-flex items-center gap-1.5 text-[11px] text-[#5eead4]/80 hover:text-[#5eead4] font-semibold uppercase tracking-widest"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-[#4ec9c0]/80 hover:text-[#4ec9c0] font-semibold uppercase tracking-widest"
                       >
                         <Download className="w-3.5 h-3.5" />
                         В календарь

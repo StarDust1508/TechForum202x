@@ -24,6 +24,7 @@ import { prefetchPublicData } from './lib/prefetch';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
+import Splash from './components/Splash';
 
 
 // BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
@@ -78,13 +79,7 @@ function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // BUG_FIX_CONTEXT: Samsung S25 / OnePlus 9R показывали системный status-bar
-  // с дефолтным светлым иконками поверх тёмного фона приложения — иконки
-  // были невидимы. Также при overlay-режиме возникала наложка контента под
-  // строкой состояния. Конфигурируем native StatusBar через Capacitor:
-  // непрозрачный, цвет #04020f (как фон app), стиль Dark (светлые иконки).
-  // Feature-detect через window.Capacitor — на web (vite dev) импорт плагина
-  // не должен падать, поэтому загружаем динамически и тихо игнорируем ошибки.
+  // Native StatusBar — тёмный blueprint-фон, светлые иконки.
   useEffect(() => {
     const Capacitor: any = (window as any).Capacitor;
     if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
@@ -94,23 +89,18 @@ function AppContent() {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
         StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-        StatusBar.setBackgroundColor({ color: '#04020f' }).catch(() => {});
+        StatusBar.setBackgroundColor({ color: '#03161c' }).catch(() => {});
         StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-      } catch {
-        /* noop — плагин недоступен или web-окружение */
-      }
+      } catch { /* web env */ }
     })();
   }, []);
 
   useEffect(() => {
     let isMounted = true;
-    // BUG_FIX_CONTEXT: По требованию заказчика — при холодном старте APK юзер
-    // должен встретить blueprint TechForum2026 на ~1 секунду, а не лого/белизну.
-    // Делаем это через минимальный 1000ms блок Loader-экрана, который рендерит
-    // тот же conference-bg.jpg что и Auth-панель. Параллельно идёт сетевой
-    // /auth/me — если ответ пришёл раньше 1с, всё равно держим экран до 1с.
+    // Минимальное время Splash-экрана при холодном старте — 1.4с,
+    // чтобы юзер успел увидеть brand-полотно + анимацию свечения.
     const startAt = Date.now();
-    const MIN_SPLASH_MS = 1000;
+    const MIN_SPLASH_MS = 1400;
 
     // BUG_FIX_CONTEXT: П6 — рандомный сброс на онбординг. Onboarding раньше
     // делал PUT /me/interests fire-and-forget, и если запрос падал, выбор
@@ -209,80 +199,60 @@ function AppContent() {
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div
-        className="relative overflow-hidden bg-[#04020f]"
-        style={{ minHeight: '100dvh' }}
-      >
-        <img
-          src="/conference-bg.jpg"
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover scale-[1.25] opacity-85"
-          style={{ objectPosition: 'center 42%', filter: 'blur(3px) saturate(1.15)' }}
-        />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(4,2,15,0.78)_0%,rgba(4,2,15,0.32)_22%,rgba(4,2,15,0.42)_72%,rgba(4,2,15,0.92)_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(94,234,212,0.18),transparent_55%)]" />
-      </div>
-    );
-  }
-
   return (
-    // BUG_FIX_CONTEXT: На мобильных (Samsung S25 / OnePlus 9R и т.п.) под main
-    // оставалась чёрная полоса — main был h-[100dvh] (минус navbar) внутри
-    // outer min-h-screen (100vh с navbar). На mobile теперь main растягивается
-    // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
-    // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
-    // с центрированной "телефонной" рамкой 420×840.
-    <div className="bg-[#04020f] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
+    <div className="bg-[#03161c] flex flex-col p-0 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <OfflineBanner />
-      <main className="w-full sm:max-w-[420px] bg-[#04020f] sm:h-[840px] shadow-[0_0_90px_rgba(13,148,136,0.32)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#130b21]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
+      <main className="w-full bg-[#03161c] relative overflow-hidden flex flex-col z-10" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
         <div className="flex-1 overflow-y-auto scrollbar-hide relative" style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}>
           <div className="min-h-full">
-            {!user ? (
-              // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
-              <Auth onSuccess={setUser} />
-            ) : !user.interestsCount ? (
-              // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
-              // ИЛИ undefined (legacy юзеры из старых билдов без поля). Onboarding
-              // вызывает onDone(count) ТОЛЬКО после успешного PUT /me/interests
-              // (источник истины — БД), мы получаем реальное число выбранных
-              // интересов и используем его — на cold-start /auth/me вернёт то же.
-              <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
-            ) : (
-              // Все остальные разделы — единый фон Home (требование заказчика).
-              <AppBackground>
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={location.pathname}
-                    initial={{ opacity: 0, x: location.pathname === '/' ? 0 : 24 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
-                    transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className="min-h-full"
-                  >
-                    <Routes location={location}>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/feed" element={<Feed />} />
-                      <Route path="/news/:id" element={<NewsDetail />} />
-                      <Route path="/schedule" element={<Schedule />} />
-                      <Route path="/speakers" element={<Speakers />} />
-                      <Route path="/map" element={<Map />} />
-                      <Route path="/chat" element={<Chat />} />
-                      <Route path="/profile" element={<Profile user={user} />} />
-                      <Route path="/ticket" element={<Ticket />} />
-                      <Route path="/giveaways" element={<Giveaways />} />
-                      <Route path="/partners" element={<Partners />} />
-                      <Route path="/diagnostics" element={<Diagnostics />} />
-                      <Route path="/about" element={<About />} />
-                      <Route path="/my-records" element={<MyRecords />} />
-                      <Route path="*" element={<Navigate to="/" />} />
-                    </Routes>
-                  </motion.div>
-                </AnimatePresence>
-              </AppBackground>
-            )}
+            <AnimatePresence mode="wait">
+              {loading ? (
+                <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}>
+                  <Splash />
+                </motion.div>
+              ) : !user ? (
+                <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+                  <Auth onSuccess={setUser} />
+                </motion.div>
+              ) : !user.interestsCount ? (
+                <motion.div key="onboarding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+                  <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
+                </motion.div>
+              ) : (
+                <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
+                  <AppBackground>
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={location.pathname}
+                        initial={{ opacity: 0, x: location.pathname === '/' ? 0 : 24 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
+                        transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                        className="min-h-full"
+                      >
+                        <Routes location={location}>
+                          <Route path="/" element={<Home />} />
+                          <Route path="/feed" element={<Feed />} />
+                          <Route path="/news/:id" element={<NewsDetail />} />
+                          <Route path="/schedule" element={<Schedule />} />
+                          <Route path="/speakers" element={<Speakers />} />
+                          <Route path="/map" element={<Map />} />
+                          <Route path="/chat" element={<Chat />} />
+                          <Route path="/profile" element={<Profile user={user} />} />
+                          <Route path="/ticket" element={<Ticket />} />
+                          <Route path="/giveaways" element={<Giveaways />} />
+                          <Route path="/partners" element={<Partners />} />
+                          <Route path="/diagnostics" element={<Diagnostics />} />
+                          <Route path="/about" element={<About />} />
+                          <Route path="/my-records" element={<MyRecords />} />
+                          <Route path="*" element={<Navigate to="/" />} />
+                        </Routes>
+                      </motion.div>
+                    </AnimatePresence>
+                  </AppBackground>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </main>

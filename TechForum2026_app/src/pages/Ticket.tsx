@@ -65,7 +65,7 @@ export default function Ticket() {
           type: 'svg',
           errorCorrectionLevel: 'M',
           margin: 1,
-          color: { dark: '#13161f', light: '#ffffff' },
+          color: { dark: '#0a2f38', light: '#ffffff' },
           width: 480,
         });
         if (!cancelled) setQrSvg(svg);
@@ -110,9 +110,9 @@ export default function Ticket() {
                       dangerouslySetInnerHTML={{ __html: qrSvg }}
                     />
                   ) : error ? (
-                    <p className="text-[#13161f] text-xs font-bold text-center px-4">{error}</p>
+                    <p className="text-[#0a2f38] text-xs font-bold text-center px-4">{error}</p>
                   ) : (
-                    <Loader2 className="w-8 h-8 text-[#13161f] animate-spin" />
+                    <Loader2 className="w-8 h-8 text-[#0a2f38] animate-spin" />
                   )}
                 </div>
               </div>

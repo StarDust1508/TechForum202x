@@ -1,4 +1,4 @@
-import { useState, type InputHTMLAttributes, type ComponentType } from 'react';
+import { useState, forwardRef, type InputHTMLAttributes, type ComponentType } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 
 interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {
@@ -7,14 +7,12 @@ interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>
   toggleablePassword?: boolean;
 }
 
-export default function Input({
-  icon: Icon,
-  type = 'text',
-  toggleablePassword = false,
-  className = '',
-  ...rest
-}: InputProps) {
+const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
+  { icon: Icon, type = 'text', toggleablePassword = false, className = '', ...rest },
+  ref,
+) {
   const [show, setShow] = useState(false);
+  const [focused, setFocused] = useState(false);
   const isPassword = type === 'password';
   const effectiveType = isPassword && toggleablePassword && show ? 'text' : type;
 
@@ -22,14 +20,17 @@ export default function Input({
     <div className="relative w-full">
       {Icon && (
         <Icon
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-[#4ec9c0]/70"
+          className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-[18px] w-[18px] transition-colors ${focused ? 'text-[#4ec9c0]' : 'text-[#4ec9c0]/65'}`}
           strokeWidth={1.6}
         />
       )}
       <input
+        ref={ref}
         {...rest}
         type={effectiveType}
-        className={`w-full rounded-[14px] border border-[#4ec9c0]/30 bg-[#03161c]/40 py-4 ${Icon ? 'pl-12' : 'pl-4'} ${isPassword && toggleablePassword ? 'pr-12' : 'pr-4'} text-[16px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/65 outline-none focus:border-[#4ec9c0]/70 focus:bg-[#0a2f38]/55 transition-colors font-blueprint ${className}`}
+        onFocus={(e) => { setFocused(true); rest.onFocus?.(e); }}
+        onBlur={(e) => { setFocused(false); rest.onBlur?.(e); }}
+        className={`w-full rounded-[14px] border bg-[#03161c]/40 py-4 ${Icon ? 'pl-12' : 'pl-4'} ${isPassword && toggleablePassword ? 'pr-12' : 'pr-4'} text-[16px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/65 outline-none transition-all duration-200 font-blueprint ${focused ? 'border-[#4ec9c0]/70 bg-[#0a2f38]/55 shadow-[0_0_0_3px_rgba(78,201,192,0.10)]' : 'border-[#4ec9c0]/30'} ${className}`}
       />
       {isPassword && toggleablePassword && (
         <button
@@ -43,4 +44,6 @@ export default function Input({
       )}
     </div>
   );
-}
+});
+
+export default Input;

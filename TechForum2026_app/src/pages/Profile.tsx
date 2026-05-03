@@ -136,7 +136,7 @@ export default function Profile({ user: initialUser }: ProfileProps) {
       </header>
 
       <div className="space-y-4">
-        <div className="bg-[#13161f]/40 backdrop-blur-md border border-card-border rounded-[2rem] p-6 space-y-6 shadow-xl circuit-border">
+        <div className="bg-[#0a2f38]/40 backdrop-blur-md border border-card-border rounded-[2rem] p-6 space-y-6 shadow-xl">
           <h2 className="text-[10px] font-black text-white/40 uppercase tracking-[0.4em] mb-2 px-1">Настройки аккаунта</h2>
 
           <div className="space-y-2">

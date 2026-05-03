@@ -57,7 +57,6 @@
 }
 
 :root {
-  --font-elite: "Cinzel", Georgia, serif;
   background-color: #03161c;
   color: #d8f0ee;
 }
@@ -122,10 +121,6 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
-.font-elite {
-  font-family: var(--font-elite);
-}
-
 .font-display {
   font-family: var(--font-display);
   font-feature-settings: "kern" on, "liga" on;
@@ -146,39 +141,3 @@ body {
   scrollbar-width: none;
 }
 
-.innovation-bg {
-  background: radial-gradient(circle at 50% 0%, rgba(20, 184, 166, 0.22) 0%, transparent 65%),
-              radial-gradient(circle at 0% 100%, rgba(15, 118, 110, 0.24) 0%, transparent 55%);
-}
-
-.circuit-border {
-  position: relative;
-}
-
-.circuit-border::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 40px;
-  height: 40px;
-  border-top: 2px solid rgba(94, 234, 212, 0.45);
-  border-right: 2px solid rgba(94, 234, 212, 0.45);
-  pointer-events: none;
-}
-
-.glow-accent {
-  filter: drop-shadow(0 0 8px rgba(94, 234, 212, 0.5));
-}
-
-.blob-organic {
-  position: absolute;
-  filter: blur(100px);
-  border-radius: 50%;
-  animation: blob-drift 20s infinite alternate ease-in-out;
-}
-
-@keyframes blob-drift {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(100px, 50px) scale(1.2); }
-}

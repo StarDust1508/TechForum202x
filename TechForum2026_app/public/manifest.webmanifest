@@ -6,8 +6,8 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "theme_color": "#080512",
-  "background_color": "#04020f",
+  "theme_color": "#03161c",
+  "background_color": "#03161c",
   "lang": "ru",
   "categories": ["events", "productivity", "business"],
   "icons": [

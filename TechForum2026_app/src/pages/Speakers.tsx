@@ -18,7 +18,7 @@ export default function Speakers() {
       <BackButton />
       <header className="space-y-6">
         <div className="space-y-1 relative">
-          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent glow-accent" />
+          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent" />
           <p className="italic text-accent text-sm tracking-wide flex items-center gap-2">
             <Mic2 className="w-4 h-4" />
             СПРАВОЧНИК ЭКСПЕРТОВ
@@ -37,7 +37,7 @@ export default function Speakers() {
             placeholder="Поиск по имени или компании..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-[#13161f] border border-card-border rounded-[1.75rem] py-4 pl-12 pr-6 text-sm focus:outline-none focus:border-accent/40 placeholder:text-muted/40 transition-all font-medium shadow-inner"
+            className="w-full bg-[#0a2f38] border border-card-border rounded-[1.75rem] py-4 pl-12 pr-6 text-sm focus:outline-none focus:border-accent/40 placeholder:text-muted/40 transition-all font-medium shadow-inner"
           />
         </div>
       </header>
@@ -47,7 +47,7 @@ export default function Speakers() {
           {filteredSpeakers.map((speaker, i) => (
             <div 
               key={speaker.id}
-              className="mb-5 bg-[#13161f]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl hover:border-accent/30 group shadow-2xl relative overflow-hidden circuit-border"
+              className="mb-5 bg-[#0a2f38]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl hover:border-accent/30 group shadow-2xl relative overflow-hidden"
             >
               <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 blur-3xl rounded-full" />
               

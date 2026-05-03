@@ -206,7 +206,7 @@ export const EVENT_META: EventMeta = {
 export const TRACKS: Track[] = [
   { id: 'ai',       name: 'AI / ML',                color: '#a855f7', shortLabel: 'AI'   },
   { id: 'backend',  name: 'Backend & Architecture', color: '#3b82f6', shortLabel: 'BE'   },
-  { id: 'frontend', name: 'Frontend & Mobile',      color: '#5eead4', shortLabel: 'FE'   },
+  { id: 'frontend', name: 'Frontend & Mobile',      color: '#4ec9c0', shortLabel: 'FE'   },
   { id: 'devops',   name: 'DevOps & Cloud',         color: '#f59e0b', shortLabel: 'OPS'  },
   { id: 'data',     name: 'Data Engineering',       color: '#10b981', shortLabel: 'DATA' },
   { id: 'product',  name: 'Product & Career',       color: '#ec4899', shortLabel: 'PROD' },
@@ -242,7 +242,7 @@ export const DAYS: Day[] = [
 export const INTERESTS: Interest[] = [
   { id: 'ai',          label: 'AI / ML',          color: '#a855f7' },
   { id: 'backend',     label: 'Backend',          color: '#3b82f6' },
-  { id: 'frontend',    label: 'Frontend',         color: '#5eead4' },
+  { id: 'frontend',    label: 'Frontend',         color: '#4ec9c0' },
   { id: 'mobile',      label: 'Mobile',           color: '#06b6d4' },
   { id: 'devops',      label: 'DevOps',           color: '#f59e0b' },
   { id: 'cloud',       label: 'Cloud',            color: '#0ea5e9' },
