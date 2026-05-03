@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Явное разрешение cleartext (HTTP) трафика к нашему backend.
-  Без этого Android 9+ блокирует HTTP даже с usesCleartextTraffic="true",
-  если адрес указан как IP, а не domain. После получения domain + Let's
-  Encrypt сертификата этот файл можно удалить и убрать
+  Разрешаем cleartext-трафик глобально через base-config. Раньше тут был
+  domain-config с явным <domain>72.56.9.90</domain>, но OkHttp (который
+  использует Capacitor 8 CapacitorHttp plugin для нативных запросов)
+  трактовал IP-адрес в domain-element неоднозначно и блокировал запрос
+  с ошибкой "Cleartext HTTP traffic to 72.56.9.90 not permitted" даже
+  при правильно указанном usesCleartextTraffic=true в манифесте.
+  Простой base-config без ограничений по доменам пускает cleartext к IP.
+  После переезда на HTTPS-домен этот файл можно удалить и убрать
   android:networkSecurityConfig из AndroidManifest.
 -->
 <network-security-config>
@@ -12,11 +16,4 @@
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">72.56.9.90</domain>
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">10.0.2.2</domain>
-    </domain-config>
 </network-security-config>
