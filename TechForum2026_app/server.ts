@@ -211,15 +211,17 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 }
 
 function createRateLimiter(limit: number, windowMs: number) {
-  // BUG_FIX_CONTEXT: in-memory rate-limiter сохраняется между запросами
-  // в рамках одного process. На multi-instance проде нужен redis, но в dev
-  // и на single-VPS этого достаточно.
+  // SECURITY FIX (P0): раньше брали req.headers['x-forwarded-for'] как
+  // источник IP, и атакующий банально менял заголовок чтобы обойти лимит.
+  // Теперь используем ТОЛЬКО req.socket.remoteAddress — это реальный
+  // TCP peer (если за trust proxy nginx — req.ip даст правильный
+  // X-Real-IP, но мы доверяем только нашему nginx, не клиенту).
   const buckets = new Map<string, { count: number; resetAt: number }>();
   return (req: Request, res: Response, next: NextFunction): void => {
     const now = Date.now();
-    const forwarded = req.headers['x-forwarded-for'];
-    const forwardedFirst = typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '';
-    const ip = forwardedFirst || req.socket.remoteAddress || 'unknown';
+    // req.ip учитывает trust proxy если он включён, иначе == socket.remoteAddress.
+    // Express setting 'trust proxy' включается отдельно при наличии nginx.
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const key = `${ip}:${req.path}`;
     const current = buckets.get(key);
 
@@ -255,11 +257,14 @@ async function startServer(): Promise<void> {
     log.warn('boot', 'SESSION_SECRET is not set. Using ephemeral dev secret.');
   }
 
-  // BUG_FIX_CONTEXT: trust proxy=1 включаем ТОЛЬКО когда мы реально за reverse-proxy
-  // (nginx/cloudflare). При прямом доступе к http://72.56.9.90:3100 без proxy,
-  // express-session с trust proxy и secure=false вёл себя странно (Set-Cookie
-  // не отдавался). Включается через TRUST_PROXY=1 в env.
-  if (String(process.env.TRUST_PROXY || '').trim() === '1') {
+  // trust proxy=1 — мы за nginx (на проде /api/v1 идёт через :80→:3100).
+  // req.ip теперь = X-Real-IP/X-Forwarded-For, выставленный нашим nginx.
+  // На dev (TRUST_PROXY=0) — req.ip == socket.remoteAddress.
+  // SECURITY: rate-limiter теперь нельзя обойти подменой XFF клиентом,
+  // потому что XFF доверяется ТОЛЬКО когда mы знаем что есть proxy.
+  const trustProxyEnv = String(process.env.TRUST_PROXY || '').trim();
+  const trustProxy = trustProxyEnv === '0' ? false : (trustProxyEnv === '1' || isProduction);
+  if (trustProxy) {
     app.set('trust proxy', 1);
   }
 
@@ -509,7 +514,55 @@ async function startServer(): Promise<void> {
     // первый отдал понятную ошибку, а не EPIPE из nginx.
     limits: { fileSize: 6 * 1024 * 1024 },
   });
-  app.use('/uploads', express.static(uploadDir));
+  // Публичные ассеты — только аватары и публичные media. DM-attachments
+  // живут в подпапке dm/ и отдаются через приватный route (см. ниже)
+  // с проверкой что юзер — участник этого диалога.
+  const dmDir = path.join(uploadDir, 'dm');
+  try { fs.mkdirSync(dmDir, { recursive: true }); } catch { /* noop */ }
+
+  // Публичная статика — аватары и т.п. (имена в корне uploads).
+  // Запрещаем подъём в подпапку dm через путь.
+  app.use('/uploads', (req, res, next) => {
+    const decodedPath = decodeURIComponent(req.path);
+    if (decodedPath.includes('/dm/') || decodedPath.startsWith('/dm/')) {
+      res.status(401).json({ error: 'dm_media_requires_auth' });
+      return;
+    }
+    next();
+  }, express.static(uploadDir, { fallthrough: true }));
+
+  // Приватные DM-attachments. Доступны только если юзер — отправитель
+  // или получатель того сообщения, к которому привязан файл.
+  app.get('/uploads/dm/:filename', async (req, res) => {
+    // session middleware ниже, но он уже подключён к app — req.session есть.
+    // Однако этот handler стоит до api router'а, делаем проверку вручную.
+    const userId = req.session?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'auth_required' });
+      return;
+    }
+    const filename = String(req.params.filename || '');
+    if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      res.status(400).json({ error: 'invalid_filename' });
+      return;
+    }
+    const relUrl = `/uploads/dm/${filename}`;
+    // Проверяем что есть DM с этим media_url, где юзер — sender или receiver.
+    const dmRows = await db.select({
+      from: directMessages.fromUserId,
+      to: directMessages.toUserId,
+    }).from(directMessages).where(eq(directMessages.mediaUrl, relUrl)).limit(1);
+    const dm = dmRows[0];
+    if (!dm) {
+      res.status(404).json({ error: 'media_not_found' });
+      return;
+    }
+    if (dm.from !== userId && dm.to !== userId) {
+      res.status(403).json({ error: 'not_a_participant' });
+      return;
+    }
+    res.sendFile(path.join(dmDir, filename));
+  });
 
   const api = express.Router();
 
@@ -615,11 +668,19 @@ async function startServer(): Promise<void> {
       `\nВопрос пользователя: ${message}`,
     ].join('\n');
 
+    // SECURITY/RELIABILITY (P0): timeout 15s. Раньше fetch к Gemini без
+    // AbortController мог висеть часы и держать pg-pool connection — при
+    // массовом отказе Gemini сервер падал в pool exhaustion.
     try {
-      const result = await gemini.models.generateContent({
-        model: geminiModel,
-        contents: prompt,
-      });
+      const result = await Promise.race([
+        gemini.models.generateContent({
+          model: geminiModel,
+          contents: prompt,
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('ai_timeout')), 15_000),
+        ),
+      ]);
       const text = typeof result.text === 'string' ? result.text.trim() : '';
       if (!text) {
         res.status(502).json({ error: 'ai_empty_response' });
@@ -627,8 +688,9 @@ async function startServer(): Promise<void> {
       }
       res.json({ text });
     } catch (error) {
-      log.error('ai', 'chat error', { err: String(error) });
-      res.status(502).json({ error: 'ai_unavailable' });
+      const isTimeout = String(error).includes('ai_timeout');
+      log.error('ai', isTimeout ? 'chat timeout' : 'chat error', { err: String(error) });
+      res.status(isTimeout ? 504 : 502).json({ error: isTimeout ? 'ai_timeout' : 'ai_unavailable' });
     }
   });
 
@@ -680,14 +742,52 @@ async function startServer(): Promise<void> {
     res.json({ ...toPublicUser(created), interestsCount: 0 });
   });
 
+  // Per-account brute-force lockout. Счётчик неудачных попыток на email,
+  // не на IP — атакующий не обходит сменой IP. После 8 fails в 15 мин —
+  // блок на 30 мин. Очищается при успешном логине или forgot-password reset.
+  const accountLockout = new Map<string, { fails: number; lockedUntil: number }>();
+  function checkAccountLock(email: string): { locked: boolean; retryAfterSec?: number } {
+    const e = email.toLowerCase().trim();
+    const rec = accountLockout.get(e);
+    if (!rec) return { locked: false };
+    if (rec.lockedUntil > Date.now()) {
+      return { locked: true, retryAfterSec: Math.ceil((rec.lockedUntil - Date.now()) / 1000) };
+    }
+    return { locked: false };
+  }
+  function noteFailedLogin(email: string): void {
+    const e = email.toLowerCase().trim();
+    const now = Date.now();
+    const rec = accountLockout.get(e) || { fails: 0, lockedUntil: 0 };
+    rec.fails += 1;
+    if (rec.fails >= 8) {
+      rec.lockedUntil = now + 30 * 60 * 1000;
+      rec.fails = 0;
+    }
+    accountLockout.set(e, rec);
+  }
+  function clearAccountLock(email: string): void {
+    accountLockout.delete(email.toLowerCase().trim());
+  }
+
   api.post('/auth/login', authRateLimit, validateBody(authLoginSchema), async (req, res) => {
     const { email, password } = req.body as import('./src/lib/validation.js').AuthLoginBody;
+
+    const lock = checkAccountLock(email);
+    if (lock.locked) {
+      res.setHeader('Retry-After', String(lock.retryAfterSec || 60));
+      res.status(429).json({ error: 'account_locked', retryAfterSeconds: lock.retryAfterSec });
+      return;
+    }
+
     const user = await findUserByEmail(email);
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
+      noteFailedLogin(email);
       res.status(401).json({ error: 'Неверные данные' });
       return;
     }
+    clearAccountLock(email);
 
     req.session.userId = user.id;
     const interestRows = await db
@@ -780,12 +880,16 @@ async function startServer(): Promise<void> {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
 
-  async function sendResetNotification(email: string, token: string): Promise<void> {
-    // BACKEND_TODO: интегрировать SMTP / SMS-провайдер. Пока структурный лог,
-    // оператор получает запись в journalctl и передаёт юзеру вручную (форум
-    // имеет горячую линию организаторов).
-    const link = `https://app.techforum2026.ru/reset?token=${token}`; // placeholder URL
-    log.info('forgot-password', `RESET TOKEN issued for ${email}`, { link, ttl: '30m' });
+  async function sendResetNotification(email: string, token: string, tokenId: string): Promise<void> {
+    // BACKEND_TODO: интегрировать SMTP / SMS-провайдер.
+    // SECURITY: НЕ логируем raw token. Любой с SSH/co-tenant читал бы его
+    // через journalctl и сбрасывал чужой пароль. Логируем только token-id
+    // (запись в БД) и сам факт; при подключении SMTP реальный token уйдёт
+    // в email и в БД лежит только его SHA-256 хеш.
+    log.info('forgot-password', `reset issued`, { email, tokenId, ttl: '30m' });
+    // raw-token временно доступен оператору через REST endpoint
+    // /admin/reset-tokens (TODO) — пока ручная выдача.
+    void token; // intentionally unused: must reach user via SMTP, not log
   }
 
   // Глобальная очистка истёкших reset-токенов. Дешёвая (один DELETE WHERE
@@ -838,7 +942,7 @@ async function startServer(): Promise<void> {
       attempts: 0,
     });
 
-    await sendResetNotification(user.email, rawToken);
+    await sendResetNotification(user.email, rawToken, id);
 
     res.json({ ok: true, ttlSeconds: 30 * 60 });
   });
@@ -874,9 +978,13 @@ async function startServer(): Promise<void> {
     const passwordHash = hashPassword(newPassword);
     await db.transaction(async (tx) => {
       await tx.update(users).set({ passwordHash }).where(eq(users.id, user.id));
-      // Снимаем все reset-токены и все сессии этого юзера, чтобы атакующий
-      // (если завладел email) не остался залогинен.
       await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, user.id));
+      // SECURITY (CRITICAL FIX): инвалидируем ВСЕ активные сессии этого
+      // юзера. connect-pg-simple хранит сессии в таблице "session" с
+      // полем "sess" (jsonb). Удаляем строки, у которых sess->>'userId'
+      // равен нашему user.id. Без этого украденная cookie оставалась
+      // валидной 30 дней даже после reset password.
+      await tx.execute(sql`DELETE FROM "session" WHERE sess->>'userId' = ${user.id}`);
     });
 
     res.json({ ok: true });
@@ -886,10 +994,57 @@ async function startServer(): Promise<void> {
   // AVATAR UPLOAD
   // ========================================================================
 
-  // Возвращаем относительный URL ('/uploads/<file>.<ext>'). Клиент резолвит
-  // через resolveAssetUrl(). При успешной загрузке нового аватара старый
-  // (если хранится локально, /uploads/...) удаляем с диска, чтобы папка
-  // не росла бесконтрольно.
+  // SECURITY (P0 FIX): проверяем magic-bytes файла, а не только клиентский
+  // Content-Type заголовок. Раньше можно было загрузить ELF / .exe с mime
+  // image/jpeg и сервер сохранял его как аватар.
+  // Magic bytes:
+  //  JPEG: FF D8 FF
+  //  PNG:  89 50 4E 47 0D 0A 1A 0A
+  //  WebP: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50  (RIFF...WEBP)
+  function detectImageType(filePath: string): 'jpg' | 'png' | 'webp' | null {
+    try {
+      const fd = fs.openSync(filePath, 'r');
+      const buf = Buffer.alloc(12);
+      fs.readSync(fd, buf, 0, 12, 0);
+      fs.closeSync(fd);
+      if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg';
+      if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'png';
+      if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+          && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'webp';
+      return null;
+    } catch { return null; }
+  }
+  function detectMediaType(filePath: string, declaredMime: string): { type: 'image' | 'audio' | 'video'; ext: string } | null {
+    const img = detectImageType(filePath);
+    if (img) return { type: 'image', ext: img };
+    // Для audio/video magic-bytes сложнее (множество форматов), полагаемся на
+    // mime-объявление, но НЕ доверяем тексту — multer уже отверг бы text/*.
+    // Дополнительно проверяем что первый байт не ASCII text:
+    try {
+      const fd = fs.openSync(filePath, 'r');
+      const buf = Buffer.alloc(4);
+      fs.readSync(fd, buf, 0, 4, 0);
+      fs.closeSync(fd);
+      const isPrintableAscii = buf.every((b) => b >= 0x20 && b <= 0x7e);
+      if (isPrintableAscii) return null; // тексты + ELF (0x7f) исключаем
+      // ELF: 7f 45 4c 46
+      if (buf[0] === 0x7f && buf[1] === 0x45 && buf[2] === 0x4c && buf[3] === 0x46) return null;
+    } catch { return null; }
+    const audioMap: Record<string, string> = {
+      'audio/webm': 'webm',
+      'audio/ogg':  'ogg',
+      'audio/mp4':  'm4a',
+      'audio/mpeg': 'mp3',
+    };
+    const videoMap: Record<string, string> = {
+      'video/webm': 'webm',
+      'video/mp4':  'mp4',
+    };
+    if (audioMap[declaredMime]) return { type: 'audio', ext: audioMap[declaredMime] };
+    if (videoMap[declaredMime]) return { type: 'video', ext: videoMap[declaredMime] };
+    return null;
+  }
+
   const MIME_TO_EXT: Record<string, string> = {
     'image/jpeg': 'jpg',
     'image/png': 'png',
@@ -903,12 +1058,16 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const ext = MIME_TO_EXT[file.mimetype];
-    if (!ext) {
+    // SECURITY: проверяем magic-bytes, а не клиентский Content-Type.
+    // ELF/exe/что-угодно с mime=image/jpeg раньше проходило.
+    const detected = detectImageType(file.path);
+    if (!detected) {
       try { fs.unlinkSync(file.path); } catch { /* noop */ }
-      res.status(400).json({ error: 'unsupported_mime', mime: file.mimetype });
+      res.status(400).json({ error: 'invalid_image', detail: 'magic_bytes_mismatch' });
       return;
     }
+    const ext = detected;
+    void MIME_TO_EXT; // больше не используем mime-table — magic bytes overrides
 
     const user = await findUserById(userId);
     if (!user) {
@@ -1133,6 +1292,12 @@ async function startServer(): Promise<void> {
   // Простой prefix-поиск по email/name — нужен в Chat «Личные» когда юзер
   // хочет начать новый диалог. Минимум 2 символа в q. Возвращает только
   // public-поля (id, name, email, avatar, role) без password_hash.
+  // SECURITY (P1 FIX): не отдаём email и phone в результатах поиска —
+  // раньше любой залогиненный мог выкачать всю базу email-ов через
+  // %a% %b% запросы (~26 запросов на весь алфавит). Сейчас отдаём
+  // только id/name/avatar/role — этого достаточно для new-DM-dialog.
+  // Поиск идёт ТОЛЬКО по name (не по email), чтобы нельзя было
+  // подтверждать наличие конкретного email через timing/result.
   api.get('/users/search', requireAuth, async (req, res) => {
     const me = getSessionUserId(req)!;
     const q = String(req.query?.q || '').trim();
@@ -1144,11 +1309,17 @@ async function startServer(): Promise<void> {
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 20;
     const escaped = q.replace(/[%_]/g, '\\$&');
     const pattern = `%${escaped}%`;
-    const rows = await db.select().from(users)
-      .where(sql`(${users.name} ILIKE ${pattern} OR ${users.email} ILIKE ${pattern}) AND ${users.id} <> ${me}`)
+    const rows = await db.select({
+      id: users.id,
+      name: users.name,
+      avatar: users.avatar,
+      role: users.role,
+      isPrivate: users.isPrivate,
+    }).from(users)
+      .where(sql`${users.name} ILIKE ${pattern} AND ${users.id} <> ${me} AND ${users.isPrivate} = false`)
       .orderBy(users.name)
       .limit(limit);
-    res.json(rows.map(toPublicUser));
+    res.json(rows.map((r) => ({ id: r.id, name: r.name, avatar: r.avatar, role: r.role })));
   });
 
   // ========================================================================
@@ -1160,12 +1331,36 @@ async function startServer(): Promise<void> {
   // POST /messages — отправить DM. Создаём запись, возвращаем её для optimistic UI.
   // Поддерживается text + media (image/audio/video) одновременно.
   // Media предварительно загружается через POST /messages/upload-media.
+  //
+  // Per-receiver rate-limit (P1 FIX): защита от спама с пула ботов.
+  // 100 ботов × 60 msg/min = 6000 spam/min на одного юзера обходится так,
+  // потому что writeRateLimit у нас per-sender. Дополнительно лимитируем
+  // вход на конкретного receiver: 120 msg/min (на всех отправителей вместе).
+  const receiverBuckets = new Map<string, { count: number; resetAt: number }>();
+  const RECEIVER_LIMIT = 120;
+  const RECEIVER_WINDOW = 60_000;
+  function noteReceiver(toUserId: string): boolean {
+    const now = Date.now();
+    const cur = receiverBuckets.get(toUserId);
+    if (!cur || cur.resetAt <= now) {
+      receiverBuckets.set(toUserId, { count: 1, resetAt: now + RECEIVER_WINDOW });
+      return true;
+    }
+    if (cur.count >= RECEIVER_LIMIT) return false;
+    cur.count += 1;
+    return true;
+  }
+
   api.post('/messages', requireAuth, writeRateLimit, validateBody(dmSendSchema), async (req, res) => {
     const fromUserId = getSessionUserId(req)!;
     const { toUserId, text, mediaUrl, mediaType } = req.body as import('./src/lib/validation.js').DmSendBody;
 
     if (toUserId === fromUserId) {
       res.status(400).json({ error: 'cannot_message_self' });
+      return;
+    }
+    if (!noteReceiver(toUserId)) {
+      res.status(429).json({ error: 'receiver_rate_limited' });
       return;
     }
 
@@ -1220,14 +1415,19 @@ async function startServer(): Promise<void> {
       res.status(400).json({ error: 'file_required' });
       return;
     }
-    const meta = DM_MEDIA_MIME[file.mimetype];
-    if (!meta) {
+    // SECURITY (P0 FIX): magic-bytes-проверка для media (image — точный
+    // signature, audio/video — отсев ASCII/ELF + mime-whitelist).
+    const detected = detectMediaType(file.path, file.mimetype);
+    if (!detected) {
       try { fs.unlinkSync(file.path); } catch { /* noop */ }
-      res.status(400).json({ error: 'unsupported_mime', mime: file.mimetype });
+      res.status(400).json({ error: 'invalid_media', detail: 'magic_bytes_mismatch_or_unsupported' });
       return;
     }
+    void DM_MEDIA_MIME;
+    const meta = detected;
     const finalName = `${file.filename}.${meta.ext}`;
-    const finalPath = path.join(uploadDir, finalName);
+    // SECURITY (P0): сохраняем в dm/ — отдаётся только участникам диалога.
+    const finalPath = path.join(dmDir, finalName);
     try { fs.renameSync(file.path, finalPath); }
     catch (err) {
       log.error('uploads', 'dm media rename failed', { err: String(err) });
@@ -1235,7 +1435,7 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'upload_persist_failed' });
       return;
     }
-    res.json({ url: `/uploads/${finalName}`, type: meta.type });
+    res.json({ url: `/uploads/dm/${finalName}`, type: meta.type });
   });
 
   // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.

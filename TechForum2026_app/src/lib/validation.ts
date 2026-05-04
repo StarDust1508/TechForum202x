@@ -35,8 +35,9 @@ import { z } from 'zod';
 // Email — нормализуем в lower case через .transform; .email() даёт RFC-валидацию.
 const emailSchema = z.string().trim().toLowerCase().email('Некорректный email');
 
-// Пароль — минимум 6 (соответствует текущей политике в localAuth fallback).
-const passwordSchema = z.string().min(6, 'Пароль должен быть не менее 6 символов').max(128);
+// Пароль — минимум 8 (повышено с 6 после red-team, который показал что
+// 6-символьный пароль + per-IP rate-limit обходимый = брутфорс за минуту).
+const passwordSchema = z.string().min(8, 'Пароль должен быть не менее 8 символов').max(128);
 
 // Имя — 1..80 символов, .trim для удаления хвостовых пробелов.
 const nameSchema = z.string().trim().min(1, 'Укажите имя').max(80);

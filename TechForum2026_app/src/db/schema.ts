@@ -264,15 +264,16 @@ export const userInterests = pgTable(
 // Простая 1-к-1 переписка. Нет групп, нет threads, нет реакций. Удаление —
 // onDelete cascade (если автор/получатель удаляется, его DM физически
 // уходят). readAt — для индикатора непрочитанного.
-// mediaUrl/mediaType — опциональное вложение image|audio|video. Текстовые
-// сообщения остаются с пустым text='' если только media. media_url
-// относительный путь /uploads/<file> — резолвится через resolveAssetUrl.
+// mediaUrl/mediaType — опциональное вложение image|audio|video.
+// FK on delete SET NULL (P1 FIX): раньше cascade удалял всю переписку
+// А↔B когда B удаляет аккаунт, А терял свою историю. Теперь from/to
+// делается NULL, переписка остаётся, UI рисует «удалённый пользователь».
 export const directMessages = pgTable(
   'direct_messages',
   {
     id: text('id').primaryKey(),
-    fromUserId: text('from_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    toUserId: text('to_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    fromUserId: text('from_user_id').references(() => users.id, { onDelete: 'set null' }),
+    toUserId: text('to_user_id').references(() => users.id, { onDelete: 'set null' }),
     text: text('text').notNull().default(''),
     mediaUrl: text('media_url'),
     mediaType: text('media_type'),
