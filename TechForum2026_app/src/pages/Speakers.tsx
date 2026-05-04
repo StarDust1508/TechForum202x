@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Send, Info, X } from 'lucide-react';
+import { Search, Info, X, ChevronRight } from 'lucide-react';
 import { SPEAKERS } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
 
@@ -19,11 +19,7 @@ export default function Speakers() {
   }, [search]);
 
   return (
-    <PageShell
-      kicker="Справочник"
-      title="Спикеры"
-      subtitle={`${filtered.length} ${filtered.length === SPEAKERS.length ? 'человек на сцене' : `из ${SPEAKERS.length} найдено`}`}
-    >
+    <PageShell title="Спикеры">
       <div className="relative mb-5">
         <Search
           className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#4ec9c0]/65"
@@ -78,12 +74,12 @@ export default function Speakers() {
 
             <div className="flex justify-end">
               <button
-                onClick={() => navigate('/chat')}
-                aria-label={`Открыть AI-чат и спросить про ${speaker.name}`}
+                onClick={() => navigate(`/speakers/${speaker.id}`)}
+                aria-label={`Открыть подробную биографию: ${speaker.name}`}
                 className="border border-[#4ec9c0]/40 bg-[#03161c]/60 hover:border-[#4ec9c0]/70 hover:bg-[#0a2f38]/70 px-4 py-2 rounded-[12px] flex items-center gap-2 text-[#4ec9c0] hover:text-[#d8f0ee] transition-all active:scale-95"
               >
-                <span className="font-display-cyrl text-[11px] font-semibold uppercase tracking-[0.16em]">Спросить AI</span>
-                <Send className="w-3.5 h-3.5" strokeWidth={1.6} />
+                <span className="font-display-cyrl text-[11px] font-semibold uppercase tracking-[0.16em]">О спикере</span>
+                <ChevronRight className="w-3.5 h-3.5" strokeWidth={1.6} />
               </button>
             </div>
           </article>

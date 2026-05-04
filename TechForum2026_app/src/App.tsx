@@ -5,6 +5,7 @@ import Home from './pages/Home';
 import Feed from './pages/Feed';
 import Schedule from './pages/Schedule';
 import Speakers from './pages/Speakers';
+import SpeakerDetail from './pages/SpeakerDetail';
 import Map from './pages/Map';
 import Chat from './pages/Chat';
 import Profile from './pages/Profile';
@@ -259,6 +260,7 @@ function AppContent() {
                   <Route path="/news/:id" element={<NewsDetail />} />
                   <Route path="/schedule" element={<Schedule />} />
                   <Route path="/speakers" element={<Speakers />} />
+                  <Route path="/speakers/:id" element={<SpeakerDetail />} />
                   <Route path="/map" element={<Map />} />
                   <Route path="/chat" element={<Chat />} />
                   <Route path="/chat/:userId" element={<Chat />} />
