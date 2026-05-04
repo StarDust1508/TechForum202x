@@ -7,17 +7,24 @@ interface AppBackgroundProps {
 }
 
 export default function AppBackground({ children, className = '', style }: AppBackgroundProps) {
-  // CRITICAL SCROLL FIX: убрал внутренний flex flex-col + minHeight:100dvh
-  // wrapper. Из-за него каждая страница (PageShell c minHeight:100lvh)
-  // была flex-item внутри AppBackground, и flex-shrink резал её обратно
-  // до viewport-height — длинный контент Feed/Schedule/Speakers/Partners
-  // не мог "вылезти" наружу для родительского scroll-container в App.tsx.
-  // Теперь просто relative wrapper, контент растёт по нужде, App.tsx
-  // overflow-y-auto скроллит как ожидается.
+  // SCROLL FIX (4-я итерация — наконец нашёл):
+  //
+  // Раньше outer-div имел `overflow-x-hidden` + `minHeight: 100dvh`.
+  // По спеке CSS, когда у элемента указан `overflow-x: hidden` без явного
+  // `overflow-y`, браузер ВЫЧИСЛЯЕТ `overflow-y: auto` (одной axis нельзя
+  // быть hidden если другая visible — implicit auto). Это значит:
+  // AppBackground становился ВТОРЫМ scroll-контейнером внутри App.tsx
+  // scroll-контейнера. Touch-events ловил вложенный AppBackground (он
+  // 100dvh по minHeight, контент в него умещался → нечего скроллить),
+  // App.tsx scroll-container никогда не получал свайп.
+  //
+  // Решение: убрать `overflow-x-hidden` и `minHeight: 100dvh`. Фон
+  // покрывается через `position: fixed` дочерним div'ом — он живёт в
+  // viewport независимо от высоты outer-обёртки.
   return (
     <div
-      className={`relative overflow-x-hidden bg-[#03161c] ${className}`}
-      style={{ minHeight: '100dvh', ...style }}
+      className={`relative bg-[#03161c] ${className}`}
+      style={style}
     >
       <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
         <img
