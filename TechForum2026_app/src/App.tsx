@@ -212,74 +212,69 @@ function AppContent() {
   }, []);
 
   return (
-    <div className="bg-[#03161c] flex flex-col p-0 overflow-hidden relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
+    // SCROLL FIX 5/5 — РАДИКАЛЬНЫЙ.
+    //
+    // Раньше было: outer overflow-hidden flex-col → main overflow-hidden flex-col
+    //              → scroll-div flex-1 overflow-y-auto → contents.
+    // Этот flex-chain в WebView Android вёл себя нестабильно: иногда touch уходил
+    // в nested context, иногда flex-shrink резал содержимое до viewport-height,
+    // иногда implicit overflow на одном из wrappers создавал nested scroll.
+    //
+    // Теперь scroll НА BODY. Это самый стандартный и надёжный паттерн для
+    // мобильного web/Capacitor:
+    //   - body имеет естественный scroll (overflow:auto в html/body из CSS)
+    //   - выше body нет flex-chain — туда не лезет shrink-поведение
+    //   - touch-action управляется на body через index.css
+    //
+    // Outer-div теперь просто wrapper без всяких overflow / flex-col.
+    // Padding безопасный area inset top/bottom — на самом контенте, не на wrapper.
+    <div className="bg-[#03161c] relative">
       <OfflineBanner />
-      <main className="w-full bg-[#03161c] relative overflow-hidden flex flex-col z-10" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
-        {/* min-h-0 на flex-child обязательно — без него overflow-y-auto не
-            активируется в flex-контексте (flex по умолчанию даёт
-            min-height: auto, и контейнер растёт по контенту вместо скролла).
-            paddingBottom учитывает Android navigation bar / iOS home indicator,
-            чтобы хвост Schedule/Feed/Partners/Map/Chat не обрезался. */}
-        <div
-          className="flex-1 min-h-0 overflow-y-auto scrollbar-hide relative"
-          style={{
-            overscrollBehavior: 'none',
-            WebkitOverflowScrolling: 'touch',
-            paddingBottom: 'env(safe-area-inset-bottom, 0)',
-            // touch-action: pan-y — Android Chromium WebView в некоторых
-            // версиях требует явное разрешение вертикального swipe-жеста
-            // на scroll-контейнере, иначе touch событие отдаётся parent
-            // элементу и scroll не активируется.
-            touchAction: 'pan-y',
-          }}
-        >
-          <div className="min-h-full">
-            <AnimatePresence mode="wait">
-              {loading ? (
-                <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}>
-                  <Splash />
-                </motion.div>
-              ) : !user ? (
-                <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                  <Auth onSuccess={setUser} />
-                </motion.div>
-              ) : !user.interestsCount ? (
-                <motion.div key="onboarding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
-                  <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
-                </motion.div>
-              ) : (
-                <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
-                  <AppBackground>
-                    {/* Без motion.div page-transition: x-slide+fade на каждом
-                        navigate триггерил compositing на мобильных WebView, что
-                        давало лагающий scroll и видимый «прыжок» layout'a.
-                        Switch роутов теперь мгновенный, scroll работает плавно. */}
-                    <div className="min-h-full">
-                      <Routes location={location}>
-                        <Route path="/" element={<Home />} />
-                        <Route path="/feed" element={<Feed />} />
-                        <Route path="/news/:id" element={<NewsDetail />} />
-                        <Route path="/schedule" element={<Schedule />} />
-                        <Route path="/speakers" element={<Speakers />} />
-                        <Route path="/map" element={<Map />} />
-                        <Route path="/chat" element={<Chat />} />
-                        <Route path="/chat/:userId" element={<Chat />} />
-                        <Route path="/profile" element={<Profile user={user} />} />
-                        <Route path="/ticket" element={<Ticket />} />
-                        <Route path="/giveaways" element={<Giveaways />} />
-                        <Route path="/partners" element={<Partners />} />
-                        <Route path="/diagnostics" element={<Diagnostics />} />
-                        <Route path="/about" element={<About />} />
-                        <Route path="/my-records" element={<MyRecords />} />
-                        <Route path="*" element={<Navigate to="/" />} />
-                      </Routes>
-                    </div>
-                  </AppBackground>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
+      <main
+        className="w-full bg-[#03161c] relative z-10"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0)',
+        }}
+      >
+        <AnimatePresence mode="wait">
+          {loading ? (
+            <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}>
+              <Splash />
+            </motion.div>
+          ) : !user ? (
+            <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+              <Auth onSuccess={setUser} />
+            </motion.div>
+          ) : !user.interestsCount ? (
+            <motion.div key="onboarding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}>
+              <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
+            </motion.div>
+          ) : (
+            <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
+              <AppBackground>
+                <Routes location={location}>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/feed" element={<Feed />} />
+                  <Route path="/news/:id" element={<NewsDetail />} />
+                  <Route path="/schedule" element={<Schedule />} />
+                  <Route path="/speakers" element={<Speakers />} />
+                  <Route path="/map" element={<Map />} />
+                  <Route path="/chat" element={<Chat />} />
+                  <Route path="/chat/:userId" element={<Chat />} />
+                  <Route path="/profile" element={<Profile user={user} />} />
+                  <Route path="/ticket" element={<Ticket />} />
+                  <Route path="/giveaways" element={<Giveaways />} />
+                  <Route path="/partners" element={<Partners />} />
+                  <Route path="/diagnostics" element={<Diagnostics />} />
+                  <Route path="/about" element={<About />} />
+                  <Route path="/my-records" element={<MyRecords />} />
+                  <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+              </AppBackground>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );
