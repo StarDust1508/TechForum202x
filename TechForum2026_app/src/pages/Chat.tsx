@@ -34,6 +34,34 @@ type ChatMessage = {
   pending?: boolean;
 };
 
+// useAuthenticatedMedia — pre-fetch media через authenticated fetch
+// (CapacitorHttp с session cookie), конвертирует в blob-URL для нативного
+// <audio>/<video>/<img>. Без этого hook'а нативные media-element'ы грузят
+// URL через WebView напрямую, без нашей session cookie → 401 → не играется.
+function useAuthenticatedMedia(absoluteOrRelative: string | null): string | null {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!absoluteOrRelative) { setBlobUrl(null); return; }
+    let active = true;
+    let createdUrl: string | null = null;
+    (async () => {
+      try {
+        const r = await fetch(absoluteOrRelative, { credentials: 'include' });
+        if (!r.ok || !active) return;
+        const blob = await r.blob();
+        if (!active) return;
+        createdUrl = URL.createObjectURL(blob);
+        setBlobUrl(createdUrl);
+      } catch { /* noop — bubble остаётся в pending визуально */ }
+    })();
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [absoluteOrRelative]);
+  return blobUrl;
+}
+
 // ===== HELPERS =====
 const formatTime = (iso: string): string => {
   if (!iso) return '';
@@ -333,20 +361,61 @@ function DmRoom({ userId }: { userId: string }) {
     await sendMessage({ text });
   };
 
-  // ====== Media: file picker (image / video) ======
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  // ====== Media: file picker ======
+  // Для photo (галерея + камера) используем @capacitor/camera plugin —
+  // нативный picker, в отличие от <input type="file"> который на Capacitor
+  // 8 WebView нестабильно обрабатывал onShowFileChooser.
+  // Для video — остаётся <input type="file" accept="video/*"> через
+  // VideoPicker; на web (vite dev) тот же путь.
+  const videoInputRef = useRef<HTMLInputElement>(null);
 
-  const handlePickFile = (accept: string) => {
+  // Lazy import чтобы web-сборка vite dev не падала.
+  const pickPhotoNative = async (source: 'CAMERA' | 'PHOTOS') => {
     setAttachOpen(false);
-    if (!fileInputRef.current) return;
-    fileInputRef.current.accept = accept;
-    fileInputRef.current.click();
+    try {
+      const Capacitor: any = (window as any).Capacitor;
+      if (Capacitor?.isNativePlatform?.()) {
+        const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+        const photo = await Camera.getPhoto({
+          quality: 80,
+          allowEditing: false,
+          resultType: CameraResultType.DataUrl,
+          source: source === 'CAMERA' ? CameraSource.Camera : CameraSource.Photos,
+          // По умолчанию берёт jpeg — подходит под наш magic-bytes whitelist.
+        });
+        if (!photo.dataUrl) return;
+        // dataUrl: "data:image/jpeg;base64,...." → конвертируем в Blob
+        const res = await fetch(photo.dataUrl);
+        const blob = await res.blob();
+        await uploadAndSend(blob);
+        return;
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-alert
+      const msg = (err as Error).message || 'plugin_failed';
+      if (/cancelled|cancelled by user/i.test(msg)) return;
+      alert(`Камера/галерея недоступны: ${msg}`);
+      return;
+    }
+    // Web fallback (vite dev): обычный <input type="file">.
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    if (source === 'CAMERA') input.setAttribute('capture', 'environment');
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (f) await uploadAndSend(f);
+    };
+    input.click();
   };
-  const handleOpenCamera = () => {
+
+  const pickVideoNative = async () => {
     setAttachOpen(false);
-    cameraInputRef.current?.click();
+    // <input type="file" accept="video/*"> — работает на Android 13+ с
+    // READ_MEDIA_VIDEO permission через системный photo picker.
+    videoInputRef.current?.click();
   };
+
   const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -570,55 +639,27 @@ function DmRoom({ userId }: { userId: string }) {
           }
           // Картинки + текст — обычный bubble.
           return (
-            <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`relative max-w-[80%] rounded-2xl text-[14px] leading-relaxed overflow-hidden ${
-                  m.fromMe
-                    ? 'bg-[#4ec9c0] text-[#03161c] rounded-br-md shadow-[0_4px_14px_rgba(78,201,192,0.20)]'
-                    : 'bg-[#0a2f38]/85 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
-                } ${m.pending ? 'opacity-75' : ''}`}
-              >
-                {!m.mediaUrl && m.pending && m.mediaType === 'image' && (
-                  <div className="w-44 h-32 flex items-center justify-center bg-[#03161c]/30">
-                    <Loader2 className="w-6 h-6 animate-spin opacity-80" strokeWidth={1.6} />
-                  </div>
-                )}
-                {m.mediaUrl && m.mediaType === 'image' && (
-                  <button
-                    type="button"
-                    onClick={() => setLightbox(resolveAssetUrl(m.mediaUrl!))}
-                    className="block w-full"
-                  >
-                    <img src={resolveAssetUrl(m.mediaUrl)} alt="" className="max-w-full max-h-72 object-cover" />
-                  </button>
-                )}
-                {(m.text || (!m.mediaUrl && !m.pending)) && (
-                  <div className={`px-3.5 py-2 ${m.mediaUrl ? 'pt-1.5' : ''}`}>
-                    {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                  </div>
-                )}
-                <div className={`flex items-center justify-end gap-1 px-3 pb-1.5 ${m.mediaUrl && !m.text ? 'absolute bottom-1 right-2 bg-black/40 backdrop-blur-sm rounded-full px-2 py-0.5' : ''}`}>
-                  {m.pending && (
-                    <Loader2 className={`w-3 h-3 animate-spin ${m.fromMe ? 'text-[#03161c]/70' : 'text-[#4ec9c0]/70'}`} strokeWidth={2} />
-                  )}
-                  <span className={`text-[10px] font-mono ${
-                    m.fromMe
-                      ? (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#03161c]/65')
-                      : (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#7aa8a4]')
-                  }`}>
-                    {time}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <ImageBubble
+              key={m.id}
+              message={m}
+              time={time}
+              onLightbox={(url) => setLightbox(url)}
+            />
           );
         })}
       </div>
 
-      {/* Hidden file inputs. Camera-input использует capture для прямого
-          вызова системной камеры на Android, без галереи. */}
-      <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelected} />
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFileSelected} />
+      {/* Hidden video file picker. Используем absolute+opacity-0 вместо
+          display:none т.к. на некоторых Android WebView display:none делает
+          input не-кликабельным и onShowFileChooser не вызывается. */}
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept="video/*"
+        onChange={handleFileSelected}
+        style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+        aria-hidden="true"
+      />
 
       {/* Bottom bar: либо input, либо запись */}
       <div
@@ -685,9 +726,9 @@ function DmRoom({ userId }: { userId: string }) {
               </button>
               {attachOpen && (
                 <div className="absolute bottom-[calc(100%+8px)] left-0 z-40 min-w-[200px] rounded-2xl border border-[#4ec9c0]/35 bg-[#03161c]/95 backdrop-blur-md p-1.5 shadow-[0_18px_60px_rgba(0,0,0,0.55)]">
-                  <AttachItem icon={ImageIcon} label="Фото из галереи" onClick={() => handlePickFile('image/*')} />
-                  <AttachItem icon={Camera} label="Снять фото" onClick={handleOpenCamera} />
-                  <AttachItem icon={VideoIcon} label="Видео из галереи" onClick={() => handlePickFile('video/*')} />
+                  <AttachItem icon={ImageIcon} label="Фото из галереи" onClick={() => pickPhotoNative('PHOTOS')} />
+                  <AttachItem icon={Camera} label="Снять фото" onClick={() => pickPhotoNative('CAMERA')} />
+                  <AttachItem icon={VideoIcon} label="Видео из галереи" onClick={pickVideoNative} />
                 </div>
               )}
             </div>
@@ -782,6 +823,7 @@ function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time:
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
+  const playableSrc = useAuthenticatedMedia(src);
 
   const onLoaded = () => {
     if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
@@ -818,7 +860,7 @@ function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time:
       <button
         type="button"
         onClick={togglePlay}
-        disabled={!src || pending}
+        disabled={!playableSrc || pending}
         aria-label={playing ? 'Пауза' : 'Воспроизвести'}
         className={`relative h-11 w-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 disabled:opacity-50 ${
           fromMe
@@ -826,7 +868,7 @@ function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time:
             : 'bg-[#4ec9c0] text-[#03161c] shadow-[0_0_18px_rgba(78,201,192,0.45)]'
         }`}
       >
-        {pending && !src ? (
+        {(pending && !src) || (src && !playableSrc) ? (
           <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
         ) : playing ? (
           <Pause className="w-4 h-4" strokeWidth={2} fill="currentColor" />
@@ -855,10 +897,10 @@ function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time:
           <span>{time}</span>
         </div>
       </div>
-      {src && (
+      {playableSrc && (
         <audio
           ref={audioRef}
-          src={src}
+          src={playableSrc}
           preload="metadata"
           onLoadedMetadata={onLoaded}
           onTimeUpdate={onTime}
@@ -879,6 +921,7 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
   const [muted, setMuted] = useState(true);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
+  const playableSrc = useAuthenticatedMedia(src);
 
   const formatSec = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -894,18 +937,18 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
       <button
         type="button"
         onClick={tap}
-        disabled={!src || pending}
+        disabled={!playableSrc || pending}
         aria-label={playing ? 'Пауза' : 'Воспроизвести'}
         className="relative w-[240px] h-[240px] rounded-full overflow-hidden bg-[#0a2f38] border-2 border-[#4ec9c0]/45 shadow-[0_0_24px_rgba(78,201,192,0.25)] active:scale-[0.98] transition-transform"
       >
-        {!src && pending ? (
+        {(!src && pending) || (src && !playableSrc) ? (
           <span className="absolute inset-0 flex items-center justify-center">
             <Loader2 className="w-8 h-8 animate-spin text-[#4ec9c0]" strokeWidth={1.6} />
           </span>
-        ) : src ? (
+        ) : playableSrc ? (
           <video
             ref={videoRef}
-            src={src}
+            src={playableSrc}
             playsInline
             muted={muted}
             preload="metadata"
@@ -919,7 +962,7 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
             className="absolute inset-0 w-full h-full object-cover"
           />
         ) : null}
-        {!playing && src && !pending && (
+        {!playing && playableSrc && !pending && (
           <span className="absolute inset-0 flex items-center justify-center bg-black/20">
             <span className="h-14 w-14 rounded-full bg-[#03161c]/70 backdrop-blur-sm border border-[#4ec9c0]/55 flex items-center justify-center">
               <Play className="w-6 h-6 text-[#4ec9c0] translate-x-[2px]" strokeWidth={2} fill="currentColor" />
@@ -940,6 +983,72 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
           )}
         </span>
         <span>{time}</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// IMAGE BUBBLE — текст или картинка (или оба) с auth-fetched blob URL.
+// ============================================================================
+function ImageBubble({
+  message: m,
+  time,
+  onLightbox,
+}: {
+  message: ChatMessage;
+  time: string;
+  onLightbox: (url: string) => void;
+}) {
+  const playableSrc = useAuthenticatedMedia(m.mediaUrl ?? null);
+  const isImageOnly = !!m.mediaUrl && !m.text;
+  return (
+    <div className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`relative max-w-[80%] rounded-2xl text-[14px] leading-relaxed overflow-hidden ${
+          m.fromMe
+            ? 'bg-[#4ec9c0] text-[#03161c] rounded-br-md shadow-[0_4px_14px_rgba(78,201,192,0.20)]'
+            : 'bg-[#0a2f38]/85 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
+        } ${m.pending ? 'opacity-75' : ''}`}
+      >
+        {!m.mediaUrl && m.pending && m.mediaType === 'image' && (
+          <div className="w-44 h-32 flex items-center justify-center bg-[#03161c]/30">
+            <Loader2 className="w-6 h-6 animate-spin opacity-80" strokeWidth={1.6} />
+          </div>
+        )}
+        {m.mediaUrl && m.mediaType === 'image' && (
+          <button
+            type="button"
+            onClick={() => playableSrc && onLightbox(playableSrc)}
+            disabled={!playableSrc}
+            className="block w-full"
+          >
+            {playableSrc ? (
+              <img src={playableSrc} alt="" className="max-w-full max-h-72 object-cover" />
+            ) : (
+              <div className="w-44 h-32 flex items-center justify-center bg-[#03161c]/30">
+                <Loader2 className="w-6 h-6 animate-spin opacity-80" strokeWidth={1.6} />
+              </div>
+            )}
+          </button>
+        )}
+        {(m.text || (!m.mediaUrl && !m.pending)) && (
+          <div className={`px-3.5 py-2 ${m.mediaUrl ? 'pt-1.5' : ''}`}>
+            {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+          </div>
+        )}
+        <div className={`flex items-center justify-end gap-1 px-3 pb-1.5 ${isImageOnly ? 'absolute bottom-1 right-2 bg-black/40 backdrop-blur-sm rounded-full px-2 py-0.5' : ''}`}>
+          {m.pending && (
+            <Loader2 className={`w-3 h-3 animate-spin ${m.fromMe ? 'text-[#03161c]/70' : 'text-[#4ec9c0]/70'}`} strokeWidth={2} />
+          )}
+          <span className={`text-[10px] font-mono ${
+            m.fromMe
+              ? (isImageOnly ? 'text-white/85' : 'text-[#03161c]/65')
+              : (isImageOnly ? 'text-white/85' : 'text-[#7aa8a4]')
+          }`}>
+            {time}
+          </span>
+        </div>
       </div>
     </div>
   );
