@@ -525,15 +525,6 @@ async function startServer(): Promise<void> {
 
   // Публичная статика — аватары и т.п. (имена в корне uploads).
   // Запрещаем подъём в подпапку dm через путь.
-  app.use('/uploads', (req, res, next) => {
-    const decodedPath = decodeURIComponent(req.path);
-    if (decodedPath.includes('/dm/') || decodedPath.startsWith('/dm/')) {
-      res.status(401).json({ error: 'dm_media_requires_auth' });
-      return;
-    }
-    next();
-  }, express.static(uploadDir, { fallthrough: true }));
-
   // === HMAC media URL signing ===
   // ROOT-CAUSE: native <audio>/<video>/<img> элементы загружают URL через
   // WebView напрямую, минуя CapacitorHttp. У них своя cookie jar — наша
@@ -546,8 +537,19 @@ async function startServer(): Promise<void> {
   // даже если открыл диалог через сутки. После TTL → fronted polling
   // получит свежий sig в /messages/with response.
   const MEDIA_URL_TTL_MS = 24 * 60 * 60 * 1000;
-  function signMediaUrl(relUrl: string): string {
-    if (!relUrl || !relUrl.startsWith('/uploads/dm/')) return relUrl;
+  function stripMediaQuery(u: string | null | undefined): string | null {
+    if (!u) return null;
+    const q = u.indexOf('?');
+    return q >= 0 ? u.slice(0, q) : u;
+  }
+  function signMediaUrl(relUrlMaybeQuery: string): string {
+    // Защита от двойного подписания: если на вход пришёл уже подписанный
+    // URL (?exp=&sig=), сначала отрезаем query, потом подписываем заново.
+    // Раньше в DB хранились URL с sig, на emit signMediaUrl навешивал
+    // ВТОРОЙ ?exp=&sig= → клиент получал ?A?B → 401 от сервера → media
+    // не игралось.
+    const relUrl = stripMediaQuery(relUrlMaybeQuery);
+    if (!relUrl || !relUrl.startsWith('/uploads/dm/')) return relUrlMaybeQuery;
     const exp = Date.now() + MEDIA_URL_TTL_MS;
     const payload = `${relUrl}|${exp}`;
     const sig = crypto.createHmac('sha256', sessionSecret).update(payload).digest('hex').slice(0, 32);
@@ -602,6 +604,18 @@ async function startServer(): Promise<void> {
     }
     res.sendFile(path.join(dmDir, filename));
   });
+
+  // Static-доступ к публичным /uploads/<avatar>.<ext>. /dm/ блокируется
+  // явно — выше уже отработал dedicated route с sig/cookie проверкой;
+  // если до сюда дошло — кто-то пытается обойти.
+  app.use('/uploads', (req, res, next) => {
+    const decodedPath = decodeURIComponent(req.path);
+    if (decodedPath.startsWith('/dm/') || decodedPath.includes('/dm/')) {
+      res.status(404).end();
+      return;
+    }
+    next();
+  }, express.static(uploadDir, { fallthrough: true }));
 
   const api = express.Router();
 
@@ -1444,10 +1458,12 @@ async function startServer(): Promise<void> {
     }
 
     const id = crypto.randomUUID();
+    // Storing CANONICAL relUrl без query. signMediaUrl вешает sig только
+    // на emit. Иначе — двойное подписание → 401.
     await db.insert(directMessages).values({
       id, fromUserId, toUserId,
       text: text || '',
-      mediaUrl: mediaUrl ?? null,
+      mediaUrl: stripMediaQuery(mediaUrl ?? null),
       mediaType: mediaType ?? null,
     });
     const inserted = (await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1))[0];

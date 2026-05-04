@@ -351,35 +351,45 @@ function DmRoom({ userId }: { userId: string }) {
   // VideoPicker; на web (vite dev) тот же путь.
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // Lazy import чтобы web-сборка vite dev не падала.
+  // Manual base64 → Blob (без fetch(dataUrl), потому что CapacitorHttp
+  // патчит window.fetch и data: URLs некоторые версии перехватывают
+  // криво — body молча пустой).
+  const dataUrlToBlob = (dataUrl: string): Blob => {
+    const commaIdx = dataUrl.indexOf(',');
+    const header = dataUrl.slice(0, commaIdx);
+    const mimeMatch = header.match(/data:([^;]+);base64/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const b64 = dataUrl.slice(commaIdx + 1);
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  };
+
   const pickPhotoNative = async (source: 'CAMERA' | 'PHOTOS') => {
     setAttachOpen(false);
-    try {
-      const Capacitor: any = (window as any).Capacitor;
-      if (Capacitor?.isNativePlatform?.()) {
+    const Capacitor: any = (window as any).Capacitor;
+    if (Capacitor?.isNativePlatform?.()) {
+      try {
         const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
         const photo = await Camera.getPhoto({
           quality: 80,
           allowEditing: false,
           resultType: CameraResultType.DataUrl,
           source: source === 'CAMERA' ? CameraSource.Camera : CameraSource.Photos,
-          // По умолчанию берёт jpeg — подходит под наш magic-bytes whitelist.
         });
         if (!photo.dataUrl) return;
-        // dataUrl: "data:image/jpeg;base64,...." → конвертируем в Blob
-        const res = await fetch(photo.dataUrl);
-        const blob = await res.blob();
+        const blob = dataUrlToBlob(photo.dataUrl);
         await uploadAndSend(blob);
-        return;
+      } catch (err) {
+        const msg = (err as Error).message || 'plugin_failed';
+        if (/cancel/i.test(msg) || /User cancelled/i.test(msg)) return;
+        // eslint-disable-next-line no-alert
+        alert(`Камера/галерея недоступны: ${msg}`);
       }
-    } catch (err) {
-      // eslint-disable-next-line no-alert
-      const msg = (err as Error).message || 'plugin_failed';
-      if (/cancelled|cancelled by user/i.test(msg)) return;
-      alert(`Камера/галерея недоступны: ${msg}`);
       return;
     }
-    // Web fallback (vite dev): обычный <input type="file">.
+    // Web fallback.
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -454,7 +464,10 @@ function DmRoom({ userId }: { userId: string }) {
       }
       const data: { url: string; type: 'image' | 'audio' | 'video' } = await r.json();
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
-      await sendMessage({ mediaUrl: data.url, mediaType: data.type });
+      // Стрипаем query — отдаём серверу canonical URL без HMAC (сервер
+      // подпишет на emit). Defence-in-depth от двойного подписания.
+      const canonical = data.url.split('?')[0];
+      await sendMessage({ mediaUrl: canonical, mediaType: data.type });
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
       // eslint-disable-next-line no-alert
