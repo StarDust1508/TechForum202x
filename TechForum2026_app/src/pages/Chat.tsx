@@ -271,10 +271,23 @@ function DmRoom({ userId }: { userId: string }) {
         createdAt: m.createdAt,
       }));
       setMessages((prev) => {
+        const existingById = new Map(prev.map((m) => [m.id, m]));
         const pending = prev.filter((m) => m.pending);
         const serverIds = new Set(serverMsgs.map((m) => m.id));
         const stillPending = pending.filter((m) => !serverIds.has(m.id));
-        return [...serverMsgs, ...stillPending];
+        // Сохраняем существующий mediaUrl, чтобы native player не
+        // перезагружал URL с новой sig (poll отдаёт fresh sig каждый раз).
+        // Поведение: первый раз ставим server URL; на следующих poll-ах,
+        // если message с тем же id уже есть и его mediaUrl не пустой —
+        // используем старое значение. Player продолжает играть текущий buffer.
+        const merged = serverMsgs.map((sm) => {
+          const ex = existingById.get(sm.id);
+          if (ex && ex.mediaUrl && sm.mediaUrl) {
+            return { ...sm, mediaUrl: ex.mediaUrl };
+          }
+          return sm;
+        });
+        return [...merged, ...stillPending];
       });
     } catch { /* noop */ }
   }, [userId, meId]);
@@ -292,15 +305,21 @@ function DmRoom({ userId }: { userId: string }) {
   }, [messages.length]);
 
   // ====== Send: text or media ======
-  const sendMessage = async (payload: { text?: string; mediaUrl?: string; mediaType?: 'image' | 'audio' | 'video' }) => {
+  // localPreviewUrl: blob:// URL для МГНОВЕННОГО воспроизведения у отправителя
+  // (без ожидания /upload + signed URL round-trip от сервера). После POST
+  // /messages мы обновляем id на серверный, но КЕЕП localPreviewUrl как
+  // mediaUrl — player не пере-загружает src. fetchDialog merge также
+  // сохраняет existing mediaUrl для уже видимых message id.
+  const sendMessage = async (payload: { text?: string; mediaUrl?: string; mediaType?: 'image' | 'audio' | 'video'; localPreviewUrl?: string }) => {
     if (sending) return;
     if (!payload.text && !payload.mediaUrl) return;
     setSending(true);
     const optimisticId = `tmp_${Date.now()}`;
+    const displayUrl = payload.localPreviewUrl || payload.mediaUrl || null;
     const optimistic: ChatMessage = {
       id: optimisticId, fromMe: true,
       text: payload.text || '',
-      mediaUrl: payload.mediaUrl ?? null,
+      mediaUrl: displayUrl,
       mediaType: payload.mediaType ?? null,
       createdAt: new Date().toISOString(),
       pending: true,
@@ -324,7 +343,16 @@ function DmRoom({ userId }: { userId: string }) {
       } else {
         const real = await r.json();
         setMessages((prev) => prev.map((m) => m.id === optimisticId
-          ? { ...m, id: real.id, createdAt: real.createdAt, pending: false }
+          ? {
+              ...m,
+              id: real.id,
+              createdAt: real.createdAt,
+              pending: false,
+              // Если есть localPreview — оставляем его как mediaUrl (player
+              // продолжает играть с того же blob:// без перезагрузки).
+              // Без preview — берём server-signed URL.
+              mediaUrl: payload.localPreviewUrl || real.mediaUrl || displayUrl,
+            }
           : m,
         ));
       }
@@ -347,9 +375,9 @@ function DmRoom({ userId }: { userId: string }) {
   // Для photo (галерея + камера) используем @capacitor/camera plugin —
   // нативный picker, в отличие от <input type="file"> который на Capacitor
   // 8 WebView нестабильно обрабатывал onShowFileChooser.
-  // Для video — остаётся <input type="file" accept="video/*"> через
-  // VideoPicker; на web (vite dev) тот же путь.
-  const videoInputRef = useRef<HTMLInputElement>(null);
+  // Для video — динамически создаваемый <input type="file" accept="video/*">
+  // в pickVideoNative, appended to body, click(). Надёжнее in-tree hidden
+  // элемента который часть Android WebView молча игнорирует.
 
   // Manual base64 → Blob (без fetch(dataUrl), потому что CapacitorHttp
   // патчит window.fetch и data: URLs некоторые версии перехватывают
@@ -372,24 +400,45 @@ function DmRoom({ userId }: { userId: string }) {
     if (Capacitor?.isNativePlatform?.()) {
       try {
         const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+        // Явно запрашиваем permissions ДО getPhoto — иначе на Android 13+
+        // плагин возвращает opaque error без видимого диалога-разрешения.
+        try {
+          const perm = await Camera.checkPermissions();
+          const need = source === 'CAMERA' ? perm.camera !== 'granted' : perm.photos !== 'granted';
+          if (need) {
+            await Camera.requestPermissions({
+              permissions: source === 'CAMERA' ? ['camera'] : ['photos'],
+            });
+          }
+        } catch { /* старые версии плагина без checkPermissions — пропускаем */ }
         const photo = await Camera.getPhoto({
           quality: 80,
           allowEditing: false,
           resultType: CameraResultType.DataUrl,
           source: source === 'CAMERA' ? CameraSource.Camera : CameraSource.Photos,
+          // saveToGallery: false — в Photos source не нужно сохранять копию.
+          saveToGallery: false,
+          // promptLabelHeader для UX consistency
+          promptLabelHeader: source === 'CAMERA' ? 'Снять фото' : 'Выбрать фото',
         });
-        if (!photo.dataUrl) return;
+        if (!photo?.dataUrl) {
+          // eslint-disable-next-line no-alert
+          alert('Не получили фото — попробуйте ещё раз.');
+          return;
+        }
         const blob = dataUrlToBlob(photo.dataUrl);
         await uploadAndSend(blob);
       } catch (err) {
-        const msg = (err as Error).message || 'plugin_failed';
-        if (/cancel/i.test(msg) || /User cancelled/i.test(msg)) return;
+        const msg = (err as Error)?.message || String(err) || 'plugin_failed';
+        if (/cancel/i.test(msg) || /User cancelled/i.test(msg) || /User denied/i.test(msg) && source === 'PHOTOS') return;
+        // Видимая ошибка вместо silent-fail. Это позволяет диагностировать,
+        // если плагин не работает (permission denied / not implemented / т.д.).
         // eslint-disable-next-line no-alert
-        alert(`Камера/галерея недоступны: ${msg}`);
+        alert(`Не удалось ${source === 'CAMERA' ? 'открыть камеру' : 'получить фото из галереи'}: ${msg}`);
       }
       return;
     }
-    // Web fallback.
+    // Web fallback (vite dev).
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -401,18 +450,27 @@ function DmRoom({ userId }: { userId: string }) {
     input.click();
   };
 
-  const pickVideoNative = async () => {
+  const pickVideoNative = () => {
     setAttachOpen(false);
-    // <input type="file" accept="video/*"> — работает на Android 13+ с
-    // READ_MEDIA_VIDEO permission через системный photo picker.
-    videoInputRef.current?.click();
-  };
-
-  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    await uploadAndSend(file);
+    // Создаём input динамически И аппендим к body — раньше hidden input
+    // в render-tree часто молча игнорировался WebChromeClient.onShowFileChooser
+    // на части Android-устройств. Inline body-attached input вызывает
+    // системный picker надёжнее.
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'video/*';
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'none';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      try { document.body.removeChild(input); } catch { /* noop */ }
+      if (f) await uploadAndSend(f);
+    };
+    document.body.appendChild(input);
+    input.click();
   };
 
   // Blob → base64 (без data: префикса). Используем FileReader потому что
@@ -433,15 +491,17 @@ function DmRoom({ userId }: { userId: string }) {
     const inferType = (mime: string): 'image' | 'audio' | 'video' =>
       mime.startsWith('image') ? 'image' : mime.startsWith('audio') ? 'audio' : 'video';
     const guessedType = inferType(blob.type || '');
+    // Instant local preview: blob:// URL → player играет сразу из памяти
+    // без round-trip на сервер. Особенно важно для аудио/видео — раньше
+    // юзер ждал upload+sign+download прежде чем play-кнопка работала.
+    const localPreviewUrl = URL.createObjectURL(blob);
     setMessages((prev) => [...prev, {
       id: placeholderId, fromMe: true, text: '',
-      mediaUrl: null, mediaType: guessedType,
+      mediaUrl: localPreviewUrl, mediaType: guessedType,
       createdAt: new Date().toISOString(), pending: true,
     }]);
 
     try {
-      // CapacitorHttp ломает FormData/multipart, поэтому шлём JSON-base64.
-      // На веб-сборке (vite dev) этот же путь тоже работает.
       const base64 = await blobToBase64(blob);
       const filename = blob instanceof File && blob.name ? blob.name : 'media';
       const mimeType = blob.type || 'application/octet-stream';
@@ -453,6 +513,7 @@ function DmRoom({ userId }: { userId: string }) {
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
+        URL.revokeObjectURL(localPreviewUrl);
         setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
         // eslint-disable-next-line no-alert
         alert(
@@ -463,12 +524,19 @@ function DmRoom({ userId }: { userId: string }) {
         return;
       }
       const data: { url: string; type: 'image' | 'audio' | 'video' } = await r.json();
-      setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
-      // Стрипаем query — отдаём серверу canonical URL без HMAC (сервер
-      // подпишет на emit). Defence-in-depth от двойного подписания.
       const canonical = data.url.split('?')[0];
-      await sendMessage({ mediaUrl: canonical, mediaType: data.type });
+      setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
+      // Передаём localPreviewUrl в sendMessage — оно сохранит этот URL
+      // как mediaUrl у real-id message, чтобы player не дёргался при
+      // переключении placeholder→real (без re-load src). fetchDialog
+      // merge также сохранит его для уже видимых message id.
+      await sendMessage({
+        mediaUrl: canonical,
+        mediaType: data.type,
+        localPreviewUrl,
+      });
     } catch (err) {
+      URL.revokeObjectURL(localPreviewUrl);
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
       // eslint-disable-next-line no-alert
       alert(`Не удалось отправить: ${err instanceof Error ? err.message : 'нет соединения'}`);
@@ -644,17 +712,8 @@ function DmRoom({ userId }: { userId: string }) {
         })}
       </div>
 
-      {/* Hidden video file picker. Используем absolute+opacity-0 вместо
-          display:none т.к. на некоторых Android WebView display:none делает
-          input не-кликабельным и onShowFileChooser не вызывается. */}
-      <input
-        ref={videoInputRef}
-        type="file"
-        accept="video/*"
-        onChange={handleFileSelected}
-        style={{ position: 'absolute', left: -9999, width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
-        aria-hidden="true"
-      />
+      {/* Видео-input создаётся динамически в pickVideoNative и append-ится
+          к body, см. там — это надёжнее чем in-tree hidden input. */}
 
       {/* Bottom bar: либо input, либо запись */}
       <div
@@ -946,11 +1005,17 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
             src={playableSrc}
             playsInline
             muted={muted}
-            preload="metadata"
+            // preload="auto" — заставляет загрузить достаточно для рендера
+            // первого кадра. Без этого Android WebView показывает пустой
+            // серый прямоугольник пока юзер не нажмёт play.
+            preload="auto"
             onLoadedMetadata={() => {
-              if (videoRef.current && Number.isFinite(videoRef.current.duration)) {
-                setDuration(videoRef.current.duration);
-              }
+              const v = videoRef.current;
+              if (!v) return;
+              if (Number.isFinite(v.duration)) setDuration(v.duration);
+              // Seek в начало → forces decode первого кадра. Без этого
+              // Android Chromium WebView оставляет canvas пустым (poster).
+              try { v.currentTime = 0.05; } catch { /* noop */ }
             }}
             onTimeUpdate={() => { if (videoRef.current) setProgress(videoRef.current.currentTime || 0); }}
             onEnded={() => { setPlaying(false); setProgress(0); }}
