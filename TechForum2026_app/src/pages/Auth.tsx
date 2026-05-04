@@ -78,7 +78,7 @@ export default function Auth({ onSuccess }: AuthProps) {
 
   const handleForgotVerify = async () => {
     if (forgotToken.trim().length < 8) { toast.show('Введите код полностью'); return; }
-    if (forgotNewPwd.length < 6) { toast.show('Пароль минимум 6 символов'); return; }
+    if (forgotNewPwd.length < 8) { toast.show('Пароль должен быть не менее 8 символов'); return; }
     setForgotBusy(true);
     try {
       const r = await fetch(resolveApiUrl('/auth/forgot-password/verify'), {

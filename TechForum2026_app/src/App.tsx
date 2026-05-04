@@ -139,7 +139,13 @@ function AppContent() {
           if (isMounted) {
             setUser((prev: any) => prev ? { ...prev, interestsCount: interestIds.length } : prev);
           }
+        } else if (res.status === 400) {
+          // Бэк отверг данные (unknown_interest_ids, либо min(3) после
+          // изменения схемы): pending содержит мусор, не зацикливаем
+          // повторные cold-start попытки. Удаляем буфер.
+          try { localStorage.removeItem('techforum_pending_interests'); } catch { /* noop */ }
         }
+        // 401/5xx — оставляем pending до следующего cold-start.
       } catch { /* offline — попробуем на следующем cold-start */ }
     };
 
