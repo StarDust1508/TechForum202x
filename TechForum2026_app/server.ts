@@ -882,15 +882,49 @@ async function startServer(): Promise<void> {
 
   async function sendResetNotification(email: string, token: string, tokenId: string): Promise<void> {
     // BACKEND_TODO: интегрировать SMTP / SMS-провайдер.
-    // SECURITY: НЕ логируем raw token. Любой с SSH/co-tenant читал бы его
-    // через journalctl и сбрасывал чужой пароль. Логируем только token-id
-    // (запись в БД) и сам факт; при подключении SMTP реальный token уйдёт
-    // в email и в БД лежит только его SHA-256 хеш.
+    // SECURITY: НЕ логируем raw token. Логируем только token-id и факт.
+    // Оператор может выдать новый токен через POST /admin/reset-tokens
+    // (header X-Admin-Secret) пока SMTP не подключён.
     log.info('forgot-password', `reset issued`, { email, tokenId, ttl: '30m' });
-    // raw-token временно доступен оператору через REST endpoint
-    // /admin/reset-tokens (TODO) — пока ручная выдача.
-    void token; // intentionally unused: must reach user via SMTP, not log
+    void token;
   }
+
+  // ADMIN: выдача reset-token оператором без SMTP. Защищено header'ом
+  // X-Admin-Secret = process.env.ADMIN_SECRET. Если ADMIN_SECRET не задан
+  // в env — endpoint выключен (всегда 503), чтобы не было silent-bypass'а.
+  // Оператор делает curl, получает raw-token и пересылает юзеру лично.
+  const adminSecret = String(process.env.ADMIN_SECRET || '').trim();
+  api.post('/admin/reset-tokens', forgotRateLimit, async (req, res) => {
+    if (!adminSecret) {
+      res.status(503).json({ error: 'admin_disabled', detail: 'ADMIN_SECRET not configured' });
+      return;
+    }
+    const provided = String(req.header('x-admin-secret') || '').trim();
+    if (!provided || provided !== adminSecret) {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+    const email = String((req.body as { email?: unknown })?.email || '').trim().toLowerCase();
+    if (!email || !/^.+@.+\..+$/.test(email)) {
+      res.status(400).json({ error: 'invalid_email' });
+      return;
+    }
+    const user = await findUserByEmail(email);
+    if (!user) {
+      res.status(404).json({ error: 'user_not_found' });
+      return;
+    }
+    await cleanupExpiredResetTokensIfStale();
+    const id = crypto.randomUUID();
+    const rawToken = crypto.randomBytes(24).toString('base64url');
+    const tokenHash = hashResetToken(rawToken);
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await db.insert(passwordResetTokens).values({
+      id, userId: user.id, tokenHash, expiresAt, attempts: 0,
+    });
+    log.info('forgot-password', 'admin issued token', { email, tokenId: id });
+    res.json({ token: rawToken, ttlSeconds: 30 * 60, userId: user.id });
+  });
 
   // Глобальная очистка истёкших reset-токенов. Дешёвая (один DELETE WHERE
   // expires_at < now()) и предотвращает рост таблицы при долгой истории.

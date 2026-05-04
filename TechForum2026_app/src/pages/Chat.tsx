@@ -14,6 +14,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Search, Send, Bot, User as UserIcon, ChevronRight, Sparkles, Paperclip, Mic, Square, Image as ImageIcon, Video as VideoIcon, Play, Pause, X as XIcon, ArrowLeft } from 'lucide-react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
+import AvatarImage from '@/src/components/ui/AvatarImage';
 
 // ===== TYPES =====
 type DmContact = {
@@ -45,18 +46,17 @@ const isUploadedAvatar = (url: string | null | undefined): boolean =>
   typeof url === 'string' && url.startsWith('/uploads/');
 
 // ===== AVATAR =====
+// Использует AvatarImage primitive (единая логика fallback на инициал
+// при ошибке загрузки или отсутствии src). Раньше был свой inline-img
+// с UserIcon, разная логика fallback в Profile/Chat — теперь общая.
 function Avatar({ name, src, size = 48 }: { name: string; src?: string | null; size?: number }) {
-  const showImg = isUploadedAvatar(src) && src;
+  const resolved = isUploadedAvatar(src) && src ? resolveAssetUrl(src) : null;
   return (
     <div
       className="relative rounded-full overflow-hidden flex items-center justify-center bg-[#0a2f38] border border-[#4ec9c0]/35 shrink-0"
       style={{ width: size, height: size }}
     >
-      {showImg ? (
-        <img src={resolveAssetUrl(src)} alt={name} className="w-full h-full object-cover" />
-      ) : (
-        <UserIcon className="w-1/2 h-1/2 text-[#4ec9c0]/85" strokeWidth={1.4} />
-      )}
+      <AvatarImage src={resolved} name={name} className="h-full w-full" letterClassName="text-base" />
     </div>
   );
 }

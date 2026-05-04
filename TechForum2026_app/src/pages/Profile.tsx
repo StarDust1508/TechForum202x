@@ -9,7 +9,7 @@ import HudFrame from '@/src/components/ui/HudFrame';
 import Input from '@/src/components/ui/Input';
 import Button from '@/src/components/ui/Button';
 import AvatarImage from '@/src/components/ui/AvatarImage';
-import { formatPhone, getValidationMessage } from '@/src/lib/phone';
+import { formatPhone, getValidationMessage, isValidPhone } from '@/src/lib/phone';
 
 interface ProfileProps {
   user: any;
@@ -43,6 +43,12 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   };
 
   const handleSave = async () => {
+    // Phone — опциональный, но если заполнен, должен быть валиден.
+    if (editForm.phone && editForm.phone.trim() !== '+7' && editForm.phone.trim() !== '+7 '
+        && !isValidPhone(editForm.phone)) {
+      // Live-message уже показан под полем, дополнительно ничего не делаем.
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(resolveApiUrl('/auth/me'), {
@@ -157,20 +163,14 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   const avatarBase = isUserUploaded ? resolveAssetUrl(user.avatar) : null;
   const avatarSrc = avatarBase ? `${avatarBase}${avatarBase.includes('?') ? '&' : '?'}v=${avatarVersion}` : null;
 
-  // HUD-аватар: октагональная рамка. Если юзер загрузил фото — показываем,
-  // иначе — нейтральная иконка User (без dicebear-генерёнки).
+  // HUD-аватар: октагональная рамка. AvatarImage primitive ставит инициал
+  // как fallback при ошибке загрузки или отсутствии src — единая логика
+  // с Chat-списком и других местах.
   const renderAvatar = (sizePx: number) => (
     <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
-      {avatarSrc ? (
-        <img
-          src={avatarSrc}
-          alt={user.name || 'avatar'}
-          className="absolute inset-2 h-[calc(100%-16px)] w-[calc(100%-16px)] object-cover"
-          referrerPolicy="no-referrer"
-        />
-      ) : (
-        <UserIcon className="w-1/2 h-1/2 text-[#4ec9c0]/85" strokeWidth={1.4} aria-hidden="true" />
-      )}
+      <div className="absolute inset-2 overflow-hidden rounded-md">
+        <AvatarImage src={avatarSrc} name={user.name} className="h-full w-full" letterClassName="text-3xl" />
+      </div>
     </HudFrame>
   );
 
@@ -314,6 +314,14 @@ export default function Profile({ user: initialUser }: ProfileProps) {
                       }}
                       onChange={(e) => setEditForm({ ...editForm, phone: formatPhone(e.target.value) })}
                     />
+                    {/* Live валидация — показываем mismatch до save, чтобы юзер
+                        не получал generic 400 от бэка после сохранения. */}
+                    {(() => {
+                      const msg = getValidationMessage(editForm.phone || '');
+                      return msg ? (
+                        <p className="ml-1 text-[11px] text-amber-300/85 font-blueprint">{msg}</p>
+                      ) : null;
+                    })()}
                   </div>
 
                   <div className="space-y-2">
