@@ -299,7 +299,8 @@ function DmRoom({ userId }: { userId: string }) {
 
   // Auto-scroll вниз на новые сообщения
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    // body-scroll: прокручиваем окно вниз к новому сообщению.
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
   }, [messages.length]);
 
   // ====== Send: text or media ======
@@ -462,7 +463,7 @@ function DmRoom({ userId }: { userId: string }) {
   }, []);
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: '100dvh' }}>
+    <div className="relative" style={{ minHeight: '100dvh' }}>
       {/* Header */}
       <header
         className="sticky top-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-b border-[#4ec9c0]/22 px-4 py-2.5 flex items-center gap-3"
@@ -483,10 +484,12 @@ function DmRoom({ userId }: { userId: string }) {
       </header>
 
       {/* Messages */}
+      {/* Сообщения теперь в обычный flow — body скроллится сам.
+          Padding-bottom оставляет место под sticky input-bar. */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto scrollbar-hide px-4 py-4 space-y-2"
-        style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}
+        className="px-4 py-4 space-y-2"
+        style={{ paddingBottom: '120px' }}
       >
         {messages.length === 0 && (
           <p className="text-center text-[12px] text-[#7aa8a4] py-8">Сообщений пока нет.<br/>Напишите первое.</p>
@@ -627,7 +630,8 @@ function AiRoom() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    // body-scroll: прокручиваем окно вниз к новому сообщению.
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
   }, [messages.length, loading]);
 
   const handleSend = async () => {
@@ -655,7 +659,7 @@ function AiRoom() {
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: '100dvh' }}>
+    <div className="relative" style={{ minHeight: '100dvh' }}>
       <header
         className="sticky top-0 z-30 bg-[#03161c]/85 backdrop-blur-xl border-b border-[#4ec9c0]/22 px-4 py-2.5 flex items-center gap-3"
         style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 10px)' }}
@@ -676,10 +680,12 @@ function AiRoom() {
         </div>
       </header>
 
+      {/* Сообщения теперь в обычный flow — body скроллится сам.
+          Padding-bottom оставляет место под sticky input-bar. */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto scrollbar-hide px-4 py-4 space-y-2"
-        style={{ overscrollBehavior: 'none', WebkitOverflowScrolling: 'touch' }}
+        className="px-4 py-4 space-y-2"
+        style={{ paddingBottom: '120px' }}
       >
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>

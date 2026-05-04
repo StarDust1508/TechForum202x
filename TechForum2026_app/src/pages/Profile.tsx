@@ -166,13 +166,23 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   // HUD-аватар: октагональная рамка. AvatarImage primitive ставит инициал
   // как fallback при ошибке загрузки или отсутствии src — единая логика
   // с Chat-списком и других местах.
-  const renderAvatar = (sizePx: number) => (
-    <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
-      <div className="absolute inset-2 overflow-hidden rounded-md">
-        <AvatarImage src={avatarSrc} name={user.name} className="h-full w-full" letterClassName="text-3xl" />
-      </div>
-    </HudFrame>
-  );
+  // Аватар внутри HUD-octagon. Раньше img был размером с почти весь octagon
+  // (inset-2 + rounded-md) и углы фото вылезали за octagon-стенки. Теперь
+  // фото — круглое (overflow-hidden + rounded-full), занимает 64% от HUD,
+  // центровано — гарантированно вписывается в octagon.
+  const renderAvatar = (sizePx: number) => {
+    const inner = Math.round(sizePx * 0.64);
+    return (
+      <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full bg-[#0a2f38] border border-[#4ec9c0]/40"
+          style={{ width: inner, height: inner }}
+        >
+          <AvatarImage src={avatarSrc} name={user.name} className="h-full w-full" letterClassName="text-2xl" />
+        </div>
+      </HudFrame>
+    );
+  };
 
   return (
     <div className="flex-1 pb-24 px-6 space-y-8 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
