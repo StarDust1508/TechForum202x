@@ -676,7 +676,7 @@ export const SESSIONS: Session[] = [
   buildSession({
     id: 's_d1_open',
     title: 'Открытие TechForum 2026',
-    description: 'Вступительное слово организаторов и обзор программы двух дней.',
+    description: 'Старт двух дней форума. Организаторы расскажут о треках, спикерах и партнёрах, дадут краткий обзор всех 32 сессий и презентуют главный приз форума. Все участники собираются в Главном зале.',
     startTime: '10:00', endTime: '10:30',
     format: 'opening', hallId: 'main', dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -720,8 +720,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d1_lunch',
-    title: 'Обед',
-    description: 'Кофе, обед и нетворкинг в фойе.',
+    title: 'Обед и нетворкинг',
+    description: 'Час на обед в зоне фойе: горячее меню, бизнес-ланчи, кофе-бар. Параллельно работают стенды партнёров — отличная возможность пообщаться со спикерами утренней секции и инженерами из крупнейших российских компаний.',
     startTime: '12:30', endTime: '13:30',
     format: 'break', hallId: null, dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -811,7 +811,7 @@ export const SESSIONS: Session[] = [
   buildSession({
     id: 's_d1_close',
     title: 'Networking первого дня',
-    description: 'Афтепати в фойе. Лёгкие закуски, музыка, общение.',
+    description: 'Неформальная часть программы: лёгкие закуски, диджей-сет, открытые столы со спикерами по интересам — AI/ML, Backend, Frontend, DevOps. Идеальное время познакомиться с теми, чьи доклады понравились днём.',
     startTime: '17:45', endTime: '19:30',
     format: 'closing', hallId: null, dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -884,8 +884,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d2_lunch',
-    title: 'Обед',
-    description: 'Кофе, обед и нетворкинг.',
+    title: 'Обед и закрытое AMA',
+    description: 'Час на обед + параллельно проходит закрытое Ask-Me-Anything: спикеры из утренней секции открыто отвечают на вопросы за бизнес-ланчем. Стол по записи на стенде регистрации (10 мест).',
     startTime: '12:45', endTime: '13:45',
     format: 'break', hallId: null, dayId: 'd2',
     trackId: null, speakerIds: [],
@@ -956,8 +956,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d2_close',
-    title: 'Закрытие форума и Networking',
-    description: 'Финальное слово организаторов, общая фотография, нетворкинг.',
+    title: 'Закрытие форума и розыгрыши',
+    description: 'Финальное слово организаторов, итоги двух дней. В 19:00 на главной сцене подведение итогов всех 10 розыгрышей форума: ноутбука, смартфона, поездки на международную конференцию и других призов от партнёров. Общая фотография участников и нетворкинг.',
     startTime: '16:30', endTime: '18:00',
     format: 'closing', hallId: null, dayId: 'd2',
     trackId: null, speakerIds: [],

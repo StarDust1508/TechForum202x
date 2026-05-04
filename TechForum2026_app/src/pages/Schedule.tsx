@@ -29,7 +29,7 @@
 // END_CHANGE_SUMMARY
 
 import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
-import { MapPin, Filter, Calendar, AlertTriangle, Download, X } from 'lucide-react';
+import { MapPin, Filter, Calendar, AlertTriangle, X, Coffee, Mic, Hand } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -208,12 +208,14 @@ export default function Schedule() {
   }
 
   return (
-    <PageShell kicker="Программа" title="Расписание">
-      <div className="space-y-5">
+    <PageShell hideHeader>
+      <div className="space-y-5 mt-2">
         {/* Day tabs — sticky при скролле, тёмная backdrop-blur подложка с
             мягким bottom-fade в основной контент (унифицировано с Chat header). */}
         <div className="sticky top-0 z-20 -mx-6 px-6 pt-1 pb-3 bg-[#03161c]/85 backdrop-blur-xl after:content-[''] after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-gradient-to-b after:from-[#03161c]/85 after:to-transparent after:pointer-events-none">
-          <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/28 shadow-inner">
+          {/* Day-tabs: активная плашка теперь светлее (#a7e6e0 — светлее accent),
+              текст ровный (tracking чуть мягче, items-center justify-center). */}
+          <div className="flex bg-[#0a2f38]/70 p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/35 shadow-inner">
           {[
             ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
             { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
@@ -224,9 +226,9 @@ export default function Schedule() {
               key={tab.id}
               onClick={() => setSelectedDayId(tab.id)}
               className={cn(
-                'flex-1 py-3.5 rounded-2xl text-[10px] font-semibold uppercase tracking-widest leading-none transition-all',
+                'flex-1 h-11 rounded-2xl text-[11px] font-semibold uppercase tracking-[0.08em] flex items-center justify-center text-center transition-all',
                 selectedDayId === tab.id
-                  ? 'bg-accent text-[#03161c] shadow-xl shadow-accent/20'
+                  ? 'bg-[#a7e6e0] text-[#03161c] shadow-md'
                   : 'text-[#7aa8a4] hover:text-[#d8f0ee]',
               )}
             >
@@ -235,18 +237,6 @@ export default function Schedule() {
           ))}
           </div>
         </div>
-
-        {/* «Скачать всю мою программу в календарь» — показываем только в табе "Мои записи" */}
-        {selectedDayId === MY_TAB_ID && registeredIds.length > 0 && (
-          <a
-            href={resolveApiUrl('/sessions/calendar')}
-            download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#4ec9c0]/10 border border-[#4ec9c0]/30 text-[#4ec9c0] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
-          >
-            <Download className="w-4 h-4" />
-            Все мои сессии в календарь
-          </a>
-        )}
 
         {/* Hall filter pills */}
         <div className="flex gap-3 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
@@ -295,11 +285,20 @@ export default function Schedule() {
             const trackColor = track?.color ?? '#4ec9c0';
             const isRegistered = registeredIds.includes(session.id);
             const isCommonFormat = session.format === 'break' || session.format === 'opening' || session.format === 'closing';
+            const CommonIcon = session.format === 'break' ? Coffee
+              : session.format === 'opening' ? Mic
+              : session.format === 'closing' ? Hand
+              : null;
 
             return (
               <div
                 key={session.id}
-                className="mb-5 bg-[#0a2f38]/40 backdrop-blur-xl border border-[#4ec9c0]/28 p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden"
+                className={cn(
+                  'mb-5 backdrop-blur-xl p-6 rounded-3xl space-y-5 group relative overflow-hidden transition-all',
+                  isCommonFormat
+                    ? 'bg-[#0a2f38]/55 border border-[#4ec9c0]/30 shadow-[0_4px_18px_rgba(0,0,0,0.25)]'
+                    : 'bg-[#0a2f38]/65 border border-[#4ec9c0]/40 shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:border-[#4ec9c0]/65',
+                )}
               >
                 <div
                   className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
@@ -320,9 +319,28 @@ export default function Schedule() {
                   )}
                 </div>
 
-                <h3 className="text-xl font-semibold leading-tight tracking-tight text-[#d8f0ee]">
-                  {session.title}
-                </h3>
+                <div className="flex items-start gap-3">
+                  {isCommonFormat && CommonIcon && (
+                    <div className="w-11 h-11 rounded-2xl bg-[#4ec9c0]/15 border border-[#4ec9c0]/40 flex items-center justify-center text-[#4ec9c0] shrink-0">
+                      <CommonIcon className="w-5 h-5" strokeWidth={1.6} />
+                    </div>
+                  )}
+                  <h3 className="font-display-cyrl text-xl font-semibold leading-tight text-[#d8f0ee] flex-1 min-w-0">
+                    {session.title}
+                  </h3>
+                </div>
+
+                {/* Description — для общих форматов (break/opening/closing) показываем
+                    обязательно, чтобы плашка имела содержание. Для обычных сессий
+                    тоже показываем (короткое описание темы доклада). */}
+                {session.description && (
+                  <p className={cn(
+                    'text-[13px] leading-relaxed',
+                    isCommonFormat ? 'text-[#d8f0ee]/80' : 'text-[#d8f0ee]/65',
+                  )}>
+                    {session.description}
+                  </p>
+                )}
 
                 {session.speakerIds.length > 0 && (
                   <div className="flex flex-wrap gap-5 pt-1">
@@ -346,36 +364,24 @@ export default function Schedule() {
 
                 <div className="pt-2 flex justify-between items-center bg-[#03161c]/30 -mx-6 -mb-6 px-6 py-4 border-t border-[#4ec9c0]/22 gap-3">
                   <span
-                    className="text-[10px] font-semibold uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
+                    className="text-[10px] font-semibold uppercase tracking-widest pl-2 border-l-2 truncate max-w-[55%]"
                     style={{ borderColor: trackColor, color: trackColor }}
                   >
                     {session.track}
                   </span>
-                  <div className="flex gap-2 items-center">
-                    {!isCommonFormat && (
-                      <a
-                        href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
-                        download={`techforum2026-${session.id}.ics`}
-                        title="Добавить в календарь"
-                        className="text-[10px] font-semibold uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[#7aa8a4]/70 hover:text-accent hover:border-accent/30 transition-all"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {!isCommonFormat && (
-                      <button
-                        onClick={() => handleRegisterClick(session)}
-                        className={cn(
-                          'text-[10px] font-semibold uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
-                          isRegistered
-                            ? 'bg-card border border-accent/40 text-accent'
-                            : 'bg-accent text-[#03161c] shadow-accent/10 hover:brightness-110',
-                        )}
-                      >
-                        {isRegistered ? 'Уже иду' : 'Пойду'}
-                      </button>
-                    )}
-                  </div>
+                  {!isCommonFormat && (
+                    <button
+                      onClick={() => handleRegisterClick(session)}
+                      className={cn(
+                        'text-[10px] font-semibold uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
+                        isRegistered
+                          ? 'bg-card border border-accent/40 text-accent'
+                          : 'bg-accent text-[#03161c] shadow-accent/10 hover:brightness-110',
+                      )}
+                    >
+                      {isRegistered ? 'Уже иду' : 'Пойду'}
+                    </button>
+                  )}
                 </div>
               </div>
             );
