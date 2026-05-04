@@ -1,4 +1,4 @@
-import { Info, Shield, Cpu, Smartphone, Calendar, MapPin, Mail, Globe2 } from 'lucide-react';
+import { Info, Shield, Smartphone, Calendar, MapPin, Mail, Globe2 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
 import { EVENT_META } from '../data';
 import { EVENT_DATE } from '@/src/lib/event';
@@ -8,7 +8,6 @@ export default function About() {
     { icon: Calendar, label: 'Даты', value: `${EVENT_DATE.toLowerCase()} 2026` },
     { icon: MapPin, label: 'Локация', value: `${EVENT_META.location}, ${EVENT_META.city}` },
     { icon: Smartphone, label: 'Платформа', value: 'React 19 + Capacitor 8 (Android)' },
-    { icon: Cpu, label: 'AI-помощник', value: 'Gemini 2.5 Flash через /ai/chat' },
     { icon: Shield, label: 'Безопасность', value: 'scrypt-хеши, HMAC QR-билет, 152-ФЗ' },
   ];
 
@@ -20,9 +19,9 @@ export default function About() {
             <Info className="w-5 h-5 text-[#4ec9c0]" strokeWidth={1.6} />
           </div>
           <p className="text-[#d8f0ee]/85 text-[15px] leading-relaxed">
-            Мобильный центр конференции: расписание, спикеры, карта площадки, новости
-            и AI-помощник в одном интерфейсе. Большинство разделов работает офлайн
-            и синхронизируется с сервером в фоне.
+            Мобильный центр конференции: расписание, спикеры, карта площадки,
+            новости и переписка с участниками — в одном интерфейсе.
+            Большинство разделов работает офлайн и синхронизируется с сервером в фоне.
           </p>
         </div>
       </section>
