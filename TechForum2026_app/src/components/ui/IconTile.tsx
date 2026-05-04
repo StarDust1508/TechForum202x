@@ -18,8 +18,8 @@ export default function IconTile({ to, label, icon: Icon }: IconTileProps) {
         <Icon className="h-9 w-9 text-[#4ec9c0]" strokeWidth={1.4} />
       </HudFrame>
       <span
-        className="font-display-cyrl text-[#d8f0ee] tracking-[0.02em] whitespace-nowrap"
-        style={{ fontSize: 'clamp(13px, 3.6vw, 15px)', lineHeight: 1.1 }}
+        className="font-ui font-bold text-[#d8f0ee] whitespace-nowrap drop-shadow-[0_1px_4px_rgba(0,0,0,0.7)]"
+        style={{ fontSize: 'clamp(13px, 3.8vw, 16px)', lineHeight: 1.1, letterSpacing: '-0.005em' }}
       >
         {label}
       </span>

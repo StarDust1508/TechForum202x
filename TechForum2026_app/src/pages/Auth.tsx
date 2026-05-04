@@ -296,7 +296,7 @@ export default function Auth({ onSuccess }: AuthProps) {
 
         {/* Заголовок — без motion-анимаций. Раньше slide+blur при key-change
             юзер воспринимал как «шрифт меняется на ходу». */}
-        <h2 className="mt-6 mb-4 font-display-cyrl text-[28px] font-semibold text-[#d8f0ee] tracking-wide">
+        <h2 className="mt-6 mb-4 font-ui text-[28px] font-semibold text-[#d8f0ee] tracking-wide">
           {mode === 'login' ? 'Войти' : 'Регистрация'}
         </h2>
 
@@ -356,7 +356,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                     setForgotEmail(form.email);
                     setForgotStep('start');
                   }}
-                  className="text-[14px] text-[#7aa8a4] hover:text-[#d8f0ee] font-blueprint"
+                  className="text-[14px] text-[#7aa8a4] hover:text-[#d8f0ee] font-ui"
                 >
                   Забыли пароль?
                 </button>
@@ -379,7 +379,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                   animate={{ opacity: 1, y: 0, x: [0, -6, 6, -4, 4, 0] }}
                   exit={{ opacity: 0, y: -6 }}
                   transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1] }}
-                  className="text-[14px] font-semibold text-rose-300 text-center font-blueprint"
+                  className="text-[14px] font-semibold text-rose-300 text-center font-ui"
                 >
                   {error}
                 </motion.p>
@@ -404,7 +404,7 @@ export default function Auth({ onSuccess }: AuthProps) {
           <button
             type="button"
             onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-            className="text-[13px] text-[#7aa8a4] hover:text-[#d8f0ee] font-blueprint tracking-wider uppercase"
+            className="text-[13px] text-[#7aa8a4] hover:text-[#d8f0ee] font-ui tracking-wider uppercase"
           >
             {mode === 'login' ? 'Нет аккаунта? Создать' : 'Уже есть аккаунт? Войти'}
           </button>
@@ -412,7 +412,7 @@ export default function Auth({ onSuccess }: AuthProps) {
 
         {/* Tagline в обычном flow (не absolute) — чтобы не перекрывал форму
             на маленьких экранах и корректно прокручивался вместе со всем. */}
-        <p className="mt-10 mx-auto max-w-[260px] text-center font-display-cyrl text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line">
+        <p className="mt-10 mx-auto max-w-[260px] text-center font-ui text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line">
           {sectionTagline}
         </p>
       </div>
@@ -448,7 +448,7 @@ export default function Auth({ onSuccess }: AuthProps) {
 
               {forgotStep === 'start' ? (
                 <>
-                  <h3 className="font-display-cyrl text-[20px] text-[#d8f0ee] mb-2">Восстановление пароля</h3>
+                  <h3 className="font-ui text-[20px] text-[#d8f0ee] mb-2">Восстановление пароля</h3>
                   <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
                     Введи email, на который регистрировался. Получишь код через организаторов — пока интеграция SMS/email в работе.
                   </p>
@@ -475,7 +475,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                 </>
               ) : (
                 <>
-                  <h3 className="font-display-cyrl text-[20px] text-[#d8f0ee] mb-2">Введи код</h3>
+                  <h3 className="font-ui text-[20px] text-[#d8f0ee] mb-2">Введи код</h3>
                   <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
                     Код выдают организаторы по запросу. Срок действия — 30 минут.
                   </p>
@@ -547,10 +547,10 @@ export default function Auth({ onSuccess }: AuthProps) {
                 <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#4ec9c0]/40 bg-[#0a2f38]/70 shadow-[0_8px_28px_rgba(78,201,192,0.25)]">
                   <Fingerprint className="h-8 w-8 text-[#4ec9c0]" strokeWidth={1.5} />
                 </div>
-                <h2 className="font-display-cyrl text-[24px] font-semibold text-[#d8f0ee] mb-2 leading-tight">
+                <h2 className="font-ui text-[24px] font-semibold text-[#d8f0ee] mb-2 leading-tight">
                   Включить вход<br />по биометрии?
                 </h2>
-                <p className="mb-6 text-[15px] leading-relaxed text-[#7aa8a4] font-blueprint">
+                <p className="mb-6 text-[15px] leading-relaxed text-[#7aa8a4] font-ui">
                   Открывайте TechForum за секунду без ввода пароля — Face ID, отпечаток или PIN телефона.
                 </p>
 
@@ -582,7 +582,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                     setShowBioOffer(false);
                     if (pendingUser) onSuccess(pendingUser);
                   }}
-                  className="mt-3 w-full py-3 text-[14px] font-semibold uppercase tracking-wider text-[#7aa8a4] hover:text-[#d8f0ee] transition-colors font-blueprint"
+                  className="mt-3 w-full py-3 text-[14px] font-semibold uppercase tracking-wider text-[#7aa8a4] hover:text-[#d8f0ee] transition-colors font-ui"
                 >
                   Не сейчас
                 </button>

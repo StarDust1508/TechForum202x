@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=Forum&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=Forum&family=JetBrains+Mono:wght@400;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
 /*
@@ -58,6 +58,10 @@
      Cinzel не поддерживает кириллицу, fallback на Cormorant Garamond italic
      рисовал "рукописные" буквы. Forum — антиквенный serif с full-cyrl set. */
   --font-display-cyrl: "Forum", "Cormorant Garamond", Georgia, serif;
+  /* font-ui — Manrope: простой, читаемый, дружелюбный sans-serif с
+     полной кириллицей и широким диапазоном весов 400-800. Используем
+     для форм Auth, body-текста и Home-плашек (заметнее, чем Forum). */
+  --font-ui: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 :root {
@@ -149,6 +153,11 @@ body {
   font-family: var(--font-blueprint);
   font-feature-settings: "ss01" on, "kern" on;
   letter-spacing: 0.005em;
+}
+
+.font-ui {
+  font-family: var(--font-ui);
+  font-feature-settings: "kern" on, "calt" on;
 }
 
 .scrollbar-hide::-webkit-scrollbar {

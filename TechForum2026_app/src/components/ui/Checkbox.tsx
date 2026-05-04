@@ -21,7 +21,7 @@ export default function Checkbox({ checked, onChange, children, id }: CheckboxPr
         />
         {checked && <Check className="h-3.5 w-3.5 text-[#4ec9c0]" strokeWidth={2.5} />}
       </span>
-      <span className="text-[14px] leading-snug text-[#7aa8a4] font-blueprint">{children}</span>
+      <span className="text-[14px] leading-snug text-[#7aa8a4] font-ui">{children}</span>
     </label>
   );
 }

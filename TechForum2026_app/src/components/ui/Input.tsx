@@ -30,7 +30,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         type={effectiveType}
         onFocus={(e) => { setFocused(true); rest.onFocus?.(e); }}
         onBlur={(e) => { setFocused(false); rest.onBlur?.(e); }}
-        className={`w-full rounded-[14px] border bg-[#03161c]/40 py-4 ${Icon ? 'pl-12' : 'pl-4'} ${isPassword && toggleablePassword ? 'pr-12' : 'pr-4'} text-[16px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/65 outline-none transition-all duration-200 font-blueprint ${focused ? 'border-[#4ec9c0]/70 bg-[#0a2f38]/55 shadow-[0_0_0_3px_rgba(78,201,192,0.10)]' : 'border-[#4ec9c0]/30'} ${className}`}
+        className={`w-full rounded-[14px] border bg-[#03161c]/40 py-4 ${Icon ? 'pl-12' : 'pl-4'} ${isPassword && toggleablePassword ? 'pr-12' : 'pr-4'} text-[16px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/65 outline-none transition-all duration-200 font-ui ${focused ? 'border-[#4ec9c0]/70 bg-[#0a2f38]/55 shadow-[0_0_0_3px_rgba(78,201,192,0.10)]' : 'border-[#4ec9c0]/30'} ${className}`}
       />
       {isPassword && toggleablePassword && (
         <button
