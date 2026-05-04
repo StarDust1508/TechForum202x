@@ -39,8 +39,13 @@ export default function PageShell({
       className={`relative px-6 ${className}`}
       style={{
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-        minHeight: '100lvh',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
+        // SCROLL FIX (повторяющиеся жалобы): minHeight: 100lvh ушёл.
+        // Раньше страница была жёстко >= 100lvh; в связке с flex-chain
+        // в App.tsx длинный контент не мог «вылезти» за viewport, и
+        // родительский scroll-container ничего не скроллил.
+        // paddingBottom: 96px вместо 24px — гарантирует что хвост
+        // последнего элемента не уезжает за Android nav-bar.
       }}
     >
       {!hideBack && <BackButton />}

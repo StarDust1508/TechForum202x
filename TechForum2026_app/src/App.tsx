@@ -226,6 +226,11 @@ function AppContent() {
             overscrollBehavior: 'none',
             WebkitOverflowScrolling: 'touch',
             paddingBottom: 'env(safe-area-inset-bottom, 0)',
+            // touch-action: pan-y — Android Chromium WebView в некоторых
+            // версиях требует явное разрешение вертикального swipe-жеста
+            // на scroll-контейнере, иначе touch событие отдаётся parent
+            // элементу и scroll не активируется.
+            touchAction: 'pan-y',
           }}
         >
           <div className="min-h-full">
