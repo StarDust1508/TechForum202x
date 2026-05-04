@@ -534,23 +534,59 @@ async function startServer(): Promise<void> {
     next();
   }, express.static(uploadDir, { fallthrough: true }));
 
-  // Приватные DM-attachments. Доступны только если юзер — отправитель
-  // или получатель того сообщения, к которому привязан файл.
+  // === HMAC media URL signing ===
+  // ROOT-CAUSE: native <audio>/<video>/<img> элементы загружают URL через
+  // WebView напрямую, минуя CapacitorHttp. У них своя cookie jar — наша
+  // session cookie туда не попадает → 401 от auth-протектед /uploads/dm/.
+  // Также CapacitorHttp.fetch не реализует .blob() для binary responses —
+  // фронтовый pre-fetch + blob URL workaround тоже не работал стабильно.
+  // FIX: подписываем URL HMAC'ом на эмиссии (когда выдаём mediaUrl фронту);
+  // /uploads/dm/<file> принимает либо session-cookie, либо валидный sig+exp.
+  // TTL 24 ч — достаточно чтобы юзер послушал/посмотрел media в чате,
+  // даже если открыл диалог через сутки. После TTL → fronted polling
+  // получит свежий sig в /messages/with response.
+  const MEDIA_URL_TTL_MS = 24 * 60 * 60 * 1000;
+  function signMediaUrl(relUrl: string): string {
+    if (!relUrl || !relUrl.startsWith('/uploads/dm/')) return relUrl;
+    const exp = Date.now() + MEDIA_URL_TTL_MS;
+    const payload = `${relUrl}|${exp}`;
+    const sig = crypto.createHmac('sha256', sessionSecret).update(payload).digest('hex').slice(0, 32);
+    return `${relUrl}?exp=${exp}&sig=${sig}`;
+  }
+  function verifyMediaSig(relUrl: string, expRaw: unknown, sigRaw: unknown): boolean {
+    if (typeof expRaw !== 'string' || typeof sigRaw !== 'string') return false;
+    const expNum = parseInt(expRaw, 10);
+    if (!Number.isFinite(expNum) || expNum < Date.now()) return false;
+    const expected = crypto.createHmac('sha256', sessionSecret).update(`${relUrl}|${expNum}`).digest('hex').slice(0, 32);
+    if (sigRaw.length !== expected.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(sigRaw), Buffer.from(expected)); }
+    catch { return false; }
+  }
+
+  // Приватные DM-attachments.
+  // Доступны если: (a) валидная session-cookie + юзер — участник DM,
+  //                ИЛИ (b) валидный HMAC-signed URL (sig + exp в query).
   app.get('/uploads/dm/:filename', async (req, res) => {
-    // session middleware ниже, но он уже подключён к app — req.session есть.
-    // Однако этот handler стоит до api router'а, делаем проверку вручную.
-    const userId = req.session?.userId;
-    if (!userId) {
-      res.status(401).json({ error: 'auth_required' });
-      return;
-    }
     const filename = String(req.params.filename || '');
     if (!filename || filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
       res.status(400).json({ error: 'invalid_filename' });
       return;
     }
     const relUrl = `/uploads/dm/${filename}`;
-    // Проверяем что есть DM с этим media_url, где юзер — sender или receiver.
+
+    // Path A: HMAC-signed URL (для нативных <audio>/<video>/<img>, у которых
+    // нет наших session cookies).
+    if (verifyMediaSig(relUrl, req.query.exp, req.query.sig)) {
+      res.sendFile(path.join(dmDir, filename));
+      return;
+    }
+
+    // Path B: session cookie + участник DM.
+    const userId = req.session?.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'auth_required' });
+      return;
+    }
     const dmRows = await db.select({
       from: directMessages.fromUserId,
       to: directMessages.toUserId,
@@ -1424,7 +1460,7 @@ async function startServer(): Promise<void> {
       fromUserId: inserted.fromUserId,
       toUserId: inserted.toUserId,
       text: inserted.text,
-      mediaUrl: inserted.mediaUrl,
+      mediaUrl: inserted.mediaUrl ? signMediaUrl(inserted.mediaUrl) : null,
       mediaType: inserted.mediaType,
       createdAt: inserted.createdAt,
       readAt: inserted.readAt,
@@ -1472,7 +1508,7 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'upload_persist_failed' });
       return;
     }
-    res.json({ url: `/uploads/dm/${finalName}`, type: meta.type });
+    res.json({ url: signMediaUrl(`/uploads/dm/${finalName}`), type: meta.type });
   });
 
   // POST /messages/upload-media-base64 — JSON-вариант загрузки.
@@ -1531,7 +1567,7 @@ async function startServer(): Promise<void> {
         res.status(500).json({ error: 'persist_failed' });
         return;
       }
-      res.json({ url: `/uploads/dm/${finalName}`, type: detected.type });
+      res.json({ url: signMediaUrl(`/uploads/dm/${finalName}`), type: detected.type });
     },
   );
 
@@ -1596,7 +1632,7 @@ async function startServer(): Promise<void> {
       fromUserId: m.fromUserId,
       toUserId: m.toUserId,
       text: m.text,
-      mediaUrl: m.mediaUrl,
+      mediaUrl: m.mediaUrl ? signMediaUrl(m.mediaUrl) : null,
       mediaType: m.mediaType,
       createdAt: m.createdAt,
       readAt: m.readAt,

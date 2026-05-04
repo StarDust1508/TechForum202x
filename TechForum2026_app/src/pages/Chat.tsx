@@ -34,33 +34,15 @@ type ChatMessage = {
   pending?: boolean;
 };
 
-// useAuthenticatedMedia — pre-fetch media через authenticated fetch
-// (CapacitorHttp с session cookie), конвертирует в blob-URL для нативного
-// <audio>/<video>/<img>. Без этого hook'а нативные media-element'ы грузят
-// URL через WebView напрямую, без нашей session cookie → 401 → не играется.
-function useAuthenticatedMedia(absoluteOrRelative: string | null): string | null {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!absoluteOrRelative) { setBlobUrl(null); return; }
-    let active = true;
-    let createdUrl: string | null = null;
-    (async () => {
-      try {
-        const r = await fetch(absoluteOrRelative, { credentials: 'include' });
-        if (!r.ok || !active) return;
-        const blob = await r.blob();
-        if (!active) return;
-        createdUrl = URL.createObjectURL(blob);
-        setBlobUrl(createdUrl);
-      } catch { /* noop — bubble остаётся в pending визуально */ }
-    })();
-    return () => {
-      active = false;
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
-    };
-  }, [absoluteOrRelative]);
-  return blobUrl;
-}
+// Бэк отдаёт mediaUrl уже подписанный HMAC'ом (?exp=...&sig=...).
+// Native <audio>/<video>/<img> грузит этот URL напрямую через WebView,
+// сервер валидирует sig — auth по cookie не нужен.
+// Раньше тут был useAuthenticatedMedia hook (pre-fetch + blob URL),
+// но CapacitorHttp.fetch не реализует .blob() для binary responses
+// → вечный спиннер. Подписанные URL решают проблему чище: один request
+// от native player, никакого buffering'а в JS.
+const dmMediaSrc = (mediaUrl: string | null | undefined): string | null =>
+  mediaUrl ? resolveAssetUrl(mediaUrl) : null;
 
 // ===== HELPERS =====
 const formatTime = (iso: string): string => {
@@ -570,49 +552,49 @@ function DmRoom({ userId }: { userId: string }) {
   return (
     <div className="relative" style={{ minHeight: '100dvh' }}>
       {/*
-        Header — fixed (не sticky), полностью покрывает safe-area сверху.
-        Раньше был sticky внутри контейнера, который уже сам отступал на
-        safe-area сверху, и над плашкой имени получался seam: solid-#03161c
-        снаружи vs blurred-#03161c/85 внутри. Теперь header один solid слой
-        от status-bar до его собственного нижнего края — без визуального
-        конфликта.
+        ROOT-CAUSE «опущена вниз»: App.tsx оборачивает route в motion.div с
+        opacity-анимацией. Framer Motion при работе устанавливает will-change/
+        transform, что делает CSS spec'овскую position:fixed относительной
+        к motion.div, а не к viewport. Outer App-контейнер имеет
+        paddingTop: env(safe-area-inset-top) → motion.div уже смещён вниз
+        на safe-area. Если ещё внутри header добавить paddingTop:safe-area —
+        получается DOUBLE padding. Поэтому здесь paddingTop=0 — outer
+        контейнер уже корректно отвёл место под status-bar.
       */}
       <header
         className="fixed left-0 right-0 top-0 z-30 bg-[#03161c] border-b border-[#4ec9c0]/22"
-        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
-        <div className="px-4 py-2.5 flex items-center gap-3">
+        <div className="px-3 py-2 flex items-center gap-2.5">
           <button
             onClick={() => {
-              // POP через navigate(-1) чтобы стек history не накапливался
-              // [/, /chat, /chat/X, /chat] → /chat/X при system-back.
               if (window.history.length > 1) navigate(-1);
               else navigate('/chat');
             }}
             aria-label="Назад"
-            className="h-9 w-9 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 bg-[#0a2f38]/55 text-[#4ec9c0] hover:bg-[#0a2f38]/80 active:scale-90 transition-all"
+            className="h-9 w-9 flex items-center justify-center rounded-[10px] text-[#4ec9c0] hover:bg-[#0a2f38]/55 active:scale-90 transition-all shrink-0"
           >
-            <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
+            <ArrowLeft className="h-5 w-5" strokeWidth={2} />
           </button>
-          {/* Тап по аватару/имени → публичный профиль собеседника. */}
+          {/* Тап по аватару+имени → публичный профиль. ChevronRight справа —
+              визуальный hint что это link. */}
           <button
             type="button"
             onClick={() => navigate(`/users/${userId}`)}
-            className="flex items-center gap-3 flex-1 min-w-0 text-left active:opacity-80 transition-opacity"
+            className="flex items-center gap-2.5 flex-1 min-w-0 text-left py-1 px-1 rounded-lg hover:bg-[#0a2f38]/40 active:bg-[#0a2f38]/70 transition-colors"
             aria-label="Открыть профиль"
           >
-            <Avatar name={contact?.name || ''} src={contact?.avatar} size={40} />
+            <Avatar name={contact?.name || ''} src={contact?.avatar} size={38} />
             <div className="flex-1 min-w-0">
-              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee] truncate">{contact?.name || 'Участник'}</p>
-              <p className="text-[11px] text-[#7aa8a4] truncate">{contact?.role || ''}</p>
+              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee] truncate leading-tight">{contact?.name || 'Участник'}</p>
+              <p className="text-[11px] text-[#7aa8a4] truncate leading-tight mt-0.5">{contact?.role || 'был(а) недавно'}</p>
             </div>
+            <ChevronRight className="w-4 h-4 text-[#4ec9c0]/55 shrink-0 mr-1" strokeWidth={1.8} />
           </button>
         </div>
       </header>
 
-      {/* Spacer под фиксированный header. 64px = py-2.5+content; safe-area
-          добавляется от env(). */}
-      <div style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }} />
+      {/* Spacer под fixed header. 56px = py-2*2 + 38px avatar height. */}
+      <div style={{ paddingTop: '56px' }} />
 
       <div className="px-3 py-4 space-y-2" style={{ paddingBottom: '120px' }}>
         {messages.length === 0 && (
@@ -823,7 +805,7 @@ function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time:
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
-  const playableSrc = useAuthenticatedMedia(src);
+  const playableSrc = src;
 
   const onLoaded = () => {
     if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
@@ -921,7 +903,7 @@ function VideoBubble({ src, time, pending }: { src: string | null; time: string;
   const [muted, setMuted] = useState(true);
   const [duration, setDuration] = useState(0);
   const [progress, setProgress] = useState(0);
-  const playableSrc = useAuthenticatedMedia(src);
+  const playableSrc = src;
 
   const formatSec = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
@@ -1000,7 +982,7 @@ function ImageBubble({
   time: string;
   onLightbox: (url: string) => void;
 }) {
-  const playableSrc = useAuthenticatedMedia(m.mediaUrl ?? null);
+  const playableSrc = m.mediaUrl ?? null;
   const isImageOnly = !!m.mediaUrl && !m.text;
   return (
     <div className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
