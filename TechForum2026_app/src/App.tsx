@@ -9,6 +9,7 @@ import SpeakerDetail from './pages/SpeakerDetail';
 import Map from './pages/Map';
 import Chat from './pages/Chat';
 import Profile from './pages/Profile';
+import UserProfile from './pages/UserProfile';
 import Ticket from './pages/Ticket';
 import Giveaways from './pages/Giveaways';
 import Auth from './pages/Auth';
@@ -264,6 +265,7 @@ function AppContent() {
                   <Route path="/map" element={<Map />} />
                   <Route path="/chat" element={<Chat />} />
                   <Route path="/chat/:userId" element={<Chat />} />
+                  <Route path="/users/:userId" element={<UserProfile />} />
                   <Route path="/profile" element={<Profile user={user} />} />
                   <Route path="/ticket" element={<Ticket />} />
                   <Route path="/giveaways" element={<Giveaways />} />

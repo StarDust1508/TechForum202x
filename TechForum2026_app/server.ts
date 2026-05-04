@@ -1472,6 +1472,98 @@ async function startServer(): Promise<void> {
     res.json({ url: `/uploads/dm/${finalName}`, type: meta.type });
   });
 
+  // POST /messages/upload-media-base64 — JSON-вариант загрузки.
+  // Существует параллельно с multipart-эндпоинтом потому что CapacitorHttp
+  // (включён в capacitor.config.ts для обхода cleartext-блока) ломает
+  // FormData/multipart-боди — конвертирует blob в JSON и сервер на той
+  // стороне получает мусор. JSON base64 идёт через CapacitorHttp без
+  // мангления.
+  // Body: { filename: string; mimeType: string; base64: string }
+  // Лимит — 12 MB JSON (~9 MB бинарный после base64).
+  api.post(
+    '/messages/upload-media-base64',
+    requireAuth,
+    writeRateLimit,
+    express.json({ limit: '12mb' }),
+    async (req, res) => {
+      const body = req.body as { filename?: string; mimeType?: string; base64?: string } | undefined;
+      if (!body || typeof body.base64 !== 'string' || typeof body.mimeType !== 'string') {
+        res.status(400).json({ error: 'invalid_body' });
+        return;
+      }
+      // Декодируем base64 → bytes. Защита от мусора: max 9 MB бинарных.
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(body.base64, 'base64');
+      } catch {
+        res.status(400).json({ error: 'invalid_base64' });
+        return;
+      }
+      if (bytes.length === 0 || bytes.length > 9 * 1024 * 1024) {
+        res.status(400).json({ error: 'size_out_of_range' });
+        return;
+      }
+      // Пишем во временный файл, прогоняем через тот же detectMediaType
+      // (magic-bytes + mime-whitelist) что и multipart-вариант.
+      const tmpName = crypto.randomUUID();
+      const tmpPath = path.join(uploadDir, tmpName);
+      try { fs.writeFileSync(tmpPath, bytes); }
+      catch (err) {
+        log.error('uploads', 'b64 tmp write failed', { err: String(err) });
+        res.status(500).json({ error: 'persist_failed' });
+        return;
+      }
+      const detected = detectMediaType(tmpPath, body.mimeType);
+      if (!detected) {
+        try { fs.unlinkSync(tmpPath); } catch { /* noop */ }
+        res.status(400).json({ error: 'invalid_media', detail: 'magic_bytes_mismatch_or_unsupported' });
+        return;
+      }
+      const finalName = `${tmpName}.${detected.ext}`;
+      const finalPath = path.join(dmDir, finalName);
+      try { fs.renameSync(tmpPath, finalPath); }
+      catch (err) {
+        log.error('uploads', 'b64 dm rename failed', { err: String(err) });
+        try { fs.unlinkSync(tmpPath); } catch { /* noop */ }
+        res.status(500).json({ error: 'persist_failed' });
+        return;
+      }
+      res.json({ url: `/uploads/dm/${finalName}`, type: detected.type });
+    },
+  );
+
+  // GET /users/:id — публичный профиль участника. Возвращает поля, которые
+  // другой юзер видит при тапе на иконку в чате: имя, роль, аватар, био.
+  // Email/phone скрыты (audit #9 fix). Заблокированные private-юзеры
+  // тоже отдаются (имя/аватар безопасно), но без bio (приватность).
+  api.get('/users/:id', requireAuth, async (req, res) => {
+    const targetId = String(req.params.id || '');
+    if (!targetId || targetId.length < 8) {
+      res.status(400).json({ error: 'invalid_id' });
+      return;
+    }
+    const rows = await db.select({
+      id: users.id,
+      name: users.name,
+      avatar: users.avatar,
+      role: users.role,
+      bio: users.bio,
+      isPrivate: users.isPrivate,
+    }).from(users).where(eq(users.id, targetId)).limit(1);
+    const u = rows[0];
+    if (!u) {
+      res.status(404).json({ error: 'user_not_found' });
+      return;
+    }
+    res.json({
+      id: u.id,
+      name: u.name,
+      avatar: u.avatar,
+      role: u.role,
+      bio: u.isPrivate ? null : u.bio,
+    });
+  });
+
   // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.
   // Также помечает входящие как прочитанные (UPDATE read_at = now()).
   api.get('/messages/with/:userId', requireAuth, async (req, res) => {

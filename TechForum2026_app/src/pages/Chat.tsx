@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Search, Send, ChevronRight, Mic, Square, Image as ImageIcon, Video as VideoIcon,
-  X as XIcon, ArrowLeft, Paperclip, Loader2, Camera,
+  X as XIcon, ArrowLeft, Paperclip, Loader2, Camera, Play, Pause,
 } from 'lucide-react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
@@ -354,45 +354,60 @@ function DmRoom({ userId }: { userId: string }) {
     await uploadAndSend(file);
   };
 
-  // Optimistic media-bubble во время загрузки.
-  const [uploading, setUploading] = useState<{ id: string; type: 'image' | 'audio' | 'video' } | null>(null);
+  // Blob → base64 (без data: префикса). Используем FileReader потому что
+  // он отдаёт чистую строку и работает в Capacitor WebView без рисков.
+  const blobToBase64 = (blob: Blob): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('read_failed'));
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const idx = result.indexOf(',');
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.readAsDataURL(blob);
+  });
 
   const uploadAndSend = async (blob: Blob | File) => {
     const placeholderId = `up_${Date.now()}`;
     const inferType = (mime: string): 'image' | 'audio' | 'video' =>
       mime.startsWith('image') ? 'image' : mime.startsWith('audio') ? 'audio' : 'video';
     const guessedType = inferType(blob.type || '');
-    setUploading({ id: placeholderId, type: guessedType });
     setMessages((prev) => [...prev, {
       id: placeholderId, fromMe: true, text: '',
       mediaUrl: null, mediaType: guessedType,
       createdAt: new Date().toISOString(), pending: true,
     }]);
 
-    const fd = new FormData();
-    const f = blob instanceof File ? blob : new File([blob], 'media', { type: blob.type || 'application/octet-stream' });
-    fd.append('file', f);
     try {
-      const r = await fetch(resolveApiUrl('/messages/upload-media'), {
-        method: 'POST', credentials: 'include', body: fd,
+      // CapacitorHttp ломает FormData/multipart, поэтому шлём JSON-base64.
+      // На веб-сборке (vite dev) этот же путь тоже работает.
+      const base64 = await blobToBase64(blob);
+      const filename = blob instanceof File && blob.name ? blob.name : 'media';
+      const mimeType = blob.type || 'application/octet-stream';
+      const r = await fetch(resolveApiUrl('/messages/upload-media-base64'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, mimeType, base64 }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
         // eslint-disable-next-line no-alert
-        alert(err.error === 'unsupported_mime' ? 'Формат не поддерживается' : `Загрузка не удалась: ${err.error || r.status}`);
+        alert(
+          err.error === 'invalid_media' ? 'Формат не поддерживается'
+          : err.error === 'size_out_of_range' ? 'Файл слишком большой (максимум 9 MB)'
+          : `Загрузка не удалась: ${err.error || r.status}`,
+        );
         return;
       }
       const data: { url: string; type: 'image' | 'audio' | 'video' } = await r.json();
-      // Удаляем placeholder, посылаем реальное сообщение.
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
       await sendMessage({ mediaUrl: data.url, mediaType: data.type });
-    } catch {
+    } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
       // eslint-disable-next-line no-alert
-      alert('Нет соединения');
-    } finally {
-      setUploading(null);
+      alert(`Не удалось отправить: ${err instanceof Error ? err.message : 'нет соединения'}`);
     }
   };
 
@@ -403,13 +418,17 @@ function DmRoom({ userId }: { userId: string }) {
   const recorderChunks = useRef<Blob[]>([]);
   const recordTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // Live preview во время видео-записи (Telegram-style круглое видео).
+  const livePreviewRef = useRef<HTMLVideoElement | null>(null);
 
   const startRecord = async (kind: 'audio' | 'video') => {
     setAttachOpen(false);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        kind === 'audio' ? { audio: true } : { audio: true, video: { width: 640, height: 480 } },
-      );
+      const constraints: MediaStreamConstraints = kind === 'audio'
+        ? { audio: true }
+        // Front camera + квадратное соотношение для круглого видеосообщения.
+        : { audio: true, video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 480 } } };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       const mime = kind === 'audio'
         ? (MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4')
@@ -430,6 +449,17 @@ function DmRoom({ userId }: { userId: string }) {
       recorderRef.current = rec;
       setRecording(kind);
       setRecordSec(0);
+      // Подключаем live-preview видео-элементу (если это видео-запись).
+      if (kind === 'video') {
+        // RAF-цикл из-за того что DOM-элемент <video> монтируется в условном
+        // рендере одновременно с этим setState. Ждём один tick.
+        requestAnimationFrame(() => {
+          if (livePreviewRef.current && stream) {
+            livePreviewRef.current.srcObject = stream;
+            void livePreviewRef.current.play().catch(() => {});
+          }
+        });
+      }
       recordTimer.current = setInterval(() => setRecordSec((s) => {
         if (s >= 59) { stopRecord(); return 60; }
         return s + 1;
@@ -484,17 +514,30 @@ function DmRoom({ userId }: { userId: string }) {
       >
         <div className="px-4 py-2.5 flex items-center gap-3">
           <button
-            onClick={() => navigate('/chat')}
+            onClick={() => {
+              // POP через navigate(-1) чтобы стек history не накапливался
+              // [/, /chat, /chat/X, /chat] → /chat/X при system-back.
+              if (window.history.length > 1) navigate(-1);
+              else navigate('/chat');
+            }}
             aria-label="Назад"
             className="h-9 w-9 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 bg-[#0a2f38]/55 text-[#4ec9c0] hover:bg-[#0a2f38]/80 active:scale-90 transition-all"
           >
             <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
           </button>
-          <Avatar name={contact?.name || ''} src={contact?.avatar} size={40} />
-          <div className="flex-1 min-w-0">
-            <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee] truncate">{contact?.name || 'Участник'}</p>
-            <p className="text-[11px] text-[#7aa8a4] truncate">{contact?.role || ''}</p>
-          </div>
+          {/* Тап по аватару/имени → публичный профиль собеседника. */}
+          <button
+            type="button"
+            onClick={() => navigate(`/users/${userId}`)}
+            className="flex items-center gap-3 flex-1 min-w-0 text-left active:opacity-80 transition-opacity"
+            aria-label="Открыть профиль"
+          >
+            <Avatar name={contact?.name || ''} src={contact?.avatar} size={40} />
+            <div className="flex-1 min-w-0">
+              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee] truncate">{contact?.name || 'Участник'}</p>
+              <p className="text-[11px] text-[#7aa8a4] truncate">{contact?.role || ''}</p>
+            </div>
+          </button>
         </div>
       </header>
 
@@ -508,71 +551,68 @@ function DmRoom({ userId }: { userId: string }) {
             Сообщений пока нет.<br />Напишите первое.
           </p>
         )}
-        {messages.map((m) => (
-          <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`relative max-w-[80%] rounded-2xl text-[14px] leading-relaxed overflow-hidden ${
-                m.fromMe
-                  ? 'bg-[#4ec9c0] text-[#03161c] rounded-br-md shadow-[0_4px_14px_rgba(78,201,192,0.20)]'
-                  : 'bg-[#0a2f38]/85 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
-              } ${m.pending ? 'opacity-75' : ''}`}
-            >
-              {/* Pending media without URL — placeholder с лоадером */}
-              {!m.mediaUrl && m.pending && m.mediaType && (
-                <div className="w-44 h-32 flex items-center justify-center bg-[#03161c]/30">
-                  <Loader2 className="w-6 h-6 animate-spin opacity-80" strokeWidth={1.6} />
-                </div>
-              )}
-              {m.mediaUrl && m.mediaType === 'image' && (
-                <button
-                  type="button"
-                  onClick={() => setLightbox(resolveAssetUrl(m.mediaUrl!))}
-                  className="block w-full"
-                >
-                  <img
-                    src={resolveAssetUrl(m.mediaUrl)}
-                    alt=""
-                    className="max-w-full max-h-72 object-cover"
-                  />
-                </button>
-              )}
-              {m.mediaUrl && m.mediaType === 'audio' && (
-                <audio
-                  src={resolveAssetUrl(m.mediaUrl)}
-                  controls
-                  preload="metadata"
-                  className="block w-[260px] max-w-full px-2 pt-2 pb-1"
-                />
-              )}
-              {m.mediaUrl && m.mediaType === 'video' && (
-                <video
-                  src={resolveAssetUrl(m.mediaUrl)}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  className="block max-w-full max-h-72"
-                />
-              )}
-              {(m.text || (!m.mediaUrl && !m.pending)) && (
-                <div className={`px-3.5 py-2 ${m.mediaUrl ? 'pt-1.5' : ''}`}>
-                  {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
-                </div>
-              )}
-              <div className={`flex items-center justify-end gap-1 px-3 pb-1.5 ${m.mediaUrl && !m.text ? 'absolute bottom-1 right-2 bg-black/40 backdrop-blur-sm rounded-full px-2 py-0.5' : ''}`}>
-                {m.pending && (
-                  <Loader2 className={`w-3 h-3 animate-spin ${m.fromMe ? 'text-[#03161c]/70' : 'text-[#4ec9c0]/70'}`} strokeWidth={2} />
-                )}
-                <span className={`text-[10px] font-mono ${
+        {messages.map((m) => {
+          const time = formatTime(m.createdAt);
+          // Аудио и видео — отдельные branded-компоненты, без обычного bubble.
+          if (m.mediaType === 'audio') {
+            return (
+              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+                <AudioBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} fromMe={m.fromMe} />
+              </div>
+            );
+          }
+          if (m.mediaType === 'video') {
+            return (
+              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+                <VideoBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} />
+              </div>
+            );
+          }
+          // Картинки + текст — обычный bubble.
+          return (
+            <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+              <div
+                className={`relative max-w-[80%] rounded-2xl text-[14px] leading-relaxed overflow-hidden ${
                   m.fromMe
-                    ? (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#03161c]/65')
-                    : (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#7aa8a4]')
-                }`}>
-                  {formatTime(m.createdAt)}
-                </span>
+                    ? 'bg-[#4ec9c0] text-[#03161c] rounded-br-md shadow-[0_4px_14px_rgba(78,201,192,0.20)]'
+                    : 'bg-[#0a2f38]/85 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
+                } ${m.pending ? 'opacity-75' : ''}`}
+              >
+                {!m.mediaUrl && m.pending && m.mediaType === 'image' && (
+                  <div className="w-44 h-32 flex items-center justify-center bg-[#03161c]/30">
+                    <Loader2 className="w-6 h-6 animate-spin opacity-80" strokeWidth={1.6} />
+                  </div>
+                )}
+                {m.mediaUrl && m.mediaType === 'image' && (
+                  <button
+                    type="button"
+                    onClick={() => setLightbox(resolveAssetUrl(m.mediaUrl!))}
+                    className="block w-full"
+                  >
+                    <img src={resolveAssetUrl(m.mediaUrl)} alt="" className="max-w-full max-h-72 object-cover" />
+                  </button>
+                )}
+                {(m.text || (!m.mediaUrl && !m.pending)) && (
+                  <div className={`px-3.5 py-2 ${m.mediaUrl ? 'pt-1.5' : ''}`}>
+                    {m.text && <p className="whitespace-pre-wrap break-words">{m.text}</p>}
+                  </div>
+                )}
+                <div className={`flex items-center justify-end gap-1 px-3 pb-1.5 ${m.mediaUrl && !m.text ? 'absolute bottom-1 right-2 bg-black/40 backdrop-blur-sm rounded-full px-2 py-0.5' : ''}`}>
+                  {m.pending && (
+                    <Loader2 className={`w-3 h-3 animate-spin ${m.fromMe ? 'text-[#03161c]/70' : 'text-[#4ec9c0]/70'}`} strokeWidth={2} />
+                  )}
+                  <span className={`text-[10px] font-mono ${
+                    m.fromMe
+                      ? (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#03161c]/65')
+                      : (m.mediaUrl && !m.text ? 'text-white/85' : 'text-[#7aa8a4]')
+                  }`}>
+                    {time}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Hidden file inputs. Camera-input использует capture для прямого
@@ -587,10 +627,25 @@ function DmRoom({ userId }: { userId: string }) {
       >
         {recording ? (
           <div className="flex items-center gap-3 py-2 px-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+            {recording === 'video' && (
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-[#4ec9c0]/65 shrink-0 shadow-[0_0_18px_rgba(78,201,192,0.4)]">
+                {/* Live preview front-cam, mirrored для естественного восприятия. */}
+                <video
+                  ref={livePreviewRef}
+                  muted
+                  playsInline
+                  autoPlay
+                  className="w-full h-full object-cover"
+                  style={{ transform: 'scaleX(-1)' }}
+                />
+              </div>
+            )}
+            {recording === 'audio' && (
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+            )}
             <span className="font-display-cyrl text-[14px] text-[#d8f0ee]">
-              {recording === 'audio' ? 'Запись аудио' : 'Запись видео'}
-              <span className="font-mono ml-2">
+              {recording === 'audio' ? 'Запись аудио' : 'Видеосообщение'}
+              <span className="font-mono ml-2 text-[#4ec9c0]">
                 {String(Math.floor(recordSec / 60)).padStart(2, '0')}:{String(recordSec % 60).padStart(2, '0')}
               </span>
             </span>
@@ -606,7 +661,7 @@ function DmRoom({ userId }: { userId: string }) {
             <button
               type="button"
               onClick={stopRecord}
-              className="h-10 w-10 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90 transition-transform"
+              className="h-10 w-10 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90 transition-transform shadow-[0_4px_14px_rgba(78,201,192,0.35)]"
               aria-label="Стоп и отправить"
             >
               <Square className="w-4 h-4" strokeWidth={2} fill="currentColor" />
@@ -633,7 +688,7 @@ function DmRoom({ userId }: { userId: string }) {
                   <AttachItem icon={ImageIcon} label="Фото из галереи" onClick={() => handlePickFile('image/*')} />
                   <AttachItem icon={Camera} label="Снять фото" onClick={handleOpenCamera} />
                   <AttachItem icon={VideoIcon} label="Видео из галереи" onClick={() => handlePickFile('video/*')} />
-                  <AttachItem icon={Mic} label="Записать видео" onClick={() => startRecord('video')} />
+                  <AttachItem icon={VideoIcon} label="Записать видеосообщение" onClick={() => startRecord('video')} />
                 </div>
               )}
             </div>
@@ -706,6 +761,177 @@ function DmRoom({ userId }: { userId: string }) {
           onClick={() => setAttachOpen(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// AUDIO BUBBLE — telegram-style: круглая play-кнопка + waveform-bars + таймер
+// ============================================================================
+function AudioBubble({ src, time, pending, fromMe }: { src: string | null; time: string; pending?: boolean; fromMe: boolean }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  const onLoaded = () => {
+    if (audioRef.current && Number.isFinite(audioRef.current.duration)) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+  const onTime = () => {
+    if (audioRef.current) setProgress(audioRef.current.currentTime || 0);
+  };
+  const togglePlay = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) { a.pause(); setPlaying(false); }
+    else { void a.play().then(() => setPlaying(true)).catch(() => {}); }
+  };
+  const formatSec = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  // Псевдо-waveform: 32 столбика разной высоты (псевдо-случайных, но
+  // стабильных — индекс через sin для воспроизводимости).
+  const bars = Array.from({ length: 32 }, (_, i) => {
+    const h = 4 + Math.abs(Math.sin(i * 1.7) + Math.cos(i * 0.9)) * 10;
+    return Math.min(18, Math.max(3, h));
+  });
+  const barFillCount = duration > 0 ? Math.round((progress / duration) * bars.length) : 0;
+
+  return (
+    <div
+      className={`relative max-w-[280px] rounded-2xl px-3 py-2.5 flex items-center gap-3 ${
+        fromMe
+          ? 'bg-[#4ec9c0] text-[#03161c] rounded-br-md shadow-[0_4px_14px_rgba(78,201,192,0.20)]'
+          : 'bg-[#0a2f38]/85 text-[#d8f0ee] border border-[#4ec9c0]/22 rounded-bl-md'
+      } ${pending ? 'opacity-75' : ''}`}
+    >
+      <button
+        type="button"
+        onClick={togglePlay}
+        disabled={!src || pending}
+        aria-label={playing ? 'Пауза' : 'Воспроизвести'}
+        className={`relative h-11 w-11 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-90 disabled:opacity-50 ${
+          fromMe
+            ? 'bg-[#03161c] text-[#4ec9c0]'
+            : 'bg-[#4ec9c0] text-[#03161c] shadow-[0_0_18px_rgba(78,201,192,0.45)]'
+        }`}
+      >
+        {pending && !src ? (
+          <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.8} />
+        ) : playing ? (
+          <Pause className="w-4 h-4" strokeWidth={2} fill="currentColor" />
+        ) : (
+          <Play className="w-4 h-4 translate-x-[1px]" strokeWidth={2} fill="currentColor" />
+        )}
+      </button>
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+        <div className="flex items-end gap-[2px] h-5">
+          {bars.map((h, i) => (
+            <span
+              key={i}
+              className="rounded-full"
+              style={{
+                width: 2,
+                height: h,
+                backgroundColor: fromMe
+                  ? (i < barFillCount ? '#03161c' : 'rgba(3,22,28,0.35)')
+                  : (i < barFillCount ? '#4ec9c0' : 'rgba(78,201,192,0.30)'),
+              }}
+            />
+          ))}
+        </div>
+        <div className={`flex items-center justify-between text-[10px] font-mono ${fromMe ? 'text-[#03161c]/70' : 'text-[#7aa8a4]'}`}>
+          <span>{formatSec(playing || progress > 0 ? progress : duration)}</span>
+          <span>{time}</span>
+        </div>
+      </div>
+      {src && (
+        <audio
+          ref={audioRef}
+          src={src}
+          preload="metadata"
+          onLoadedMetadata={onLoaded}
+          onTimeUpdate={onTime}
+          onEnded={() => { setPlaying(false); setProgress(0); }}
+          className="hidden"
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// VIDEO BUBBLE — telegram-style круглое видеосообщение
+// ============================================================================
+function VideoBubble({ src, time, pending }: { src: string | null; time: string; pending?: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [duration, setDuration] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  const formatSec = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+  const tap = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (playing) { v.pause(); setPlaying(false); }
+    else { v.muted = false; setMuted(false); void v.play().then(() => setPlaying(true)).catch(() => {}); }
+  };
+
+  return (
+    <div className={`relative ${pending ? 'opacity-75' : ''}`}>
+      <button
+        type="button"
+        onClick={tap}
+        disabled={!src || pending}
+        aria-label={playing ? 'Пауза' : 'Воспроизвести'}
+        className="relative w-[240px] h-[240px] rounded-full overflow-hidden bg-[#0a2f38] border-2 border-[#4ec9c0]/45 shadow-[0_0_24px_rgba(78,201,192,0.25)] active:scale-[0.98] transition-transform"
+      >
+        {!src && pending ? (
+          <span className="absolute inset-0 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-[#4ec9c0]" strokeWidth={1.6} />
+          </span>
+        ) : src ? (
+          <video
+            ref={videoRef}
+            src={src}
+            playsInline
+            muted={muted}
+            preload="metadata"
+            onLoadedMetadata={() => {
+              if (videoRef.current && Number.isFinite(videoRef.current.duration)) {
+                setDuration(videoRef.current.duration);
+              }
+            }}
+            onTimeUpdate={() => { if (videoRef.current) setProgress(videoRef.current.currentTime || 0); }}
+            onEnded={() => { setPlaying(false); setProgress(0); }}
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : null}
+        {!playing && src && !pending && (
+          <span className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <span className="h-14 w-14 rounded-full bg-[#03161c]/70 backdrop-blur-sm border border-[#4ec9c0]/55 flex items-center justify-center">
+              <Play className="w-6 h-6 text-[#4ec9c0] translate-x-[2px]" strokeWidth={2} fill="currentColor" />
+            </span>
+          </span>
+        )}
+      </button>
+      {/* Footer: время воспроизведения слева, timestamp справа. */}
+      <div className="mt-1.5 px-1 flex items-center justify-between text-[11px] font-mono text-[#7aa8a4]">
+        <span className="flex items-center gap-1">
+          {formatSec(playing || progress > 0 ? progress : duration)}
+          {!muted && playing && (
+            <span className="inline-flex gap-0.5 ml-1">
+              <span className="w-[2px] h-2 bg-[#4ec9c0]" />
+              <span className="w-[2px] h-3 bg-[#4ec9c0]" />
+              <span className="w-[2px] h-2 bg-[#4ec9c0]" />
+            </span>
+          )}
+        </span>
+        <span>{time}</span>
+      </div>
     </div>
   );
 }
