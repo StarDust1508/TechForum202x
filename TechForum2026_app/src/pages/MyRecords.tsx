@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { CalendarCheck2, Clock3, MapPin, Download } from 'lucide-react';
 import { SESSIONS, DAYS, getDayById } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
+import Skeleton from '@/src/components/ui/Skeleton';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
@@ -43,6 +44,7 @@ function timeToMinutes(hhmm: string): number {
 
 export default function MyRecords() {
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +60,7 @@ export default function MyRecords() {
         }
       } catch { /* offline — fall through to legacy */ }
       if (!cancelled) setRegisteredIds(readLegacyRegistrations());
-    })();
+    })().finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -84,7 +86,20 @@ export default function MyRecords() {
       title="Мои записи"
       subtitle={registeredSessions.length > 0 ? `${registeredSessions.length} сессий в вашей программе` : undefined}
     >
-      {registeredSessions.length === 0 ? (
+      {loading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-3">
+              <Skeleton height={20} width="65%" />
+              <div className="flex gap-3">
+                <Skeleton height={14} width={80} />
+                <Skeleton height={14} width={120} />
+              </div>
+              <Skeleton height={12} width="40%" />
+            </div>
+          ))}
+        </div>
+      ) : registeredSessions.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-8 text-center">
           <CalendarCheck2 className="w-9 h-9 mx-auto text-[#4ec9c0]/60" strokeWidth={1.4} />
           <p className="mt-3 text-[#d8f0ee]/75">Пока нет выбранных сессий в расписании.</p>

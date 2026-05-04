@@ -8,28 +8,11 @@ import AppBackground from '@/src/components/AppBackground';
 import HudFrame from '@/src/components/ui/HudFrame';
 import Input from '@/src/components/ui/Input';
 import Button from '@/src/components/ui/Button';
+import AvatarImage from '@/src/components/ui/AvatarImage';
+import { formatPhone, getValidationMessage } from '@/src/lib/phone';
 
 interface ProfileProps {
   user: any;
-}
-
-// Нормализатор телефона: вход → любая строка, выход → «+7 (XXX) XXX-XX-XX».
-// Маска +7, удаляет нецифры, начальная 8 → 7, лимит 11 цифр.
-function normalizePhone(input: string): string {
-  const digits = input.replace(/\D/g, '');
-  let d = digits;
-  if (d.startsWith('8')) d = '7' + d.slice(1);
-  if (d.length > 0 && !d.startsWith('7')) d = '7' + d;
-  d = d.slice(0, 11);
-  if (d.length === 0) return '';
-  const rest = d.slice(1);
-  let out = '+7';
-  if (rest.length > 0) out += ' (' + rest.slice(0, 3);
-  if (rest.length >= 3) out += ')';
-  if (rest.length > 3) out += ' ' + rest.slice(3, 6);
-  if (rest.length > 6) out += '-' + rest.slice(6, 8);
-  if (rest.length > 8) out += '-' + rest.slice(8, 10);
-  return out;
 }
 
 export default function Profile({ user: initialUser }: ProfileProps) {
@@ -39,7 +22,7 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   const [editForm, setEditForm] = useState({
     name: user.name,
     email: user.email,
-    phone: normalizePhone(user.phone || ''),
+    phone: formatPhone(user.phone || ''),
     bio: user.bio || '',
   });
   const [saving, setSaving] = useState(false);
@@ -329,7 +312,7 @@ export default function Profile({ user: initialUser }: ProfileProps) {
                       onFocus={() => {
                         if (!editForm.phone) setEditForm((f) => ({ ...f, phone: '+7 ' }));
                       }}
-                      onChange={(e) => setEditForm({ ...editForm, phone: normalizePhone(e.target.value) })}
+                      onChange={(e) => setEditForm({ ...editForm, phone: formatPhone(e.target.value) })}
                     />
                   </div>
 

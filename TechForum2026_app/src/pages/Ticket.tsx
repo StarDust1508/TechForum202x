@@ -1,9 +1,10 @@
 import { motion } from 'motion/react';
-import { Loader2, ScanLine, ShieldCheck } from 'lucide-react';
+import { ScanLine, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
+import Skeleton from '@/src/components/ui/Skeleton';
 import { EVENT_DATE, EVENT_CITY } from '@/src/lib/event';
 
 interface TicketData {
@@ -68,7 +69,7 @@ export default function Ticket() {
                 ) : error ? (
                   <p className="text-[#03161c] text-xs font-bold text-center px-4">{error}</p>
                 ) : (
-                  <Loader2 className="w-8 h-8 text-[#03161c] animate-spin" />
+                  <Skeleton className="w-full h-full !rounded-md" style={{ backgroundColor: '#e5e7eb' }} />
                 )}
               </div>
             </div>
@@ -80,15 +81,22 @@ export default function Ticket() {
             </div>
           </div>
 
-          <div className="text-center space-y-1 pt-5 border-t border-[#4ec9c0]/22">
+          <div className="text-center space-y-1.5 pt-5 border-t border-[#4ec9c0]/22">
             <p className="font-display-cyrl text-[10px] text-[#7aa8a4] font-semibold uppercase tracking-[0.3em]">
               Владелец билета
             </p>
-            <h2 className="font-display-cyrl text-[20px] font-semibold text-[#d8f0ee] tracking-wide leading-tight">
-              {ticket?.name ?? '—'}
-            </h2>
-            {ticket && (
-              <p className="text-[11px] text-[#7aa8a4] tracking-wider mt-0.5">{ticket.email}</p>
+            {ticket ? (
+              <>
+                <h2 className="font-display-cyrl text-[20px] font-semibold text-[#d8f0ee] tracking-wide leading-tight">
+                  {ticket.name}
+                </h2>
+                <p className="text-[11px] text-[#7aa8a4] tracking-wider mt-0.5">{ticket.email}</p>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-1.5 mt-1">
+                <Skeleton className="!rounded-md" height={20} width={160} />
+                <Skeleton className="!rounded-md" height={11} width={120} />
+              </div>
             )}
           </div>
 

@@ -11,9 +11,9 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { Search, Send, Bot, User as UserIcon, ChevronRight, Sparkles, Paperclip, Mic, Square, Image as ImageIcon, Video as VideoIcon, Play, Pause, X as XIcon } from 'lucide-react';
+import { Search, Send, Bot, User as UserIcon, ChevronRight, Sparkles, Paperclip, Mic, Square, Image as ImageIcon, Video as VideoIcon, Play, Pause, X as XIcon, ArrowLeft } from 'lucide-react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
-import BackButton from '@/src/components/BackButton';
+import PageShell from '@/src/components/ui/PageShell';
 
 // ===== TYPES =====
 type DmContact = {
@@ -120,20 +120,7 @@ function ChatList() {
   }, [searchQ, contacts]);
 
   return (
-    <div
-      className="px-5 pb-10"
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-      }}
-    >
-      <BackButton />
-
-      <header className="mb-5">
-        <h1 className="font-display-cyrl text-[28px] font-semibold text-[#d8f0ee]">Чат</h1>
-        <p className="text-[12px] text-[#7aa8a4] mt-1">Переписки и AI-ассистент форума</p>
-      </header>
-
+    <PageShell kicker="Сообщения" title="Чат" subtitle="Переписки и AI-ассистент форума">
       {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7aa8a4]" />
@@ -220,7 +207,7 @@ function ChatList() {
           ))}
         </div>
       </section>
-    </div>
+    </PageShell>
   );
 }
 
@@ -486,7 +473,7 @@ function DmRoom({ userId }: { userId: string }) {
           aria-label="Назад"
           className="h-9 w-9 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 bg-[#03161c]/60 text-[#4ec9c0] active:scale-90 transition-transform"
         >
-          ←
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
         </button>
         <Avatar name={contact?.name || ''} src={contact?.avatar} size={40} />
         <div className="flex-1 min-w-0">
@@ -678,7 +665,7 @@ function AiRoom() {
           aria-label="Назад"
           className="h-9 w-9 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 bg-[#03161c]/60 text-[#4ec9c0] active:scale-90"
         >
-          ←
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.8} />
         </button>
         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#4ec9c0]/40 to-[#4ec9c0]/15 border border-[#4ec9c0]/55 flex items-center justify-center shrink-0">
           <Bot className="w-5 h-5 text-[#4ec9c0]" />

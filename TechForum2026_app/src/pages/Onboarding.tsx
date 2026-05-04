@@ -1,23 +1,6 @@
-// FILE: src/pages/Onboarding.tsx
-// VERSION: 2.1.0
-// START_MODULE_CONTRACT:
-// PURPOSE: Onboarding-экран — первый вход после регистрации. Юзер выбирает
-//          3-10 направлений интересов из 22. Сохраняем на сервере (источник
-//          истины) + дублируем в localStorage как retry-буфер.
-// END_MODULE_CONTRACT
-//
-// START_CHANGE_SUMMARY:
-// LAST_CHANGE: [v2.1.0 — Был баг: PUT /me/interests был fire-and-forget,
-//                       любой 401/network/timeout молча игнорировался,
-//                       onDone() вызывался всегда. На cold-start /auth/me
-//                       возвращал interestsCount=0 → юзера снова кидало
-//                       в онбординг. Теперь await response.ok, при ошибке
-//                       показываем сообщение и НЕ закрываем экран.
-//                       localStorage остаётся retry-буфером для App.tsx.]
-// END_CHANGE_SUMMARY
-
 import { useState } from 'react';
-import { Loader2, ArrowRight } from 'lucide-react';
+import { motion } from 'motion/react';
+import { Loader2, ArrowRight, Check } from 'lucide-react';
 import { INTERESTS } from '../data';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
@@ -38,7 +21,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   const [error, setError] = useState<string>('');
 
   function toggle(id: string): void {
-    setSelected(prev => {
+    setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -59,7 +42,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(interestIds));
       localStorage.setItem(LS_PENDING_KEY, JSON.stringify(interestIds));
-    } catch { /* private mode / quota — ignore */ }
+    } catch { /* private mode / quota */ }
 
     try {
       const res = await fetch(resolveApiUrl('/me/interests'), {
@@ -89,90 +72,117 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
   const canSubmit = selected.size >= MIN_PICK && !loading;
   const remaining = Math.max(0, MIN_PICK - selected.size);
+  const ready = remaining === 0;
+  const progress = Math.min(1, selected.size / MIN_PICK);
 
   return (
     <AppBackground>
       <div
         className="relative w-full overflow-y-auto"
         style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 36px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 140px)',
+          minHeight: '100lvh',
         }}
       >
-      <div className="relative z-10 px-7 space-y-6">
-        <div className="space-y-3 pt-4">
-          <h1 className="font-display-cyrl text-[30px] font-semibold leading-tight tracking-wide text-[#d8f0ee]">
-            Что тебе интересно?
-          </h1>
-          <p className="text-[14px] text-[#d8f0ee]/65 leading-relaxed">
-            Отметь от {MIN_PICK} до {MAX_PICK} направлений — мы подсветим релевантные сессии в расписании. Минимум — {MIN_PICK}.
-          </p>
-        </div>
+        <div className="relative z-10 px-6 space-y-6">
+          <div className="space-y-2 pt-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-[#4ec9c0]/85 font-semibold">
+              Шаг 2 · Интересы
+            </p>
+            <h1 className="font-display-cyrl text-[32px] font-semibold leading-[1.05] tracking-wide text-[#d8f0ee]">
+              Что тебе интересно?
+            </h1>
+            <p className="text-[13px] text-[#d8f0ee]/65 leading-relaxed">
+              Отметь от {MIN_PICK} до {MAX_PICK} направлений — мы подсветим релевантные сессии в расписании.
+            </p>
+          </div>
 
-        <div className="flex flex-wrap gap-2 pt-2">
-          {INTERESTS.map((it) => {
-            const active = selected.has(it.id);
-            return (
-              <button
-                key={it.id}
-                type="button"
-                onClick={() => toggle(it.id)}
-                className={cn(
-                  'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
-                  active
-                    ? 'bg-[#4ec9c0]/15 border-[#4ec9c0]/70 text-[#4ec9c0] shadow-[0_0_18px_rgba(78,201,192,0.35)]'
-                    : 'bg-[#0a2f38]/0.04 border-[#4ec9c0]/10 text-[#d8f0ee]/70 hover:border-[#4ec9c0]/25',
-                )}
-              >
-                {it.label}
-              </button>
-            );
-          })}
-        </div>
+          {/* Прогресс-бар до минимума выбора. Лёгкий, без отвлекающего шума. */}
+          <div className="relative h-1 rounded-full bg-[#0a2f38]/55 overflow-hidden">
+            <motion.div
+              className="absolute inset-y-0 left-0 bg-[#4ec9c0]"
+              animate={{ width: `${progress * 100}%` }}
+              transition={{ type: 'spring', stiffness: 280, damping: 28 }}
+            />
+          </div>
 
-        <div className="flex items-center justify-between pt-2 text-[13px] font-medium">
-          <span className="text-[#d8f0ee]/55">
-            Выбрано: <span className="text-[#4ec9c0] font-bold">{selected.size}</span> / {MAX_PICK}
-          </span>
-          {remaining > 0 ? (
-            <span className="text-amber-300/80 font-semibold">
-              Нужно ещё {remaining}, чтобы продолжить
+          {/* Чипы */}
+          <div className="flex flex-wrap gap-2">
+            {INTERESTS.map((it) => {
+              const active = selected.has(it.id);
+              return (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => toggle(it.id)}
+                  className={cn(
+                    'group inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] text-[13px] font-display-cyrl font-semibold border transition-all active:scale-[0.97]',
+                    active
+                      ? 'bg-[#4ec9c0]/15 border-[#4ec9c0]/70 text-[#4ec9c0] shadow-[0_0_18px_rgba(78,201,192,0.28)]'
+                      : 'bg-[#03161c]/40 border-[#4ec9c0]/18 text-[#d8f0ee]/75 hover:border-[#4ec9c0]/40',
+                  )}
+                  aria-pressed={active}
+                >
+                  {active && <Check className="w-3.5 h-3.5" strokeWidth={2.4} />}
+                  {it.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center justify-between pt-1 text-[12px]">
+            <span className="text-[#7aa8a4]">
+              Выбрано: <span className="text-[#4ec9c0] font-mono font-semibold">{selected.size}</span> / {MAX_PICK}
             </span>
-          ) : (
-            <span className="text-[#4ec9c0] font-semibold">Можно продолжать</span>
+            {remaining > 0 ? (
+              <span className="text-amber-300/85 font-display-cyrl font-semibold uppercase tracking-wider text-[11px]">
+                Ещё {remaining}
+              </span>
+            ) : (
+              <span className="text-[#4ec9c0] font-display-cyrl font-semibold uppercase tracking-wider text-[11px]">
+                Можно продолжать
+              </span>
+            )}
+          </div>
+
+          {error && (
+            <p className="text-[13px] font-semibold text-rose-300 text-center pt-1" role="alert">
+              {error}
+            </p>
           )}
         </div>
 
-        {error && (
-          <p className="text-[14px] font-semibold text-rose-300 text-center pt-1" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-
-      {/* Sticky submit */}
-      <div
-        className="fixed bottom-0 left-0 right-0 z-20 px-7 pt-3 bg-gradient-to-t from-[#03161c] via-[#03161c]/95 to-transparent"
-        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
-      >
-        <div className="max-w-[420px] mx-auto">
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!canSubmit}
-            className="w-full border border-[#4ec9c0]/55 bg-[#03161c]/60 backdrop-blur-sm text-[#d8f0ee] py-4 rounded-[14px] text-[16px] font-semibold uppercase tracking-[0.06em] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 shadow-[0_8px_24px_rgba(78,201,192,0.18)] hover:border-[#4ec9c0]/80 font-display-cyrl"
-          >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <span>{remaining > 0 ? `Выбери ещё ${remaining}` : 'Готово'}</span>
-                {remaining === 0 && <ArrowRight className="w-4 h-4" />}
-              </>
-            )}
-          </button>
+        {/* Sticky submit с тёмной подложкой-fade. */}
+        <div
+          className="fixed bottom-0 left-0 right-0 z-20 px-6 pt-6 bg-gradient-to-t from-[#03161c] via-[#03161c]/95 to-transparent"
+          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 18px)' }}
+        >
+          <div className="max-w-[420px] mx-auto">
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!canSubmit}
+              className={cn(
+                'w-full py-4 rounded-[14px] text-[14px] font-semibold uppercase tracking-[0.08em] flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-40 backdrop-blur-sm font-display-cyrl border',
+                ready
+                  ? 'border-[#4ec9c0]/70 bg-[#0a2f38]/80 text-[#d8f0ee] hover:border-[#4ec9c0] shadow-[0_8px_24px_rgba(78,201,192,0.22)]'
+                  : 'border-[#4ec9c0]/35 bg-[#03161c]/60 text-[#7aa8a4]',
+              )}
+            >
+              {loading ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : ready ? (
+                <>
+                  <span>Готово</span>
+                  <ArrowRight className="w-4 h-4" strokeWidth={1.8} />
+                </>
+              ) : (
+                <span>Выбери ещё {remaining}</span>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
       </div>
     </AppBackground>
   );

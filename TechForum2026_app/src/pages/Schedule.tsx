@@ -210,11 +210,10 @@ export default function Schedule() {
   return (
     <PageShell kicker="Программа" title="Расписание">
       <div className="space-y-5">
-        {/* Day tabs.
-            BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
-            между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
-            Таб "Мои записи" остаётся справа. */}
-        <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/28 shadow-inner">
+        {/* Day tabs — sticky при скролле, тёмная backdrop-blur подложка с
+            мягким bottom-fade в основной контент (унифицировано с Chat header). */}
+        <div className="sticky top-0 z-20 -mx-6 px-6 pt-1 pb-3 bg-[#03161c]/85 backdrop-blur-xl after:content-[''] after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-gradient-to-b after:from-[#03161c]/85 after:to-transparent after:pointer-events-none">
+          <div className="flex bg-[#0a2f38] p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/28 shadow-inner">
           {[
             ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
             { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
@@ -234,6 +233,7 @@ export default function Schedule() {
               {tab.label}
             </button>
           ))}
+          </div>
         </div>
 
         {/* «Скачать всю мою программу в календарь» — показываем только в табе "Мои записи" */}
