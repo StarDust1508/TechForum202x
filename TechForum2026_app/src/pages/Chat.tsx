@@ -688,7 +688,6 @@ function DmRoom({ userId }: { userId: string }) {
                   <AttachItem icon={ImageIcon} label="Фото из галереи" onClick={() => handlePickFile('image/*')} />
                   <AttachItem icon={Camera} label="Снять фото" onClick={handleOpenCamera} />
                   <AttachItem icon={VideoIcon} label="Видео из галереи" onClick={() => handlePickFile('video/*')} />
-                  <AttachItem icon={VideoIcon} label="Записать видеосообщение" onClick={() => startRecord('video')} />
                 </div>
               )}
             </div>
@@ -717,14 +716,24 @@ function DmRoom({ userId }: { userId: string }) {
                 <Send className="w-4 h-4" strokeWidth={1.8} />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => startRecord('audio')}
-                className="h-11 w-11 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90 transition-transform shadow-[0_4px_14px_rgba(78,201,192,0.25)]"
-                aria-label="Записать голосовое"
-              >
-                <Mic className="w-4 h-4" strokeWidth={1.8} />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => startRecord('video')}
+                  className="h-11 w-11 flex items-center justify-center rounded-2xl border border-[#4ec9c0]/40 bg-[#0a2f38]/55 text-[#4ec9c0] active:scale-90 transition-transform hover:bg-[#0a2f38]/80"
+                  aria-label="Записать видеосообщение"
+                >
+                  <VideoIcon className="w-4 h-4" strokeWidth={1.8} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => startRecord('audio')}
+                  className="h-11 w-11 flex items-center justify-center rounded-2xl bg-[#4ec9c0] text-[#03161c] active:scale-90 transition-transform shadow-[0_4px_14px_rgba(78,201,192,0.25)]"
+                  aria-label="Записать голосовое"
+                >
+                  <Mic className="w-4 h-4" strokeWidth={1.8} />
+                </button>
+              </>
             )}
           </div>
         )}

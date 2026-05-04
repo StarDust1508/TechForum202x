@@ -268,7 +268,10 @@ async function startServer(): Promise<void> {
     app.set('trust proxy', 1);
   }
 
-  app.use(express.json({ limit: '2mb' }));
+  // 15mb лимит — глобальный json-parser ловит body раньше per-route override,
+  // и при 2mb upload-media-base64 валился с 413. 15 ≈ base64-overhead над
+  // 9 MB бинарным upload-лимитом + headroom. Auth+rate-limit гейтят DoS.
+  app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
   app.use((_req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
