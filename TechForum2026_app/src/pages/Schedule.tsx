@@ -28,37 +28,18 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
-import { MapPin, Filter, Calendar, AlertTriangle, X, Coffee, Mic, Hand } from 'lucide-react';
+import { SESSIONS, TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
+import { MapPin, Filter, AlertTriangle, X, Coffee, Mic, Hand } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import PageShell from '@/src/components/ui/PageShell';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
-const MY_TAB_ID = 'my';
-const RECOMMENDED_TAB_ID = 'recommended';
+// Day-tabs убраны — расписание показывает все сессии обоих дней одним
+// потоком, отсортированным по дню+времени. Фильтры по залу/треку остаются.
+// «Мои записи» / «Для меня» доступны через отдельные плитки Home.
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
-
-/**
- * Score сессии для Recommended-таба.
- * Считаем размер пересечения интересов всех её спикеров с интересами юзера.
- * Если 0 пересечений — score 0; сортировка fallback-ит на дату+время.
- */
-function recommendedScore(session: Session, myInterestSet: Set<string>): number {
-  if (myInterestSet.size === 0) return 0;
-  const speakerInterests = new Set<string>();
-  for (const sid of session.speakerIds) {
-    const sp = SPEAKERS.find(s => s.id === sid);
-    if (!sp) continue;
-    for (const ii of sp.interestIds) speakerInterests.add(ii);
-  }
-  let score = 0;
-  for (const ii of speakerInterests) {
-    if (myInterestSet.has(ii)) score += 1;
-  }
-  return score;
-}
 
 function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
@@ -83,30 +64,10 @@ function findConflicts(target: Session, registeredIds: string[]): Session[] {
 }
 
 export default function Schedule() {
-  const [selectedDayId, setSelectedDayId] = useState<string>(DAYS[0]?.id ?? '');
   const [activeHallId, setActiveHallId] = useState<string>('all');
   const [activeTrackId, setActiveTrackId] = useState<string>('all');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
-  const [myInterestIds, setMyInterestIds] = useState<string[]>([]);
   const [conflictTarget, setConflictTarget] = useState<{ session: Session; conflicts: Session[] } | null>(null);
-
-  // Загружаем интересы пользователя для ранжирования "Recommended".
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data?.interestIds)) {
-          setMyInterestIds(data.interestIds);
-        }
-      } catch {
-        // network — молча оставляем []. Recommended вырождается в дата+время сорт.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   // Загружаем регистрации с сервера. Если 401/network-error — fallback к
   // legacy localStorage (миграция со старой версии приложения).
@@ -179,76 +140,39 @@ export default function Schedule() {
     setConflictTarget(null);
   }
 
-  // BUG_FIX_CONTEXT: v1 использовал s.location.includes(activeHall) с Cyrillic vs
-  // Latin рассинхроном. Сейчас сравниваем строго по hallId.
-  const isMyTab = selectedDayId === MY_TAB_ID;
-  const isRecommendedTab = selectedDayId === RECOMMENDED_TAB_ID;
-  const myInterestSet = new Set<string>(myInterestIds);
-
-  let filteredSessions = SESSIONS.filter(s => {
-    const isDayMatch = isMyTab
-      ? registeredIds.includes(s.id)
-      : isRecommendedTab
-        ? true // на табе Recommended показываем все сессии (отсортированные по score)
-        : s.dayId === selectedDayId;
-    const isHallMatch = activeHallId === 'all' || s.hallId === activeHallId;
-    const isTrackMatch = activeTrackId === 'all' || s.trackId === activeTrackId;
-    return isDayMatch && isHallMatch && isTrackMatch;
-  });
-
-  if (isRecommendedTab) {
-    // Сортируем по убыванию score. При равенстве — по дате (dayId) + времени.
-    filteredSessions = [...filteredSessions].sort((a, b) => {
-      const scoreA = recommendedScore(a, myInterestSet);
-      const scoreB = recommendedScore(b, myInterestSet);
-      if (scoreA !== scoreB) return scoreB - scoreA;
-      if (a.dayId !== b.dayId) return a.dayId.localeCompare(b.dayId);
+  // Фильтр: только зал + трек. День — не фильтруем, показываем всё подряд,
+  // отсортированное по индексу дня и времени начала.
+  const filteredSessions = SESSIONS
+    .filter((s) => {
+      const isHallMatch = activeHallId === 'all' || s.hallId === activeHallId;
+      const isTrackMatch = activeTrackId === 'all' || s.trackId === activeTrackId;
+      return isHallMatch && isTrackMatch;
+    })
+    .sort((a, b) => {
+      const aIdx = DAYS.findIndex((d) => d.id === a.dayId);
+      const bIdx = DAYS.findIndex((d) => d.id === b.dayId);
+      if (aIdx !== bIdx) return aIdx - bIdx;
       return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
     });
-  }
 
   return (
     <PageShell hideHeader>
-      <div className="space-y-5 mt-2">
-        {/* Day tabs — sticky при скролле, тёмная backdrop-blur подложка с
-            мягким bottom-fade в основной контент (унифицировано с Chat header). */}
-        <div className="sticky top-0 z-20 -mx-6 px-6 pt-1 pb-3 bg-[#03161c]/85 backdrop-blur-xl after:content-[''] after:absolute after:left-0 after:right-0 after:top-full after:h-4 after:bg-gradient-to-b after:from-[#03161c]/85 after:to-transparent after:pointer-events-none">
-          {/* Day-tabs: активная плашка теперь светлее (#a7e6e0 — светлее accent),
-              текст ровный (tracking чуть мягче, items-center justify-center). */}
-          <div className="flex bg-[#0a2f38]/70 p-1.5 rounded-[1.75rem] border border-[#4ec9c0]/35 shadow-inner">
-          {[
-            ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
-            { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
-            ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
-            { id: MY_TAB_ID, label: 'Мои записи' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSelectedDayId(tab.id)}
-              className={cn(
-                'flex-1 h-11 rounded-2xl text-[11px] font-semibold uppercase tracking-[0.08em] flex items-center justify-center text-center transition-all',
-                selectedDayId === tab.id
-                  ? 'bg-[#a7e6e0] text-[#03161c] shadow-md'
-                  : 'text-[#7aa8a4] hover:text-[#d8f0ee]',
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
-          </div>
-        </div>
-
-        {/* Hall filter pills */}
-        <div className="flex gap-3 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все залы' }, ...HALLS.map(h => ({ id: h.id, name: h.name }))].map((h) => {
+      <div className="space-y-3 mt-2">
+        {/* Hall filter pills — тот же шрифт/размер/контраст что и у track-pills.
+            Inactive bg/text заметно ярче чем раньше: на blueprint-фоне теперь
+            читается без всматривания. */}
+        <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
+          {[{ id: 'all', name: 'Все залы' }, ...HALLS.map((h) => ({ id: h.id, name: h.name }))].map((h) => {
             const active = activeHallId === h.id;
             return (
               <button
                 key={h.id}
                 onClick={() => setActiveHallId(h.id)}
                 className={cn(
-                  'px-6 py-3 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none',
-                  active ? 'bg-[#4ec9c0] border-[#4ec9c0] text-[#03161c]' : 'bg-[#03161c] border-[#4ec9c0]/28 text-[#7aa8a4]/60',
+                  'px-4 py-2 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
+                  active
+                    ? 'bg-[#4ec9c0] border-[#4ec9c0] text-[#03161c] shadow-[0_0_18px_rgba(78,201,192,0.55)]'
+                    : 'bg-[#0a2f38]/70 text-[#d8f0ee] border-[#4ec9c0]/45 hover:border-[#4ec9c0]/70',
                 )}
               >
                 {h.name}
@@ -259,7 +183,7 @@ export default function Schedule() {
 
         {/* Track filter pills */}
         <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все треки', color: '#4ec9c0' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
+          {[{ id: 'all', name: 'Все треки', color: '#4ec9c0' }, ...TRACKS.map((t) => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
             const active = activeTrackId === t.id;
             return (
               <button
@@ -267,7 +191,7 @@ export default function Schedule() {
                 onClick={() => setActiveTrackId(t.id)}
                 className={cn(
                   'px-4 py-2 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
-                  active ? 'text-[#03161c]' : 'bg-[#03161c] text-[#7aa8a4]/70 border-[#4ec9c0]/28',
+                  active ? 'text-[#03161c]' : 'bg-[#0a2f38]/70 text-[#d8f0ee] border-[#4ec9c0]/45 hover:border-[#4ec9c0]/70',
                 )}
                 style={active ? { backgroundColor: t.color, borderColor: t.color, boxShadow: `0 0 18px ${t.color}55` } : undefined}
               >
@@ -390,16 +314,10 @@ export default function Schedule() {
 
         {filteredSessions.length === 0 && (
           <div className="py-20 text-center space-y-4">
-            <div className="w-16 h-16 bg-card border border-[#4ec9c0]/28 rounded-3xl flex items-center justify-center mx-auto text-[#7aa8a4]/30">
-              {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
+            <div className="w-16 h-16 bg-[#0a2f38]/55 border border-[#4ec9c0]/28 rounded-3xl flex items-center justify-center mx-auto text-[#7aa8a4]/60">
+              <Filter className="w-8 h-8" strokeWidth={1.4} />
             </div>
-            <p className="text-[#7aa8a4] font-medium">
-              {selectedDayId === MY_TAB_ID
-                ? 'Вы ещё не записались ни на одну сессию'
-                : selectedDayId === RECOMMENDED_TAB_ID
-                  ? 'Нет рекомендаций — попробуй сменить фильтры или выбрать больше интересов'
-                  : 'Нет докладов по выбранным фильтрам'}
-            </p>
+            <p className="text-[#7aa8a4] font-medium">Нет докладов по выбранным фильтрам</p>
           </div>
         )}
       </div>
