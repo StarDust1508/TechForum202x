@@ -20,7 +20,7 @@
 import { useEffect, useState } from 'react';
 import { CalendarCheck2, Clock3, MapPin, Download } from 'lucide-react';
 import { SESSIONS, DAYS, getDayById } from '../data';
-import BackButton from '@/src/components/BackButton';
+import PageShell from '@/src/components/ui/PageShell';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
@@ -79,53 +79,52 @@ export default function MyRecords() {
   }, {});
 
   return (
-    <div className="flex-1 min-h-full px-6 pt-8 pb-10 space-y-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-      <header className="space-y-1.5">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-accent/85 font-semibold">Личный кабинет</p>
-        <h1 className="font-display-cyrl text-4xl leading-none text-white">Мои записи</h1>
-      </header>
-
+    <PageShell
+      kicker="Личный кабинет"
+      title="Мои записи"
+      subtitle={registeredSessions.length > 0 ? `${registeredSessions.length} сессий в вашей программе` : undefined}
+    >
       {registeredSessions.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-white/20 bg-white/[0.03] p-8 text-center">
-          <CalendarCheck2 className="w-9 h-9 mx-auto text-white/55" />
-          <p className="mt-3 text-white/75">Пока нет выбранных сессий в расписании.</p>
+        <div className="rounded-3xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-8 text-center">
+          <CalendarCheck2 className="w-9 h-9 mx-auto text-[#4ec9c0]/60" strokeWidth={1.4} />
+          <p className="mt-3 text-[#d8f0ee]/75">Пока нет выбранных сессий в расписании.</p>
+          <p className="mt-1 text-[12px] text-[#7aa8a4]">Откройте «Программу» и нажмите «Записаться» — сессия появится здесь.</p>
         </div>
       ) : (
         <>
           <a
             href={resolveApiUrl('/sessions/calendar')}
             download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#4ec9c0]/10 border border-[#4ec9c0]/30 text-[#4ec9c0] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+            className="flex items-center justify-center gap-2 border border-[#4ec9c0]/55 bg-[#0a2f38]/70 text-[#d8f0ee] py-3.5 rounded-[14px] text-[13px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] hover:border-[#4ec9c0]/80 transition-all font-display-cyrl"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4 text-[#4ec9c0]" strokeWidth={1.6} />
             Все мои сессии в календарь
           </a>
 
-          <div className="space-y-6">
+          <div className="mt-6 space-y-6">
             {Object.entries(byDay).map(([dayId, list]) => {
               const day = getDayById(dayId);
               return (
                 <section key={dayId} className="space-y-3">
-                  <h3 className="text-[11px] uppercase tracking-[0.22em] font-semibold text-white/55 px-1">
+                  <h3 className="font-display-cyrl text-[11px] uppercase tracking-[0.28em] font-semibold text-[#4ec9c0]/85 px-1">
                     {day?.label ?? dayId} · {day?.weekday ?? ''}
                   </h3>
                   {list.map((session) => (
-                    <article key={session.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
-                      <h2 className="text-xl font-semibold text-white/95">{session.title}</h2>
-                      <div className="flex flex-wrap gap-4 text-sm text-white/70">
-                        <span className="inline-flex items-center gap-1.5"><Clock3 className="w-4 h-4" />{session.startTime} – {session.endTime}</span>
-                        <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4" />{session.location}</span>
+                    <article key={session.id} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-3">
+                      <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">{session.title}</h2>
+                      <div className="flex flex-wrap gap-4 text-[13px] text-[#d8f0ee]/75">
+                        <span className="inline-flex items-center gap-1.5"><Clock3 className="w-4 h-4 text-[#4ec9c0]" strokeWidth={1.6} />{session.startTime} – {session.endTime}</span>
+                        <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4 text-[#4ec9c0]" strokeWidth={1.6} />{session.location}</span>
                       </div>
                       {session.speakerName !== '—' && (
-                        <p className="text-[12px] text-white/55">{session.speakerName} · {session.track}</p>
+                        <p className="text-[12px] text-[#7aa8a4]">{session.speakerName} · {session.track}</p>
                       )}
                       <a
                         href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
                         download={`techforum2026-${session.id}.ics`}
-                        className="inline-flex items-center gap-1.5 text-[11px] text-[#4ec9c0]/80 hover:text-[#4ec9c0] font-semibold uppercase tracking-widest"
+                        className="inline-flex items-center gap-1.5 text-[11px] text-[#4ec9c0]/85 hover:text-[#4ec9c0] font-semibold uppercase tracking-widest"
                       >
-                        <Download className="w-3.5 h-3.5" />
+                        <Download className="w-3.5 h-3.5" strokeWidth={1.6} />
                         В календарь
                       </a>
                     </article>
@@ -136,6 +135,6 @@ export default function MyRecords() {
           </div>
         </>
       )}
-    </div>
+    </PageShell>
   );
 }

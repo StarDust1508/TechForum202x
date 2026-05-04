@@ -1,10 +1,8 @@
 import { MapPin, Building, Coffee, Wifi, Phone, Info, Navigation } from 'lucide-react';
-import BackButton from '@/src/components/BackButton';
+import PageShell from '@/src/components/ui/PageShell';
 import { EVENT_META } from '../data';
 
 // Реальные координаты Технополиса «Инновация» в Саратове.
-// Раньше тут были координаты Москвы (55.7558°N, 37.6173°N) — заглушка.
-// Источник: openstreetmap, район Энгельса/Саратова, индустриальный парк.
 const VENUE_LAT = 51.5333;
 const VENUE_LON = 46.0333;
 
@@ -13,33 +11,28 @@ const formatCoord = (v: number, dir: 'lat' | 'lon'): string => {
   return `${Math.abs(v).toFixed(4)}° ${ns}`;
 };
 
-// OSM static map URL — без API-ключа, низкий-zoom тайл центра. Для прод-релиза
-// можно заменить на 2GIS / Yandex Maps Static API когда будут ключи.
 const osmUrl = `https://www.openstreetmap.org/?mlat=${VENUE_LAT}&mlon=${VENUE_LON}#map=16/${VENUE_LAT}/${VENUE_LON}`;
+
+const INFRASTRUCTURE = [
+  { label: 'Выставка', icon: Building, desc: 'Холл 1, этаж 1' },
+  { label: 'Кофе-брейк', icon: Coffee, desc: 'Правое крыло' },
+  { label: 'Wi-Fi', icon: Wifi, desc: 'TF-Guests' },
+  { label: 'Поддержка', icon: Phone, desc: 'Стойка 0' },
+];
 
 export default function Map() {
   return (
-    <div
-      className="px-5 space-y-7"
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
-      }}
+    <PageShell
+      kicker="Площадка"
+      title="Карта"
+      subtitle={`${EVENT_META.location}, ${EVENT_META.city}`}
     >
-      <BackButton />
-      <header className="space-y-1">
-        <h1 className="font-display-cyrl text-3xl font-semibold tracking-tight text-[#d8f0ee]">Карта площадки</h1>
-        <p className="text-[12px] text-[#7aa8a4]">{EVENT_META.location}, {EVENT_META.city}</p>
-      </header>
-
-      {/* Карта-плашка с координатами и переходом в OSM */}
       <a
         href={osmUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="block aspect-[4/3] bg-[#0a2f38]/45 border border-[#4ec9c0]/28 rounded-3xl relative overflow-hidden flex items-center justify-center hover:border-[#4ec9c0]/55 transition-all"
+        className="block aspect-[4/3] bg-[#0a2f38]/45 border border-[#4ec9c0]/28 rounded-3xl relative overflow-hidden flex items-center justify-center hover:border-[#4ec9c0]/55 active:scale-[0.99] transition-all"
       >
-        {/* SVG-сетка как декоративный фон вместо picsum-затычки */}
         <svg className="absolute inset-0 w-full h-full opacity-20" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
@@ -63,31 +56,26 @@ export default function Map() {
         </div>
       </a>
 
-      <section className="space-y-3">
-        <h3 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">Инфраструктура</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: 'Выставка', icon: Building, desc: 'Холл 1, этаж 1' },
-            { label: 'Кофе-брейк', icon: Coffee, desc: 'Правое крыло' },
-            { label: 'Wi-Fi', icon: Wifi, desc: 'TF-Guests' },
-            { label: 'Поддержка', icon: Phone, desc: 'Стойка 0' },
-          ].map((item, i) => (
-            <div key={i} className="bg-[#0a2f38]/40 border border-[#4ec9c0]/22 p-4 rounded-2xl flex items-center gap-3 hover:border-[#4ec9c0]/45 transition-colors">
-              <div className="w-10 h-10 bg-[#4ec9c0]/10 rounded-2xl flex items-center justify-center text-[#4ec9c0]">
-                <item.icon className="w-5 h-5" />
+      <section className="mt-6 space-y-3">
+        <h3 className="font-display-cyrl text-[16px] uppercase tracking-[0.18em] text-[#7aa8a4]">Инфраструктура</h3>
+        <div className="grid grid-cols-2 gap-2.5">
+          {INFRASTRUCTURE.map((item, i) => (
+            <div key={i} className="rounded-[14px] border border-[#4ec9c0]/22 bg-[#03161c]/40 p-4 flex items-center gap-3 hover:border-[#4ec9c0]/45 transition-colors">
+              <div className="w-10 h-10 bg-[#4ec9c0]/10 rounded-[10px] border border-[#4ec9c0]/28 flex items-center justify-center text-[#4ec9c0]">
+                <item.icon className="w-5 h-5" strokeWidth={1.6} />
               </div>
               <div className="min-w-0">
-                <div className="text-[12px] font-semibold text-[#d8f0ee] truncate">{item.label}</div>
-                <div className="text-[10px] text-[#7aa8a4] truncate">{item.desc}</div>
+                <div className="text-[13px] font-semibold text-[#d8f0ee] truncate">{item.label}</div>
+                <div className="text-[11px] text-[#7aa8a4] truncate">{item.desc}</div>
               </div>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="bg-[#4ec9c0]/8 border border-[#4ec9c0]/30 p-5 rounded-2xl flex items-start gap-4">
-        <div className="w-11 h-11 bg-[#4ec9c0] rounded-2xl flex items-center justify-center text-[#03161c] shrink-0">
-          <Info className="w-5 h-5" />
+      <section className="mt-6 bg-[#4ec9c0]/8 border border-[#4ec9c0]/30 p-5 rounded-2xl flex items-start gap-4">
+        <div className="w-11 h-11 bg-[#4ec9c0] rounded-[10px] flex items-center justify-center text-[#03161c] shrink-0">
+          <Info className="w-5 h-5" strokeWidth={1.8} />
         </div>
         <div className="space-y-1">
           <h4 className="font-semibold text-[#d8f0ee] text-[14px]">Центральная регистрация</h4>
@@ -97,6 +85,6 @@ export default function Map() {
           </p>
         </div>
       </section>
-    </div>
+    </PageShell>
   );
 }

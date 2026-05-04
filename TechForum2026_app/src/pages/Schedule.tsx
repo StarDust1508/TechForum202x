@@ -29,11 +29,11 @@
 // END_CHANGE_SUMMARY
 
 import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
-import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
+import { MapPin, Filter, Calendar, AlertTriangle, Download, X } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import BackButton from '@/src/components/BackButton';
+import PageShell from '@/src/components/ui/PageShell';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 const MY_TAB_ID = 'my';
@@ -208,18 +208,8 @@ export default function Schedule() {
   }
 
   return (
-    <div className="flex-1 pb-24 pt-6 px-6 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-      <header className="space-y-6">
-        <div className="space-y-1 relative">
-          <div className="absolute -left-6 top-1/2 -translate-y-1/2 w-1 h-8 bg-accent" />
-          <p className="italic text-accent text-sm tracking-wide flex items-center gap-2">
-            <Cpu className="w-4 h-4" />
-            ДАННЫЕ ГРАФИКА
-          </p>
-          <h1 className="text-4xl font-extrabold tracking-tighter text-[#d8f0ee]">Расписание</h1>
-        </div>
-
+    <PageShell kicker="Программа" title="Расписание">
+      <div className="space-y-5">
         {/* Day tabs.
             BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
             между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
@@ -296,9 +286,9 @@ export default function Schedule() {
             );
           })}
         </div>
-      </header>
+      </div>
 
-      <div className="space-y-5">
+      <div className="space-y-5 mt-6">
         <div>
           {filteredSessions.map((session) => {
             const track = getTrackById(session.trackId);
@@ -330,7 +320,7 @@ export default function Schedule() {
                   )}
                 </div>
 
-                <h3 className="text-xl font-semibold leading-tight tracking-tight text-white">
+                <h3 className="text-xl font-semibold leading-tight tracking-tight text-[#d8f0ee]">
                   {session.title}
                 </h3>
 
@@ -431,7 +421,7 @@ export default function Schedule() {
                   <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
                     <AlertTriangle className="w-5 h-5 text-amber-400" />
                   </div>
-                  <h2 className="text-base font-semibold text-white tracking-tight">Конфликт времени</h2>
+                  <h2 className="text-base font-semibold text-[#d8f0ee] tracking-tight">Конфликт времени</h2>
                 </div>
                 <button
                   onClick={() => setConflictTarget(null)}
@@ -441,7 +431,7 @@ export default function Schedule() {
                 </button>
               </div>
 
-              <p className="text-[13px] text-white/75 leading-relaxed">
+              <p className="text-[13px] text-[#d8f0ee]/75 leading-relaxed">
                 «{conflictTarget.session.title}» ({conflictTarget.session.startTime}–{conflictTarget.session.endTime}) пересекается со временем уже выбранных сессий:
               </p>
 
@@ -456,7 +446,7 @@ export default function Schedule() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="flex-1 py-3 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[12px] font-semibold text-white/75 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[12px] font-semibold text-[#d8f0ee]/75 active:scale-[0.98]"
                 >
                   Отмена
                 </button>
@@ -471,6 +461,6 @@ export default function Schedule() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </PageShell>
   );
 }

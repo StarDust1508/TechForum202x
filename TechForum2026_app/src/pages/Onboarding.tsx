@@ -104,7 +104,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
           <h1 className="font-display-cyrl text-[30px] font-semibold leading-tight tracking-wide text-[#d8f0ee]">
             Что тебе интересно?
           </h1>
-          <p className="text-[14px] text-white/65 leading-relaxed">
+          <p className="text-[14px] text-[#d8f0ee]/65 leading-relaxed">
             Отметь от {MIN_PICK} до {MAX_PICK} направлений — мы подсветим релевантные сессии в расписании. Минимум — {MIN_PICK}.
           </p>
         </div>
@@ -121,7 +121,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                   'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
                   active
                     ? 'bg-[#4ec9c0]/15 border-[#4ec9c0]/70 text-[#4ec9c0] shadow-[0_0_18px_rgba(78,201,192,0.35)]'
-                    : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
+                    : 'bg-[#0a2f38]/0.04 border-[#4ec9c0]/10 text-[#d8f0ee]/70 hover:border-[#4ec9c0]/25',
                 )}
               >
                 {it.label}
@@ -131,7 +131,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
         </div>
 
         <div className="flex items-center justify-between pt-2 text-[13px] font-medium">
-          <span className="text-white/55">
+          <span className="text-[#d8f0ee]/55">
             Выбрано: <span className="text-[#4ec9c0] font-bold">{selected.size}</span> / {MAX_PICK}
           </span>
           {remaining > 0 ? (

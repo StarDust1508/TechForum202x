@@ -538,7 +538,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                   if (pendingUser) onSuccess(pendingUser);
                 }}
                 aria-label="Закрыть"
-                className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full text-[#7aa8a4] hover:text-[#d8f0ee] hover:bg-white/[0.06] transition-colors"
+                className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full text-[#7aa8a4] hover:text-[#d8f0ee] hover:bg-[#0a2f38]/0.06 transition-colors"
               >
                 <XIcon className="h-[18px] w-[18px]" />
               </button>

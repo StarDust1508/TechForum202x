@@ -1,138 +1,91 @@
-// FILE: src/pages/NewsDetail.tsx
-// VERSION: 1.0.0
-// START_MODULE_CONTRACT:
-// PURPOSE: Страница деталей новости. Открывается из ленты Feed по /news/:id.
-// SCOPE: UI only.
-// INPUT: route param :id, ищется в NEWS из data.ts.
-// OUTPUT: JSX страница.
-// KEYWORDS: DOMAIN(7): NewsDetail; TECH(6): React, ReactRouter
-// LINKS: USED_BY(8): App.tsx route /news/:id
-// END_MODULE_CONTRACT
-
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useEffect } from 'react';
-import { Clock, ArrowRight, ChevronLeft } from 'lucide-react';
+import { Clock, ArrowRight } from 'lucide-react';
 import { NEWS, getSpeakerById } from '../data';
+import PageShell from '@/src/components/ui/PageShell';
 
 export default function NewsDetail() {
   const { id } = useParams<{ id: string }>();
   const news = NEWS.find((n) => n.id === id);
   const navigate = useNavigate();
 
-  // Back-stack fix: раньше из /news/:id юзер кликал «К ленте», на это
-  // делался <Link to="/feed"> — это PUSH в history, а не POP. Стек
-  // становился [/feed, /news/123, /feed], и system-back с /feed
-  // возвращал в новость. Теперь идём через navigate(-1) (pop) с
-  // fallback на /feed если истории нет.
-  const goBack = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      navigate(-1);
-    } else {
-      navigate('/feed');
-    }
-  };
-
   if (!news) {
     return (
-      <div
-        className="flex-1 px-5 pb-12 flex flex-col items-center justify-center gap-4"
-        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}
-      >
-        <p className="text-white/70 text-base">Новость не найдена</p>
-        <Link
-          to="/feed"
-          className="text-accent text-[12px] font-semibold uppercase tracking-widest hover:underline"
-        >
-          ← К ленте
-        </Link>
-      </div>
+      <PageShell kicker="Ошибка" title="Новость не найдена">
+        <div className="flex flex-col items-center gap-4 mt-8">
+          <p className="text-[#7aa8a4]">Возможно, ссылка устарела.</p>
+          <button
+            type="button"
+            onClick={() => navigate('/feed')}
+            className="text-[#4ec9c0] text-[12px] font-semibold uppercase tracking-widest hover:underline"
+          >
+            ← К ленте
+          </button>
+        </div>
+      </PageShell>
     );
   }
 
   const speaker = news.speakerId ? getSpeakerById(news.speakerId) : undefined;
 
   return (
-    <div
-      className="flex-1 px-5 pb-16 relative"
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
-      }}
+    <PageShell
+      kicker={news.type}
+      title={news.title}
     >
-      {/* Back via navigate(-1) — не накапливает history, корректно
-          возвращает на предыдущую страницу (Feed). */}
-      <button
-        type="button"
-        onClick={goBack}
-        className="inline-flex items-center gap-2 mb-6 text-white/65 hover:text-white text-[13px] font-semibold"
-      >
-        <ChevronLeft className="w-4 h-4" />
-        К ленте новостей
-      </button>
-
       <article className="space-y-5">
         <div className="flex items-center gap-2 flex-wrap">
           {news.isCritical && (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-widest">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-[10px] font-semibold uppercase tracking-widest">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
               Важно
             </span>
           )}
-          <span className="text-[10px] uppercase tracking-widest font-bold text-accent">
-            {news.type}
-          </span>
           {news.category && (
-            <span className="text-[10px] uppercase tracking-widest font-semibold text-white/40">
-              · {news.category}
+            <span className="font-mono text-[10px] uppercase tracking-widest font-semibold text-[#7aa8a4]">
+              {news.category}
             </span>
           )}
+          <span className="inline-flex items-center gap-1 text-[11px] text-[#7aa8a4]">
+            <Clock className="w-3 h-3" strokeWidth={1.6} />
+            {news.time}
+          </span>
         </div>
 
-        <h1 className="font-display-cyrl text-3xl leading-tight text-white">{news.title}</h1>
-
-        <div className="flex items-center gap-3 text-[12px] text-white/55 font-semibold">
-          <Clock className="w-3.5 h-3.5" />
-          {news.time}
-        </div>
-
-        {/* Lead — короткое описание */}
-        <p className="text-[15px] text-white/85 leading-relaxed font-medium border-l-2 border-accent/40 pl-4">
+        <p className="text-[15px] text-[#d8f0ee]/90 leading-relaxed border-l-2 border-[#4ec9c0]/55 pl-4">
           {news.content}
         </p>
 
-        {/* Body — длинный текст */}
         {news.body && (
-          <div className="text-[15px] text-white/80 leading-relaxed space-y-3">
+          <div className="text-[15px] text-[#d8f0ee]/80 leading-relaxed space-y-3 font-blueprint">
             {news.body.split('\n\n').map((para, i) => (
               <p key={i}>{para}</p>
             ))}
           </div>
         )}
 
-        {/* Карточка спикера, если новость о нём */}
         {speaker && (
           <Link
             to="/speakers"
-            className="block rounded-3xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:border-accent/30 active:scale-[0.99] transition-all p-5 mt-6"
+            className="block rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 hover:border-[#4ec9c0]/55 active:scale-[0.99] transition-all p-5 mt-6"
           >
-            <p className="text-[10px] uppercase tracking-widest font-semibold text-white/45 mb-2">
+            <p className="font-mono text-[10px] uppercase tracking-widest font-semibold text-[#7aa8a4] mb-2">
               О спикере
             </p>
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/30 flex items-center justify-center text-accent font-semibold text-lg">
+              <div className="w-14 h-14 rounded-[14px] border border-[#4ec9c0]/40 bg-[#03161c]/60 flex items-center justify-center text-[#4ec9c0] font-display-cyrl text-[20px] font-semibold">
                 {speaker.avatarLetter}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-white/95 font-bold text-base truncate">{speaker.name}</p>
-                <p className="text-white/55 text-[12px] truncate">
+                <p className="font-display-cyrl text-[16px] font-semibold text-[#d8f0ee] truncate">{speaker.name}</p>
+                <p className="text-[12px] text-[#7aa8a4] truncate">
                   {speaker.role}, {speaker.company}
                 </p>
               </div>
-              <ArrowRight className="w-4 h-4 text-accent/70 flex-shrink-0" />
+              <ArrowRight className="w-4 h-4 text-[#4ec9c0]/70 flex-shrink-0" strokeWidth={1.6} />
             </div>
           </Link>
         )}
       </article>
-    </div>
+    </PageShell>
   );
 }

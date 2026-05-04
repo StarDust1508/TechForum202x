@@ -1,5 +1,5 @@
 import { Building2, ExternalLink, Globe2 } from 'lucide-react';
-import BackButton from '@/src/components/BackButton';
+import PageShell from '@/src/components/ui/PageShell';
 import { PARTNERS } from '../data';
 
 // Раньше тут лежал inline-массив с fake-партнёрами (Quantum Cloud /
@@ -27,20 +27,11 @@ export default function Partners() {
   };
 
   return (
-    <div
-      className="px-6 space-y-6"
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
-      }}
+    <PageShell
+      kicker="TechForum"
+      title="Партнёры"
+      subtitle={`${sorted.length} компаний поддерживают форум в этом году`}
     >
-      <BackButton />
-      <header className="space-y-1.5">
-        <p className="text-[11px] uppercase tracking-[0.22em] text-[#4ec9c0]/85 font-semibold">TechForum</p>
-        <h1 className="font-display-cyrl text-4xl leading-none text-[#d8f0ee]">Партнёры</h1>
-        <p className="text-[12px] text-[#7aa8a4] mt-1">{sorted.length} компаний поддерживают форум в этом году</p>
-      </header>
-
       <div className="space-y-3">
         {sorted.map((partner) => (
           <a
@@ -72,6 +63,6 @@ export default function Partners() {
           </a>
         ))}
       </div>
-    </div>
+    </PageShell>
   );
 }
