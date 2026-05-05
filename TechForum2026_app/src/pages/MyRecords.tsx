@@ -1,14 +1,45 @@
 // FILE: src/pages/MyRecords.tsx
 // VERSION: 3.0.0 — две вкладки: Сессии + Розыгрыши
 
-import { useEffect, useState } from 'react';
-import { CalendarCheck2, Clock3, MapPin, Download, Trophy, Award, X } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { CalendarCheck2, Clock3, MapPin, Download, Trophy, Award, X, NotebookPen, Plus, Trash2, Edit3 } from 'lucide-react';
 import { SESSIONS, DAYS, getDayById } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
 import Skeleton from '@/src/components/ui/Skeleton';
+import Button from '@/src/components/ui/Button';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { GIVEAWAYS, LS_KEY as GIVEAWAYS_LS_KEY, readJoinedGiveaways } from './Giveaways';
 import { cn } from '@/src/lib/utils';
+
+// === NOTES (local-only) ===
+// Хранятся в localStorage — не привязаны к серверной БД, чтобы юзер мог
+// записать что-то даже офлайн и не терять при разлогине. Keep schema
+// минимальным: id, body, updatedAt. Title — первая непустая строка body.
+const NOTES_LS_KEY = 'techforum_notes';
+type Note = { id: string; body: string; updatedAt: number };
+function readNotes(): Note[] {
+  try {
+    const raw = localStorage.getItem(NOTES_LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((n): n is Note => n && typeof n.id === 'string' && typeof n.body === 'string');
+  } catch { return []; }
+}
+function writeNotes(notes: Note[]): void {
+  try { localStorage.setItem(NOTES_LS_KEY, JSON.stringify(notes)); } catch { /* noop */ }
+}
+function noteTitle(n: Note): string {
+  const firstLine = n.body.split('\n').find((l) => l.trim().length > 0);
+  return (firstLine || 'Без названия').slice(0, 80);
+}
+function noteBody(n: Note): string {
+  const lines = n.body.split('\n');
+  const idxFirst = lines.findIndex((l) => l.trim().length > 0);
+  if (idxFirst < 0) return '';
+  return lines.slice(idxFirst + 1).join('\n').trim();
+}
 
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
 
@@ -28,13 +59,16 @@ function timeToMinutes(hhmm: string): number {
   return h * 60 + m;
 }
 
-type Tab = 'sessions' | 'giveaways';
+type Tab = 'sessions' | 'giveaways' | 'notes';
 
 export default function MyRecords() {
   const [tab, setTab] = useState<Tab>('sessions');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
   const [joinedGiveaways, setJoinedGiveaways] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [notes, setNotes] = useState<Note[]>(() => readNotes());
+  const [editingNote, setEditingNote] = useState<Note | null>(null);
+  const [draftBody, setDraftBody] = useState('');
 
   // Сессии
   useEffect(() => {
@@ -82,10 +116,54 @@ export default function MyRecords() {
     try { localStorage.setItem(GIVEAWAYS_LS_KEY, JSON.stringify(next)); } catch { /* noop */ }
   };
 
+  // Notes CRUD ===========================================
+  const sortedNotes = useMemo(() => [...notes].sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
+
+  const openNew = () => {
+    setEditingNote({ id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, body: '', updatedAt: Date.now() });
+    setDraftBody('');
+  };
+  const openExisting = (n: Note) => {
+    setEditingNote(n);
+    setDraftBody(n.body);
+  };
+  const saveNote = () => {
+    if (!editingNote) return;
+    const trimmed = draftBody.replace(/\s+$/g, '');
+    if (!trimmed.trim()) {
+      // empty → если открывали существующую, оставляем без изменений; для новой — просто закрываем
+      setEditingNote(null);
+      return;
+    }
+    setNotes((prev) => {
+      const exists = prev.some((p) => p.id === editingNote.id);
+      const next: Note = { id: editingNote.id, body: trimmed, updatedAt: Date.now() };
+      const updated = exists ? prev.map((p) => p.id === editingNote.id ? next : p) : [...prev, next];
+      writeNotes(updated);
+      return updated;
+    });
+    setEditingNote(null);
+  };
+  const deleteNote = (id: string) => {
+    setNotes((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      writeNotes(next);
+      return next;
+    });
+    if (editingNote?.id === id) setEditingNote(null);
+  };
+  const formatNoteDate = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' }) + ' · ' +
+           d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  };
+
   const subtitleText =
     tab === 'sessions'
       ? (registeredSessions.length > 0 ? `${registeredSessions.length} сессий в вашей программе` : undefined)
-      : (myGiveaways.length > 0 ? `${myGiveaways.length} активных участий` : undefined);
+      : tab === 'giveaways'
+        ? (myGiveaways.length > 0 ? `${myGiveaways.length} активных участий` : undefined)
+        : (notes.length > 0 ? `${notes.length} ${notes.length === 1 ? 'заметка' : 'заметок'}` : undefined);
 
   return (
     <PageShell kicker="Личный кабинет" title="Мои записи" subtitle={subtitleText}>
@@ -119,6 +197,21 @@ export default function MyRecords() {
           Розыгрыши
           {myGiveaways.length > 0 && (
             <span className="font-mono text-[10px] text-[#4ec9c0]/85">· {myGiveaways.length}</span>
+          )}
+        </button>
+        <button
+          onClick={() => setTab('notes')}
+          className={cn(
+            'flex-1 py-2.5 rounded-xl text-[11px] font-semibold uppercase tracking-[0.16em] transition-all font-display-cyrl flex items-center justify-center gap-2',
+            tab === 'notes'
+              ? 'bg-[#4ec9c0]/15 text-[#4ec9c0] border border-[#4ec9c0]/55'
+              : 'text-[#7aa8a4] border border-transparent',
+          )}
+        >
+          <NotebookPen className="w-3.5 h-3.5" strokeWidth={1.8} />
+          Заметки
+          {notes.length > 0 && (
+            <span className="font-mono text-[10px] text-[#4ec9c0]/85">· {notes.length}</span>
           )}
         </button>
       </div>
@@ -236,6 +329,119 @@ export default function MyRecords() {
           </div>
         )
       )}
+
+      {/* NOTES TAB */}
+      {tab === 'notes' && (
+        <>
+          <button
+            type="button"
+            onClick={openNew}
+            className="w-full flex items-center justify-center gap-2 border border-[#4ec9c0]/55 bg-[#0a2f38]/70 text-[#d8f0ee] py-3.5 rounded-[14px] text-[13px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] hover:border-[#4ec9c0]/80 transition-all font-display-cyrl"
+          >
+            <Plus className="w-4 h-4 text-[#4ec9c0]" strokeWidth={2} />
+            Новая заметка
+          </button>
+
+          {notes.length === 0 ? (
+            <div className="mt-6 rounded-3xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-8 text-center">
+              <NotebookPen className="w-9 h-9 mx-auto text-[#4ec9c0]/60" strokeWidth={1.4} />
+              <p className="mt-3 text-[#d8f0ee]/75">Здесь будут ваши заметки.</p>
+              <p className="mt-1 text-[12px] text-[#7aa8a4]">
+                Записывайте мысли, имена, контакты — всё сохраняется локально и переживает выход из приложения.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-5 space-y-3">
+              {sortedNotes.map((n) => {
+                const preview = noteBody(n);
+                return (
+                  <article
+                    key={n.id}
+                    className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-4 active:scale-[0.99] transition-transform"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openExisting(n)}
+                      className="w-full text-left space-y-1.5"
+                    >
+                      <h3 className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee] truncate">
+                        {noteTitle(n)}
+                      </h3>
+                      {preview && (
+                        <p className="text-[12px] text-[#d8f0ee]/70 leading-relaxed line-clamp-3 whitespace-pre-wrap">
+                          {preview}
+                        </p>
+                      )}
+                      <p className="font-mono text-[10px] text-[#7aa8a4]/85 uppercase tracking-widest pt-1">
+                        {formatNoteDate(n.updatedAt)}
+                      </p>
+                    </button>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openExisting(n)}
+                        aria-label="Редактировать"
+                        className="h-8 w-8 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 text-[#4ec9c0] hover:bg-[#0a2f38]/70 active:scale-90 transition-all"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteNote(n.id)}
+                        aria-label="Удалить"
+                        className="h-8 w-8 flex items-center justify-center rounded-[10px] border border-rose-500/35 text-rose-300 hover:bg-rose-500/10 active:scale-90 transition-all"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Notes editor modal */}
+      <AnimatePresence>
+        {editingNote && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-[100] flex flex-col bg-[#03161c]/96 backdrop-blur"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)' }}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-[#4ec9c0]/22">
+              <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">
+                {notes.some((p) => p.id === editingNote.id) ? 'Заметка' : 'Новая заметка'}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setEditingNote(null)}
+                aria-label="Закрыть"
+                className="h-9 w-9 flex items-center justify-center rounded-[10px] border border-[#4ec9c0]/35 text-[#4ec9c0] hover:bg-[#0a2f38]/55 active:scale-90 transition-all"
+              >
+                <X className="w-4 h-4" strokeWidth={1.8} />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={draftBody}
+              onChange={(e) => setDraftBody(e.target.value)}
+              placeholder="Заголовок на первой строке…&#10;&#10;Текст заметки…"
+              className="flex-1 w-full bg-transparent text-[15px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/55 outline-none resize-none px-5 py-4 leading-relaxed font-ui"
+            />
+            <div
+              className="px-5 pt-3 border-t border-[#4ec9c0]/22"
+              style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)' }}
+            >
+              <Button onClick={saveNote}>Сохранить</Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </PageShell>
   );
 }

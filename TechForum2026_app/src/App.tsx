@@ -266,7 +266,7 @@ function AppContent() {
                   <Route path="/chat" element={<Chat />} />
                   <Route path="/chat/:userId" element={<Chat />} />
                   <Route path="/users/:userId" element={<UserProfile />} />
-                  <Route path="/profile" element={<Profile user={user} />} />
+                  <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
                   <Route path="/ticket" element={<Ticket />} />
                   <Route path="/giveaways" element={<Giveaways />} />
                   <Route path="/partners" element={<Partners />} />

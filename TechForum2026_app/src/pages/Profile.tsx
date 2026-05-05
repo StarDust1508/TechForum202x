@@ -13,10 +13,24 @@ import { formatPhone, getValidationMessage, isValidPhone } from '@/src/lib/phone
 
 interface ProfileProps {
   user: any;
+  /** Колбэк, чтобы App.tsx мог обновить свой user-state (одинаковая
+   *  ссылка на юзера во всём приложении: после save сразу везде свежие
+   *  данные, без перезагрузки). */
+  onUpdate?: (next: any) => void;
 }
 
-export default function Profile({ user: initialUser }: ProfileProps) {
-  const [user, setUser] = useState(initialUser);
+export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
+  const [user, setUserLocal] = useState(initialUser);
+  // setUser обновляет И локальный state экрана И parent App.tsx — иначе
+  // после редактирования и навигации в Home/back, prop initialUser приходит
+  // старый, изменения «откатываются».
+  const setUser = (next: any | ((prev: any) => any)) => {
+    setUserLocal((prev: any) => {
+      const resolved = typeof next === 'function' ? (next as (p: any) => any)(prev) : next;
+      onUpdate?.(resolved);
+      return resolved;
+    });
+  };
   const [showEdit, setShowEdit] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -166,17 +180,19 @@ export default function Profile({ user: initialUser }: ProfileProps) {
   // HUD-аватар: октагональная рамка. AvatarImage primitive ставит инициал
   // как fallback при ошибке загрузки или отсутствии src — единая логика
   // с Chat-списком и других местах.
-  // Аватар внутри HUD-octagon. Раньше img был размером с почти весь octagon
-  // (inset-2 + rounded-md) и углы фото вылезали за octagon-стенки. Теперь
-  // фото — круглое (overflow-hidden + rounded-full), занимает 64% от HUD,
-  // центровано — гарантированно вписывается в octagon.
+  // Аватар внутри HUD-octagon: фото заполняет ВСЮ октагональную форму,
+  // обрезано clip-path'ом по внутреннему контуру HudFrame. Раньше внутри
+  // был круг 64% от размера — фото казалось маленьким. Теперь фото
+  // занимает весь octagon, не вылезает за его границы.
+  // Octagon-polygon в % координатах HudFrame по тем же опорным точкам
+  // как у HudFrame's outer path:
+  const OCTAGON_CLIP = 'polygon(14% 4.5%, 86% 4.5%, 96.5% 18%, 96.5% 82%, 86% 95.5%, 23% 95.5%, 3.5% 82%, 3.5% 22%)';
   const renderAvatar = (sizePx: number) => {
-    const inner = Math.round(sizePx * 0.64);
     return (
       <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
         <div
-          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full bg-[#0a2f38] border border-[#4ec9c0]/40"
-          style={{ width: inner, height: inner }}
+          className="absolute inset-0 overflow-hidden bg-[#0a2f38]"
+          style={{ clipPath: OCTAGON_CLIP, WebkitClipPath: OCTAGON_CLIP }}
         >
           <AvatarImage src={avatarSrc} name={user.name} className="h-full w-full" letterClassName="text-2xl" />
         </div>

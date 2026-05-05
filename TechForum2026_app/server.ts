@@ -1619,6 +1619,37 @@ async function startServer(): Promise<void> {
     });
   });
 
+  // DELETE /messages/:id — удаление СВОЕГО сообщения (отправитель = me).
+  // Если есть mediaUrl и он наш (/uploads/dm/...), удаляем файл с диска.
+  // Получатель/админ-редактирование — отдельный flow, не реализован.
+  api.delete('/messages/:id', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id || '');
+    if (!id || id.length < 8) {
+      res.status(400).json({ error: 'invalid_id' });
+      return;
+    }
+    const rows = await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1);
+    const dm = rows[0];
+    if (!dm) {
+      res.status(404).json({ error: 'message_not_found' });
+      return;
+    }
+    if (dm.fromUserId !== me) {
+      res.status(403).json({ error: 'not_sender' });
+      return;
+    }
+    // Удаляем медиа-файл, если был.
+    if (dm.mediaUrl && typeof dm.mediaUrl === 'string' && dm.mediaUrl.startsWith('/uploads/dm/')) {
+      const fname = dm.mediaUrl.replace(/^\/uploads\/dm\//, '').split('?')[0];
+      if (fname && !fname.includes('/') && !fname.includes('..')) {
+        try { fs.unlinkSync(path.join(dmDir, fname)); } catch { /* noop */ }
+      }
+    }
+    await db.delete(directMessages).where(eq(directMessages.id, id));
+    res.json({ ok: true });
+  });
+
   // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.
   // Также помечает входящие как прочитанные (UPDATE read_at = now()).
   api.get('/messages/with/:userId', requireAuth, async (req, res) => {

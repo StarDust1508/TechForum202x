@@ -8,7 +8,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Search, Send, ChevronRight, Mic, Square, Image as ImageIcon, Video as VideoIcon,
   X as XIcon, ArrowLeft, Paperclip, Loader2, Camera, Play, Pause,
+  Reply, Copy, Forward, Pin, Edit3, Trash2, Download as DownloadIcon,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
 import AvatarImage from '@/src/components/ui/AvatarImage';
@@ -33,6 +35,39 @@ type ChatMessage = {
   /** True пока сообщение ещё не подтверждено сервером (optimistic). */
   pending?: boolean;
 };
+
+// Long-press helper. Возвращает onPointerDown/Up/Cancel handlers, которые
+// вызывают onTrigger() через 500ms если палец не отпустили. Click не
+// триггерится после long-press (suppressClick флаг — иначе тап-в-меню
+// сразу закрывает его).
+const LONG_PRESS_MS = 500;
+function makeLongPressHandlers(onTrigger: () => void) {
+  let timer: number | null = null;
+  let triggered = false;
+  return {
+    onPointerDown: () => {
+      triggered = false;
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(() => { triggered = true; onTrigger(); }, LONG_PRESS_MS);
+    },
+    onPointerUp: () => {
+      if (timer) { window.clearTimeout(timer); timer = null; }
+    },
+    onPointerCancel: () => {
+      if (timer) { window.clearTimeout(timer); timer = null; }
+    },
+    onPointerLeave: () => {
+      if (timer) { window.clearTimeout(timer); timer = null; }
+    },
+    onClickCapture: (e: React.MouseEvent) => {
+      if (triggered) {
+        e.stopPropagation();
+        e.preventDefault();
+        triggered = false;
+      }
+    },
+  };
+}
 
 // Бэк отдаёт mediaUrl уже подписанный HMAC'ом (?exp=...&sig=...).
 // Native <audio>/<video>/<img> грузит этот URL напрямую через WebView,
@@ -213,6 +248,10 @@ function DmRoom({ userId }: { userId: string }) {
   const [sending, setSending] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  // Сообщение, на которое нажали-удержали → показать context-menu.
+  const [actionsFor, setActionsFor] = useState<ChatMessage | null>(null);
+  // Toast-у текст для feedback (Скопировано / Сохранено / etc).
+  const [toast, setToast] = useState<string | null>(null);
 
   // /auth/me для определения fromMe
   useEffect(() => {
@@ -685,29 +724,30 @@ function DmRoom({ userId }: { userId: string }) {
         )}
         {messages.map((m) => {
           const time = formatTime(m.createdAt);
-          // Аудио и видео — отдельные branded-компоненты, без обычного bubble.
+          // Long-press на bubble → открыть context menu.
+          const lp = makeLongPressHandlers(() => setActionsFor(m));
           if (m.mediaType === 'audio') {
             return (
-              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`} {...lp}>
                 <AudioBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} fromMe={m.fromMe} />
               </div>
             );
           }
           if (m.mediaType === 'video') {
             return (
-              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`} {...lp}>
                 <VideoBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} />
               </div>
             );
           }
-          // Картинки + текст — обычный bubble.
           return (
-            <ImageBubble
-              key={m.id}
-              message={m}
-              time={time}
-              onLightbox={(url) => setLightbox(url)}
-            />
+            <div key={m.id} {...lp}>
+              <ImageBubble
+                message={m}
+                time={time}
+                onLightbox={(url) => setLightbox(url)}
+              />
+            </div>
           );
         })}
       </div>
@@ -833,6 +873,43 @@ function DmRoom({ userId }: { userId: string }) {
           </div>
         )}
       </div>
+
+      {/* Message context menu (long-press) */}
+      <MessageActions
+        message={actionsFor}
+        onClose={() => setActionsFor(null)}
+        onToast={(text) => { setToast(text); window.setTimeout(() => setToast(null), 1800); }}
+        onDelete={async (m) => {
+          if (m.id.startsWith('tmp_') || m.id.startsWith('up_')) {
+            // Optimistic ещё не подтверждён → удаляем только локально.
+            setMessages((prev) => prev.filter((x) => x.id !== m.id));
+            return true;
+          }
+          try {
+            const r = await fetch(resolveApiUrl(`/messages/${m.id}`), {
+              method: 'DELETE', credentials: 'include',
+            });
+            if (!r.ok) return false;
+            setMessages((prev) => prev.filter((x) => x.id !== m.id));
+            return true;
+          } catch { return false; }
+        }}
+      />
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed left-1/2 -translate-x-1/2 z-[60] rounded-full border border-[#4ec9c0]/40 bg-[#03161c]/95 backdrop-blur-md px-4 py-2 text-[12px] font-ui text-[#d8f0ee] shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+            style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)' }}
+          >
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Image lightbox — внутреннее full-screen viewer, не уходит в external браузер */}
       {lightbox && (
@@ -1111,6 +1188,160 @@ function ImageBubble({
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// MESSAGE ACTIONS — bottom-sheet menu по long-press на сообщение.
+// Действия: Ответить (TBD), Копировать, Переслать (TBD), Закрепить (TBD),
+// Изменить (TBD), Удалить, Сохранить в галерею (для image/video/audio).
+// «TBD»-действия показывают toast «Скоро» — фронт-стабы до соответствующих
+// бэк-эндпоинтов (replyToId, forward, pin, edit).
+// ============================================================================
+function MessageActions({
+  message,
+  onClose,
+  onToast,
+  onDelete,
+}: {
+  message: ChatMessage | null;
+  onClose: () => void;
+  onToast: (text: string) => void;
+  onDelete: (m: ChatMessage) => Promise<boolean>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (!message) return null;
+  const m = message;
+  const hasMedia = !!m.mediaUrl;
+
+  const close = () => { setConfirming(false); onClose(); };
+
+  const handleCopy = async () => {
+    const textToCopy = m.text || (m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : '');
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(textToCopy);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = textToCopy;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      onToast('Скопировано');
+    } catch { onToast('Не удалось скопировать'); }
+    close();
+  };
+
+  const handleSaveMedia = async () => {
+    if (!m.mediaUrl) { close(); return; }
+    const url = resolveAssetUrl(m.mediaUrl);
+    const ext = (m.mediaType === 'image' ? 'jpg' : m.mediaType === 'video' ? 'mp4' : 'webm');
+    const filename = `techforum-${m.id.slice(0, 8)}.${ext}`;
+    try {
+      // Сначала пробуем download через <a> — на Android Capacitor WebView
+      // делегирует в DownloadManager → файл идёт в Downloads/Pictures/etc.
+      // Качество и звук сохраняются, потому что копируется бинарь как есть.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      onToast('Скачивание начато');
+    } catch (err) {
+      onToast(`Не удалось сохранить: ${(err as Error).message || 'ошибка'}`);
+    }
+    close();
+  };
+
+  const stub = (label: string) => () => { onToast(`${label} — скоро`); close(); };
+
+  const items: Array<{ icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; onClick: () => void; danger?: boolean; mediaOnly?: boolean }> = [
+    { icon: Reply, label: 'Ответить', onClick: stub('Ответ') },
+    { icon: Copy, label: 'Копировать', onClick: handleCopy },
+    { icon: Forward, label: 'Переслать', onClick: stub('Пересылка') },
+    { icon: Pin, label: 'Закрепить', onClick: stub('Закрепление') },
+    ...(m.fromMe ? [{ icon: Edit3, label: 'Изменить', onClick: stub('Редактирование') }] : []),
+    ...(hasMedia ? [{ icon: DownloadIcon, label: 'Сохранить в галерею', onClick: handleSaveMedia, mediaOnly: true }] : []),
+    ...(m.fromMe ? [{ icon: Trash2, label: 'Удалить', onClick: () => setConfirming(true), danger: true }] : []),
+  ];
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="actions-backdrop"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        className="fixed inset-0 z-[70] bg-black/55 backdrop-blur-sm flex items-end justify-center"
+        onClick={close}
+      >
+        <motion.div
+          initial={{ y: 20, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 20, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 340, damping: 30 }}
+          className="w-full max-w-[360px] mx-3 mb-3 rounded-2xl border border-[#4ec9c0]/35 bg-[#03161c]/95 backdrop-blur-md shadow-[0_18px_60px_rgba(0,0,0,0.55)] overflow-hidden"
+          style={{ marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {confirming ? (
+            <div className="p-5 space-y-4">
+              <p className="font-display-cyrl text-[16px] text-[#d8f0ee] text-center">Удалить сообщение?</p>
+              <p className="text-[12px] text-[#7aa8a4] text-center font-ui">
+                Это действие нельзя отменить.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={close}
+                  className="flex-1 py-2.5 rounded-[10px] border border-[#4ec9c0]/35 text-[#d8f0ee] font-ui text-[13px] active:scale-95 transition-transform"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await onDelete(m);
+                    if (ok) onToast('Удалено');
+                    else onToast('Не удалось удалить');
+                    close();
+                  }}
+                  className="flex-1 py-2.5 rounded-[10px] bg-rose-500/85 text-[#03161c] font-ui font-semibold text-[13px] active:scale-95 transition-transform"
+                >
+                  Удалить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ul className="py-1.5">
+              {items.map((it) => (
+                <li key={it.label}>
+                  <button
+                    type="button"
+                    onClick={it.onClick}
+                    className={`w-full flex items-center gap-3.5 px-5 py-3 text-[15px] font-ui text-left transition-colors hover:bg-[#0a2f38]/55 ${
+                      it.danger ? 'text-rose-300' : 'text-[#d8f0ee]'
+                    }`}
+                  >
+                    <it.icon
+                      className={`w-5 h-5 shrink-0 ${it.danger ? 'text-rose-300' : 'text-[#4ec9c0]'}`}
+                      strokeWidth={1.6}
+                    />
+                    {it.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
