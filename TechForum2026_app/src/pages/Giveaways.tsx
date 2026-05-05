@@ -164,7 +164,6 @@ export default function Giveaways() {
   const [participatingIds, setParticipatingIds] = useState<string[]>([]);
   const [showSuccess, setShowSuccess] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState<string | null>(null);
-  const [ticketNo, setTicketNo] = useState<number | null>(null);
 
   useEffect(() => {
     setParticipatingIds(readJoinedGiveaways());
@@ -178,7 +177,10 @@ export default function Giveaways() {
   const join = (id: string) => {
     if (participatingIds.includes(id)) return;
     persist([...participatingIds, id]);
-    setTicketNo(Math.floor(Math.random() * 9000) + 1000);
+    // Раньше тут генерили fake "Билет №<rng>" через Math.random() и
+    // показывали юзеру — это было обманом: сервер ничего не знал. Теперь
+    // честный flow: «заявка отмечена», условия будут проверены при выдаче
+    // приза на сцене (см. server-side admin-pipeline в плане Round 3).
     setShowSuccess(id);
     window.setTimeout(() => setShowSuccess(null), 3200);
   };
@@ -321,9 +323,9 @@ export default function Giveaways() {
               <Trophy className="w-5 h-5" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#4ec9c0]">Вы в деле</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#4ec9c0]">Заявка принята</p>
               <p className="text-[13px] font-semibold text-[#d8f0ee] mt-0.5">
-                Билет №{ticketNo} зарегистрирован
+                Условия проверим у входа в зал по QR-билету
               </p>
             </div>
             <Gift className="w-5 h-5 text-[#4ec9c0]/65" strokeWidth={1.4} />

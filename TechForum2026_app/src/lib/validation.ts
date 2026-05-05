@@ -107,13 +107,27 @@ export const statusCreateSchema = z.object({
 // Direct messages (Chat → Личные).
 // Сообщение должно содержать text ИЛИ media (или оба). Чистая отправка
 // «пустого» сообщения без вложения отвергается.
+// replyToId: id оригинала для structured-reply (тапом по цитате прыгает к
+//   оригиналу). Сервер валидирует что оригинал существует и из ТОГО ЖЕ
+//   диалога (нельзя «ответить» сообщению из чужой переписки).
+// forwardedFromUserId: id автора оригинала при forward (UI рисует
+//   «Переслано от <user>»).
 export const dmSendSchema = z.object({
   toUserId: z.string().min(1).max(64),
   text: z.string().trim().max(2000).optional().default(''),
   mediaUrl: z.string().max(512).optional(),
   mediaType: z.enum(['image', 'audio', 'video']).optional(),
+  replyToId: z.string().min(1).max(64).optional(),
+  forwardedFromUserId: z.string().min(1).max(64).optional(),
 }).refine((d) => (d.text && d.text.length > 0) || (d.mediaUrl && d.mediaType), {
   message: 'Сообщение пустое',
+});
+
+// Notes — персональные заметки в MyRecords.
+// body — единое поле, заголовок берётся из первой непустой строки на UI.
+// Лимит 16k для длинных текстов (рецепты, конспекты).
+export const noteUpsertSchema = z.object({
+  body: z.string().max(16_000),
 });
 
 // Forgot-password (см. server.ts /auth/forgot-password/*).
@@ -142,3 +156,4 @@ export type AiChatBody = z.infer<typeof aiChatSchema>;
 export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
 export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;
 export type DmSendBody = z.infer<typeof dmSendSchema>;
+export type NoteUpsertBody = z.infer<typeof noteUpsertSchema>;

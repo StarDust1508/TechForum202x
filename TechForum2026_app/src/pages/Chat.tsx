@@ -33,6 +33,10 @@ type ChatMessage = {
   text: string;
   mediaUrl?: string | null;
   mediaType?: 'image' | 'audio' | 'video' | null;
+  /** Structured reply: id оригинала. UI рисует превью + jump-to-original. */
+  replyToId?: string | null;
+  /** Forward attribution: автор оригинала (если был forwarded). */
+  forwardedFromUserId?: string | null;
   createdAt: string;
   /** True пока сообщение ещё не подтверждено сервером (optimistic). */
   pending?: boolean;
@@ -276,17 +280,47 @@ function DmRoom({ userId }: { userId: string }) {
   const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null);
   // Forward: какое сообщение форвардим, открывает модал-выбор контакта.
   const [forwarding, setForwarding] = useState<ChatMessage | null>(null);
-  // Pin: id закреплённого сообщения в этом DM (per dmUserId, localStorage).
-  const PIN_LS_PREFIX = 'techforum_pinned_dm:';
-  const [pinnedId, setPinnedId] = useState<string | null>(() => {
-    try { return localStorage.getItem(PIN_LS_PREFIX + userId); } catch { return null; }
-  });
-  const setPinned = (id: string | null) => {
+  // Pin: id закреплённого сообщения в этом DM. Хранится на сервере
+  // (dm_pins table, per-user, per-dialog). Раньше был localStorage —
+  // не переживал переустановку и не sync'ался между устройствами.
+  const [pinnedId, setPinnedId] = useState<string | null>(null);
+  // Подтягиваем pinned id с сервера при открытии диалога.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const r = await fetch(resolveApiUrl(`/messages/pins/${userId}`), { credentials: 'include' });
+        if (r.ok) {
+          const data: { messageId: string | null } = await r.json();
+          if (alive) setPinnedId(data.messageId);
+        }
+      } catch { /* offline — оставляем null */ }
+    })();
+    return () => { alive = false; };
+  }, [userId]);
+  const setPinned = async (id: string | null) => {
+    // Optimistic update.
+    const prev = pinnedId;
     setPinnedId(id);
     try {
-      if (id) localStorage.setItem(PIN_LS_PREFIX + userId, id);
-      else localStorage.removeItem(PIN_LS_PREFIX + userId);
-    } catch { /* noop */ }
+      if (id) {
+        const r = await fetch(resolveApiUrl(`/messages/pins/${userId}`), {
+          method: 'PUT', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messageId: id }),
+        });
+        if (!r.ok) throw new Error(`pin_failed_${r.status}`);
+      } else {
+        const r = await fetch(resolveApiUrl(`/messages/pins/${userId}`), {
+          method: 'DELETE', credentials: 'include',
+        });
+        if (!r.ok) throw new Error(`unpin_failed_${r.status}`);
+      }
+    } catch {
+      // Rollback при ошибке сети — UI вернёт прежний state.
+      setPinnedId(prev);
+      showToast('Не удалось сохранить закрепление');
+    }
   };
   const showToast = (text: string, ms = 1800) => {
     setToast(text);
@@ -340,13 +374,15 @@ function DmRoom({ userId }: { userId: string }) {
     try {
       const r = await fetch(resolveApiUrl(`/messages/with/${userId}`), { credentials: 'include' });
       if (!r.ok) return;
-      const arr: Array<{ id: string; fromUserId: string; text: string; mediaUrl: string | null; mediaType: 'image' | 'audio' | 'video' | null; createdAt: string }> = await r.json();
+      const arr: Array<{ id: string; fromUserId: string; text: string; mediaUrl: string | null; mediaType: 'image' | 'audio' | 'video' | null; replyToId: string | null; forwardedFromUserId: string | null; createdAt: string }> = await r.json();
       const serverMsgs: ChatMessage[] = arr.map((m) => ({
         id: m.id,
         fromMe: m.fromUserId === meId,
         text: m.text,
         mediaUrl: m.mediaUrl,
         mediaType: m.mediaType,
+        replyToId: m.replyToId,
+        forwardedFromUserId: m.forwardedFromUserId,
         createdAt: m.createdAt,
       }));
       setMessages((prev) => {
@@ -403,7 +439,7 @@ function DmRoom({ userId }: { userId: string }) {
   // /messages мы обновляем id на серверный, но КЕЕП localPreviewUrl как
   // mediaUrl — player не пере-загружает src. fetchDialog merge также
   // сохраняет existing mediaUrl для уже видимых message id.
-  const sendMessage = async (payload: { text?: string; mediaUrl?: string; mediaType?: 'image' | 'audio' | 'video'; localPreviewUrl?: string }) => {
+  const sendMessage = async (payload: { text?: string; mediaUrl?: string; mediaType?: 'image' | 'audio' | 'video'; localPreviewUrl?: string; replyToId?: string; forwardedFromUserId?: string }) => {
     if (sending) return;
     if (!payload.text && !payload.mediaUrl) return;
     setSending(true);
@@ -414,6 +450,8 @@ function DmRoom({ userId }: { userId: string }) {
       text: payload.text || '',
       mediaUrl: displayUrl,
       mediaType: payload.mediaType ?? null,
+      replyToId: payload.replyToId ?? null,
+      forwardedFromUserId: payload.forwardedFromUserId ?? null,
       createdAt: new Date().toISOString(),
       pending: true,
     };
@@ -428,6 +466,8 @@ function DmRoom({ userId }: { userId: string }) {
           text: payload.text || '',
           mediaUrl: payload.mediaUrl,
           mediaType: payload.mediaType,
+          replyToId: payload.replyToId,
+          forwardedFromUserId: payload.forwardedFromUserId,
         }),
       });
       if (!r.ok) {
@@ -493,15 +533,13 @@ function DmRoom({ userId }: { userId: string }) {
       return;
     }
 
-    // Reply-mode: префикс «↳ first 60 chars» добавляется к тексту.
-    let finalText = text;
-    if (replyTo) {
-      const quote = (replyTo.text || (replyTo.mediaType ? `[${replyTo.mediaType}]` : '')).trim().slice(0, 80);
-      finalText = `↳ ${quote}\n${text}`;
-      setReplyTo(null);
-    }
+    // Reply-mode: structured replyToId. Сервер хранит ссылку, UI рисует
+    // превью + jump-to-original. Раньше тут был префикс "↳ first 80 chars\n"
+    // в text-поле — оригинал и цитата теряли связь, jump не работал.
+    const replyToId = replyTo?.id;
+    setReplyTo(null);
     setInput('');
-    await sendMessage({ text: finalText });
+    await sendMessage({ text, replyToId });
   };
 
   // ====== Media: file picker ======
@@ -849,27 +887,88 @@ function DmRoom({ userId }: { userId: string }) {
           const time = formatTime(m.createdAt);
           // Long-press на bubble → открыть context menu.
           const lp = makeLongPressHandlers(() => setActionsFor(m));
+          // Reply preview: ищем оригинал в тех же messages (один диалог).
+          const replyTarget = m.replyToId ? messages.find((x) => x.id === m.replyToId) : null;
+          // Forward banner: текст "Переслано от …".
+          const forwardLabel = m.forwardedFromUserId
+            ? (m.forwardedFromUserId === meId ? 'вас'
+                : (contact && m.forwardedFromUserId === contact.userId ? contact.name : 'участника'))
+            : null;
+          // Прыжок к оригиналу при тапе на reply-quote.
+          const jumpToReply = () => {
+            if (!m.replyToId) return;
+            const el = document.getElementById(`dm-msg-${m.replyToId}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.classList.add('dm-msg-flash');
+              setTimeout(() => el.classList.remove('dm-msg-flash'), 1200);
+            }
+          };
+          const wrapClass = `flex ${m.fromMe ? 'justify-end' : 'justify-start'}`;
+          // Reply/forward extras рендерятся ВНУТРИ wrapper-а, СВЕРХУ bubble.
+          // Делаем колонкой: chips + bubble на одной стороне.
+          const extras = (replyTarget || forwardLabel || (m.replyToId && !replyTarget)) ? (
+            <div className={`flex flex-col gap-1 max-w-[80%] ${m.fromMe ? 'items-end' : 'items-start'}`}>
+              {forwardLabel && (
+                <div className="flex items-center gap-1.5 text-[10px] text-[#7aa8a4]/85 font-mono uppercase tracking-widest px-1">
+                  <Forward className="w-3 h-3" strokeWidth={2} />
+                  Переслано от {forwardLabel}
+                </div>
+              )}
+              {(replyTarget || (m.replyToId && !replyTarget)) && (
+                <button
+                  type="button"
+                  onClick={jumpToReply}
+                  disabled={!replyTarget}
+                  className={`text-left rounded-xl px-2.5 py-1.5 border-l-2 ${
+                    m.fromMe
+                      ? 'bg-[#03161c]/30 border-[#03161c]/60'
+                      : 'bg-[#03161c]/40 border-[#4ec9c0]/60'
+                  } ${!replyTarget ? 'opacity-60' : ''}`}
+                  style={{ minWidth: 120, maxWidth: '100%' }}
+                >
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[#4ec9c0]/85">
+                    Ответ
+                  </p>
+                  <p className="text-[11px] text-[#d8f0ee]/85 truncate">
+                    {replyTarget
+                      ? (replyTarget.text || (replyTarget.mediaType ? `[${replyTarget.mediaType}]` : ''))
+                      : '[удалённое сообщение]'}
+                  </p>
+                </button>
+              )}
+            </div>
+          ) : null;
           if (m.mediaType === 'audio') {
             return (
-              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`} {...lp}>
-                <AudioBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} fromMe={m.fromMe} />
+              <div key={m.id} id={`dm-msg-${m.id}`} className={wrapClass} {...lp}>
+                <div className="flex flex-col gap-1 max-w-[80%]">
+                  {extras}
+                  <AudioBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} fromMe={m.fromMe} />
+                </div>
               </div>
             );
           }
           if (m.mediaType === 'video') {
             return (
-              <div key={m.id} className={`flex ${m.fromMe ? 'justify-end' : 'justify-start'}`} {...lp}>
-                <VideoBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} />
+              <div key={m.id} id={`dm-msg-${m.id}`} className={wrapClass} {...lp}>
+                <div className="flex flex-col gap-1 max-w-[80%]">
+                  {extras}
+                  <VideoBubble src={m.mediaUrl ? resolveAssetUrl(m.mediaUrl) : null} time={time} pending={m.pending} />
+                </div>
               </div>
             );
           }
           return (
-            <div key={m.id} {...lp}>
-              <ImageBubble
-                message={m}
-                time={time}
-                onLightbox={(url) => setLightbox(url)}
-              />
+            <div key={m.id} id={`dm-msg-${m.id}`} className={wrapClass} {...lp}>
+              <div className={`flex flex-col gap-1 max-w-full ${m.fromMe ? 'items-end' : 'items-start'}`}>
+                {extras}
+                <ImageBubble
+                  message={m}
+                  time={time}
+                  onLightbox={(url) => setLightbox(url)}
+                />
+              </div>
             </div>
           );
         })}
@@ -1061,9 +1160,14 @@ function DmRoom({ userId }: { userId: string }) {
         }}
       />
 
-      {/* Forward — модал-выбор контакта для пересылки */}
+      {/* Forward — модал-выбор контакта для пересылки.
+          originalAuthorId — id автора оригинала. Если форвардим СВОЁ
+          сообщение (fromMe), это meId; иначе — собеседник (userId), потому
+          что в нашей 1:1 модели всё что не от меня — от партнёра.
+          forwardedFromUserId записывается в БД для атрибуции «Переслано от X». */}
       <ForwardModal
         message={forwarding}
+        originalAuthorId={forwarding ? (forwarding.fromMe ? (meId ?? '') : userId) : ''}
         onClose={() => setForwarding(null)}
         onSent={() => { setForwarding(null); showToast('Переслано'); }}
         onError={() => showToast('Не удалось переслать')}
@@ -1570,11 +1674,14 @@ function MessageActions({
 // ============================================================================
 function ForwardModal({
   message,
+  originalAuthorId,
   onClose,
   onSent,
   onError,
 }: {
   message: ChatMessage | null;
+  /** Автор оригинала — попадёт в forwardedFromUserId. Получатель видит «Переслано от <user>». */
+  originalAuthorId: string;
   onClose: () => void;
   onSent: () => void;
   onError: () => void;
@@ -1627,6 +1734,11 @@ function ForwardModal({
           text: m.text || '',
           mediaUrl: mediaForward ? mediaForward.split('?')[0] : undefined,
           mediaType: m.mediaType ?? undefined,
+          // Атрибуция: помечаем что это forward, у получателя UI рисует
+          // «Переслано от <user>». Если оригинал сам был forward — берём
+          // самого первого автора (m.forwardedFromUserId), иначе того, кто
+          // прямо сейчас пересылает.
+          forwardedFromUserId: m.forwardedFromUserId || originalAuthorId || undefined,
         }),
       });
       if (!r.ok) { onError(); return; }

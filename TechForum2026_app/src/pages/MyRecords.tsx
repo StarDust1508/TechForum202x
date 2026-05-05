@@ -12,24 +12,12 @@ import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { GIVEAWAYS, LS_KEY as GIVEAWAYS_LS_KEY, readJoinedGiveaways } from './Giveaways';
 import { cn } from '@/src/lib/utils';
 
-// === NOTES (local-only) ===
-// Хранятся в localStorage — не привязаны к серверной БД, чтобы юзер мог
-// записать что-то даже офлайн и не терять при разлогине. Keep schema
-// минимальным: id, body, updatedAt. Title — первая непустая строка body.
-const NOTES_LS_KEY = 'techforum_notes';
+// === NOTES (server-backed) ===
+// Хранятся на сервере (notes table, /notes endpoints) — переживают
+// переустановку, sync между устройствами, видны после re-login.
+// Раньше был localStorage — раунд 2 (ЧЕСТНОСТЬ) перевёл на API.
+// title — первая непустая строка body, body-только — UI-конвенция.
 type Note = { id: string; body: string; updatedAt: number };
-function readNotes(): Note[] {
-  try {
-    const raw = localStorage.getItem(NOTES_LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((n): n is Note => n && typeof n.id === 'string' && typeof n.body === 'string');
-  } catch { return []; }
-}
-function writeNotes(notes: Note[]): void {
-  try { localStorage.setItem(NOTES_LS_KEY, JSON.stringify(notes)); } catch { /* noop */ }
-}
 function noteTitle(n: Note): string {
   const firstLine = n.body.split('\n').find((l) => l.trim().length > 0);
   return (firstLine || 'Без названия').slice(0, 80);
@@ -66,9 +54,11 @@ export default function MyRecords() {
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
   const [joinedGiveaways, setJoinedGiveaways] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [notes, setNotes] = useState<Note[]>(() => readNotes());
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [draftBody, setDraftBody] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   // Сессии
   useEffect(() => {
@@ -92,6 +82,25 @@ export default function MyRecords() {
   // Розыгрыши — refresh при заходе на таб
   useEffect(() => {
     setJoinedGiveaways(readJoinedGiveaways());
+  }, [tab]);
+
+  // Notes — fetch с сервера при первом заходе на таб (lazy).
+  useEffect(() => {
+    if (tab !== 'notes') return;
+    let cancelled = false;
+    setNotesLoading(true);
+    (async () => {
+      try {
+        const r = await fetch(resolveApiUrl('/notes'), { credentials: 'include' });
+        if (!r.ok) return;
+        const arr: Array<{ id: string; body: string; updatedAt: string }> = await r.json();
+        if (cancelled) return;
+        setNotes(arr.map((n) => ({ id: n.id, body: n.body, updatedAt: new Date(n.updatedAt).getTime() })));
+      } catch { /* offline — оставляем что есть */ } finally {
+        if (!cancelled) setNotesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [tab]);
 
   const registeredSessions = SESSIONS
@@ -119,38 +128,75 @@ export default function MyRecords() {
   // Notes CRUD ===========================================
   const sortedNotes = useMemo(() => [...notes].sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
 
+  // openNew: ID не генерим заранее — при сохранении сервер выдаст canonical id.
+  // Используем sentinel '' для распознавания «новая vs existing».
   const openNew = () => {
-    setEditingNote({ id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, body: '', updatedAt: Date.now() });
+    setEditingNote({ id: '', body: '', updatedAt: Date.now() });
     setDraftBody('');
   };
   const openExisting = (n: Note) => {
     setEditingNote(n);
     setDraftBody(n.body);
   };
-  const saveNote = () => {
-    if (!editingNote) return;
+  const saveNote = async () => {
+    if (!editingNote || savingNote) return;
     const trimmed = draftBody.replace(/\s+$/g, '');
     if (!trimmed.trim()) {
-      // empty → если открывали существующую, оставляем без изменений; для новой — просто закрываем
       setEditingNote(null);
       return;
     }
-    setNotes((prev) => {
-      const exists = prev.some((p) => p.id === editingNote.id);
-      const next: Note = { id: editingNote.id, body: trimmed, updatedAt: Date.now() };
-      const updated = exists ? prev.map((p) => p.id === editingNote.id ? next : p) : [...prev, next];
-      writeNotes(updated);
-      return updated;
-    });
-    setEditingNote(null);
+    setSavingNote(true);
+    try {
+      if (!editingNote.id) {
+        // POST /notes
+        const r = await fetch(resolveApiUrl('/notes'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: trimmed }),
+        });
+        if (!r.ok) throw new Error(`create_failed_${r.status}`);
+        const data: { id: string; body: string; updatedAt: string } = await r.json();
+        setNotes((prev) => [{ id: data.id, body: data.body, updatedAt: new Date(data.updatedAt).getTime() }, ...prev]);
+      } else {
+        // PATCH /notes/:id
+        const r = await fetch(resolveApiUrl(`/notes/${editingNote.id}`), {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: trimmed }),
+        });
+        if (!r.ok) throw new Error(`update_failed_${r.status}`);
+        const data: { id: string; body: string; updatedAt: string } = await r.json();
+        setNotes((prev) => prev.map((p) =>
+          p.id === data.id ? { id: data.id, body: data.body, updatedAt: new Date(data.updatedAt).getTime() } : p,
+        ));
+      }
+      setEditingNote(null);
+    } catch {
+      // Не закрываем модалку при ошибке — юзер видит текст и может retry.
+      // showToast'а тут нет (MyRecords не имеет его), используем alert-fallback.
+      // eslint-disable-next-line no-alert
+      alert('Не удалось сохранить заметку. Проверьте соединение.');
+    } finally {
+      setSavingNote(false);
+    }
   };
-  const deleteNote = (id: string) => {
-    setNotes((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      writeNotes(next);
-      return next;
-    });
+  const deleteNote = async (id: string) => {
+    // Optimistic delete с rollback при ошибке.
+    const before = notes;
+    setNotes((prev) => prev.filter((p) => p.id !== id));
     if (editingNote?.id === id) setEditingNote(null);
+    try {
+      const r = await fetch(resolveApiUrl(`/notes/${id}`), {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (!r.ok) throw new Error(`delete_failed_${r.status}`);
+    } catch {
+      setNotes(before);
+      // eslint-disable-next-line no-alert
+      alert('Не удалось удалить заметку. Проверьте соединение.');
+    }
   };
   const formatNoteDate = (ts: number) => {
     const d = new Date(ts);
@@ -342,12 +388,22 @@ export default function MyRecords() {
             Новая заметка
           </button>
 
-          {notes.length === 0 ? (
+          {notesLoading && notes.length === 0 ? (
+            <div className="mt-5 space-y-3">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-4 space-y-2">
+                  <Skeleton height={15} width="60%" />
+                  <Skeleton height={11} width="90%" />
+                  <Skeleton height={10} width="40%" />
+                </div>
+              ))}
+            </div>
+          ) : notes.length === 0 ? (
             <div className="mt-6 rounded-3xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-8 text-center">
               <NotebookPen className="w-9 h-9 mx-auto text-[#4ec9c0]/60" strokeWidth={1.4} />
               <p className="mt-3 text-[#d8f0ee]/75">Здесь будут ваши заметки.</p>
               <p className="mt-1 text-[12px] text-[#7aa8a4]">
-                Записывайте мысли, имена, контакты — всё сохраняется локально и переживает выход из приложения.
+                Записывайте мысли, имена, контакты — синхронизируются с сервером и видны на любом вашем устройстве.
               </p>
             </div>
           ) : (
@@ -415,7 +471,7 @@ export default function MyRecords() {
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-[#4ec9c0]/22">
               <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">
-                {notes.some((p) => p.id === editingNote.id) ? 'Заметка' : 'Новая заметка'}
+                {editingNote.id ? 'Заметка' : 'Новая заметка'}
               </h2>
               <button
                 type="button"
@@ -437,7 +493,9 @@ export default function MyRecords() {
               className="px-5 pt-3 border-t border-[#4ec9c0]/22"
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)' }}
             >
-              <Button onClick={saveNote}>Сохранить</Button>
+              <Button onClick={saveNote} disabled={savingNote}>
+                {savingNote ? 'Сохранение…' : 'Сохранить'}
+              </Button>
             </div>
           </motion.div>
         )}

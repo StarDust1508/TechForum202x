@@ -140,6 +140,18 @@ html, body, #root {
   ~мгновенных. Это нужно и для accessibility, и для тех, у кого реально
   кружится голова от плавающих переходов.
 */
+/* Подсветка сообщения после прыжка по reply-quote.
+   1.2s soft-pulse через outline (не затрагивает layout). */
+@keyframes dmMsgFlash {
+  0%   { outline: 2px solid rgba(78, 201, 192, 0.0); outline-offset: 2px; }
+  20%  { outline: 2px solid rgba(78, 201, 192, 0.85); outline-offset: 2px; }
+  100% { outline: 2px solid rgba(78, 201, 192, 0.0); outline-offset: 2px; }
+}
+.dm-msg-flash {
+  animation: dmMsgFlash 1.2s ease-out;
+  border-radius: 18px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

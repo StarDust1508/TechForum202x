@@ -277,6 +277,12 @@ export const directMessages = pgTable(
     text: text('text').notNull().default(''),
     mediaUrl: text('media_url'),
     mediaType: text('media_type'),
+    // Reply: ссылка на оригинал. ON DELETE SET NULL — если оригинал удалили,
+    // цитата сохраняется (UI рисует "[удалено]"). self-FK добавлен в SQL
+    // миграции 0006 (drizzle.kit не любит self-references на сгенерации).
+    replyToId: text('reply_to_id'),
+    // Forward: ссылка на оригинального автора. ON DELETE SET NULL.
+    forwardedFromUserId: text('forwarded_from_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     readAt: timestamp('read_at', { withTimezone: true }),
   },
@@ -284,6 +290,51 @@ export const directMessages = pgTable(
     fromIdx: index('dm_from_idx').on(t.fromUserId),
     toIdx: index('dm_to_idx').on(t.toUserId),
     createdAtIdx: index('dm_created_at_idx').on(t.createdAt),
+    replyToIdx: index('dm_reply_to_idx').on(t.replyToId),
+  }),
+);
+
+// ============================================================================
+// DM PINS (закреплённые сообщения в диалогах)
+// ============================================================================
+// Pin — per-user, per-dialog. То есть «я закрепил» — видно только мне.
+// Это компромисс между «закрепить только себе» (LocalStorage был именно
+// таким) и «закрепить обоим» (требует прав на чужой mailbox). Сейчас:
+// сохраняется на сервере → переживает переустановку, sync между устройствами
+// одного юзера. Один pinned per (user, partnerUserId).
+export const dmPins = pgTable(
+  'dm_pins',
+  {
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // partnerUserId — собеседник в диалоге, контекст pin'а. Пара (userId,
+    // partnerUserId) однозначно идентифицирует диалог в нашей 1-к-1 модели.
+    partnerUserId: text('partner_user_id').notNull(),
+    messageId: text('message_id').notNull().references(() => directMessages.id, { onDelete: 'cascade' }),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.partnerUserId] }),
+    msgIdx: index('dm_pins_message_idx').on(t.messageId),
+  }),
+);
+
+// ============================================================================
+// NOTES (личные заметки в MyRecords → 3-я вкладка)
+// ============================================================================
+// Простой персональный текстовый блокнот. Один юзер = одна стопка заметок.
+// title не отдельный — берётся из первой непустой строки body (UI-конвенция).
+export const notes = pgTable(
+  'notes',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    body: text('body').notNull().default(''),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('notes_user_idx').on(t.userId),
+    updatedAtIdx: index('notes_updated_at_idx').on(t.updatedAt),
   }),
 );
 

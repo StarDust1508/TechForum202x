@@ -53,6 +53,7 @@ import {
   forgotPasswordStartSchema,
   forgotPasswordVerifySchema,
   dmSendSchema,
+  noteUpsertSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
 
@@ -114,7 +115,7 @@ const { db, pool } = dbModule;
 const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
-  sessionsEvent, userInterests, passwordResetTokens, directMessages,
+  sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -1440,7 +1441,7 @@ async function startServer(): Promise<void> {
 
   api.post('/messages', requireAuth, writeRateLimit, validateBody(dmSendSchema), async (req, res) => {
     const fromUserId = getSessionUserId(req)!;
-    const { toUserId, text, mediaUrl, mediaType } = req.body as import('./src/lib/validation.js').DmSendBody;
+    const { toUserId, text, mediaUrl, mediaType, replyToId, forwardedFromUserId } = req.body as import('./src/lib/validation.js').DmSendBody;
 
     if (toUserId === fromUserId) {
       res.status(400).json({ error: 'cannot_message_self' });
@@ -1457,6 +1458,37 @@ async function startServer(): Promise<void> {
       return;
     }
 
+    // Reply: оригинал должен существовать И принадлежать ЭТОМУ диалогу
+    // (между fromUserId↔toUserId в любую сторону). Защита от leak'а — нельзя
+    // «ответить» на чужое сообщение из чужой переписки.
+    if (replyToId) {
+      const orig = (await db.select().from(directMessages)
+        .where(eq(directMessages.id, replyToId)).limit(1))[0];
+      if (!orig) {
+        res.status(404).json({ error: 'reply_target_not_found' });
+        return;
+      }
+      const sameDialog =
+        (orig.fromUserId === fromUserId && orig.toUserId === toUserId) ||
+        (orig.fromUserId === toUserId && orig.toUserId === fromUserId);
+      if (!sameDialog) {
+        res.status(403).json({ error: 'reply_target_other_dialog' });
+        return;
+      }
+    }
+
+    // Forward: автор оригинала должен существовать (или null если уже удалён —
+    // тогда фронт пришлёт без поля). Никаких extra-checks — forward допускает
+    // переслать что угодно куда угодно.
+    if (forwardedFromUserId) {
+      const author = await findUserById(forwardedFromUserId);
+      if (!author) {
+        // Не блокируем — просто игнорируем атрибуцию (юзер удалён).
+        // Альтернатива — 404, но это сломает UX когда оригинальный автор
+        // удалил аккаунт.
+      }
+    }
+
     const id = crypto.randomUUID();
     // Storing CANONICAL relUrl без query. signMediaUrl вешает sig только
     // на emit. Иначе — двойное подписание → 401.
@@ -1465,6 +1497,8 @@ async function startServer(): Promise<void> {
       text: text || '',
       mediaUrl: stripMediaQuery(mediaUrl ?? null),
       mediaType: mediaType ?? null,
+      replyToId: replyToId ?? null,
+      forwardedFromUserId: forwardedFromUserId ?? null,
     });
     const inserted = (await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1))[0];
     if (!inserted) {
@@ -1478,6 +1512,8 @@ async function startServer(): Promise<void> {
       text: inserted.text,
       mediaUrl: inserted.mediaUrl ? signMediaUrl(inserted.mediaUrl) : null,
       mediaType: inserted.mediaType,
+      replyToId: inserted.replyToId,
+      forwardedFromUserId: inserted.forwardedFromUserId,
       createdAt: inserted.createdAt,
       readAt: inserted.readAt,
     });
@@ -1715,9 +1751,156 @@ async function startServer(): Promise<void> {
       text: m.text,
       mediaUrl: m.mediaUrl ? signMediaUrl(m.mediaUrl) : null,
       mediaType: m.mediaType,
+      replyToId: m.replyToId,
+      forwardedFromUserId: m.forwardedFromUserId,
       createdAt: m.createdAt,
       readAt: m.readAt,
     })));
+  });
+
+  // ========================================================================
+  // DM PINS — закреплённые сообщения (per-user, per-dialog)
+  // ========================================================================
+  // GET /messages/pins/:partnerUserId — id закреплённого, или null
+  // PUT /messages/pins/:partnerUserId { messageId } — закрепить
+  // DELETE /messages/pins/:partnerUserId — открепить
+  api.get('/messages/pins/:partnerUserId', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const partnerUserId = String(req.params.partnerUserId);
+    const row = (await db.select().from(dmPins)
+      .where(and(eq(dmPins.userId, me), eq(dmPins.partnerUserId, partnerUserId)))
+      .limit(1))[0];
+    res.json({ messageId: row?.messageId ?? null });
+  });
+
+  api.put('/messages/pins/:partnerUserId', requireAuth, writeRateLimit, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const partnerUserId = String(req.params.partnerUserId);
+    const messageId = String((req.body as { messageId?: unknown })?.messageId ?? '').trim();
+    if (!messageId) {
+      res.status(400).json({ error: 'messageId_required' });
+      return;
+    }
+    // Проверяем что сообщение существует и относится к этому диалогу.
+    const msg = (await db.select().from(directMessages)
+      .where(eq(directMessages.id, messageId)).limit(1))[0];
+    if (!msg) {
+      res.status(404).json({ error: 'message_not_found' });
+      return;
+    }
+    const inDialog =
+      (msg.fromUserId === me && msg.toUserId === partnerUserId) ||
+      (msg.fromUserId === partnerUserId && msg.toUserId === me);
+    if (!inDialog) {
+      res.status(403).json({ error: 'message_other_dialog' });
+      return;
+    }
+    // upsert по PK (userId, partnerUserId).
+    await db.insert(dmPins)
+      .values({ userId: me, partnerUserId, messageId })
+      .onConflictDoUpdate({
+        target: [dmPins.userId, dmPins.partnerUserId],
+        set: { messageId, pinnedAt: new Date() },
+      });
+    res.json({ messageId });
+  });
+
+  api.delete('/messages/pins/:partnerUserId', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const partnerUserId = String(req.params.partnerUserId);
+    await db.delete(dmPins)
+      .where(and(eq(dmPins.userId, me), eq(dmPins.partnerUserId, partnerUserId)));
+    res.json({ ok: true });
+  });
+
+  // ========================================================================
+  // NOTES — личные заметки в MyRecords (3-я вкладка)
+  // ========================================================================
+  // GET /notes — все мои заметки, отсортированные по updatedAt desc
+  // POST /notes { body } — создать новую
+  // PATCH /notes/:id { body } — обновить (только свою; пустой body = no-op)
+  // DELETE /notes/:id — удалить (только свою)
+  api.get('/notes', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const rows = await db.select().from(notes)
+      .where(eq(notes.userId, me))
+      .orderBy(desc(notes.updatedAt))
+      .limit(500);
+    res.json(rows.map((n) => ({
+      id: n.id,
+      body: n.body,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+    })));
+  });
+
+  api.post('/notes', requireAuth, writeRateLimit, validateBody(noteUpsertSchema), async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const { body } = req.body as import('./src/lib/validation.js').NoteUpsertBody;
+    const trimmed = body.replace(/\s+$/g, '');
+    if (!trimmed.trim()) {
+      res.status(400).json({ error: 'empty_body' });
+      return;
+    }
+    // Cap на количество заметок per-user — защита от спама.
+    const count = (await db.select({ id: notes.id }).from(notes).where(eq(notes.userId, me))).length;
+    if (count >= 500) {
+      res.status(429).json({ error: 'too_many_notes' });
+      return;
+    }
+    const id = crypto.randomUUID();
+    await db.insert(notes).values({ id, userId: me, body: trimmed });
+    const inserted = (await db.select().from(notes).where(eq(notes.id, id)).limit(1))[0];
+    res.json({
+      id: inserted.id,
+      body: inserted.body,
+      createdAt: inserted.createdAt,
+      updatedAt: inserted.updatedAt,
+    });
+  });
+
+  api.patch('/notes/:id', requireAuth, writeRateLimit, validateBody(noteUpsertSchema), async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id);
+    const { body } = req.body as import('./src/lib/validation.js').NoteUpsertBody;
+    const trimmed = body.replace(/\s+$/g, '');
+    const row = (await db.select().from(notes).where(eq(notes.id, id)).limit(1))[0];
+    if (!row) {
+      res.status(404).json({ error: 'note_not_found' });
+      return;
+    }
+    if (row.userId !== me) {
+      res.status(403).json({ error: 'not_your_note' });
+      return;
+    }
+    if (!trimmed.trim()) {
+      res.status(400).json({ error: 'empty_body' });
+      return;
+    }
+    await db.update(notes).set({ body: trimmed, updatedAt: new Date() }).where(eq(notes.id, id));
+    const updated = (await db.select().from(notes).where(eq(notes.id, id)).limit(1))[0];
+    res.json({
+      id: updated.id,
+      body: updated.body,
+      createdAt: updated.createdAt,
+      updatedAt: updated.updatedAt,
+    });
+  });
+
+  api.delete('/notes/:id', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id);
+    const row = (await db.select().from(notes).where(eq(notes.id, id)).limit(1))[0];
+    if (!row) {
+      res.status(404).json({ error: 'note_not_found' });
+      return;
+    }
+    if (row.userId !== me) {
+      res.status(403).json({ error: 'not_your_note' });
+      return;
+    }
+    await db.delete(notes).where(eq(notes.id, id));
+    res.json({ ok: true });
   });
 
   // GET /messages/contacts — список собеседников с last-message + unread.
