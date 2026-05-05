@@ -1,7 +1,8 @@
-/* Шрифты подключены через <link rel="stylesheet"> в index.html (с preconnect
-   на fonts.gstatic.com), чтобы не блокировать первый рендер @import-ом
-   и иметь parallel-resolve. Раньше было @import — на cold-start без кэша
-   WebView ждал DNS+TLS до Google → виден FOUT с серифным fallback. */
+/* Шрифты — self-hosted из public/fonts/. Локальные .woff2 от Google Fonts
+   (cyrillic + latin subsets) живут в APK и грузятся БЕЗ сети — на cold-start
+   без интернета (Capacitor WebView без cache) текст сразу в нужной типографике,
+   без FOUT и без обращения к fonts.googleapis.com. */
+@import url('/fonts/local-fonts.css');
 @import "tailwindcss";
 
 /*

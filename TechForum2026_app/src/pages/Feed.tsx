@@ -1,5 +1,6 @@
 import { Clock, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { NEWS, getSpeakerById } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
 
@@ -7,10 +8,19 @@ export default function Feed() {
   return (
     <PageShell kicker="Новости форума" title="Лента" subtitle={`${NEWS.length} материалов от спикеров`}>
       <ul className="space-y-3">
-        {NEWS.map((news) => {
+        {NEWS.map((news, idx) => {
           const speaker = news.speakerId ? getSpeakerById(news.speakerId) : undefined;
           return (
-            <li key={news.id}>
+            <motion.li
+              key={news.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: 0.32,
+                ease: [0.32, 0.72, 0, 1],
+                delay: Math.min(idx * 0.04, 0.4),
+              }}
+            >
               <Link
                 to={`/news/${news.id}`}
                 className="block rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 hover:border-[#4ec9c0]/55 hover:bg-[#0a2f38]/55 active:scale-[0.99] transition-all p-5"
@@ -58,7 +68,7 @@ export default function Feed() {
                   <ChevronRight className="w-5 h-5 text-[#4ec9c0]/40 flex-shrink-0 mt-2" strokeWidth={1.6} />
                 </div>
               </Link>
-            </li>
+            </motion.li>
           );
         })}
       </ul>

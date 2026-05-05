@@ -1,4 +1,5 @@
 import { Building2, ExternalLink, Globe2 } from 'lucide-react';
+import { motion } from 'motion/react';
 import PageShell from '@/src/components/ui/PageShell';
 import { PARTNERS } from '../data';
 
@@ -33,12 +34,19 @@ export default function Partners() {
       subtitle={`${sorted.length} компаний поддерживают форум в этом году`}
     >
       <div className="space-y-3">
-        {sorted.map((partner) => (
-          <a
+        {sorted.map((partner, idx) => (
+          <motion.a
             key={partner.id}
             href={partner.url}
             target="_blank"
             rel="noopener noreferrer"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.32,
+              ease: [0.32, 0.72, 0, 1],
+              delay: Math.min(idx * 0.04, 0.4),
+            }}
             className="block rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 hover:border-[#4ec9c0]/55 active:scale-[0.99] transition-all"
           >
             <div className="flex items-start justify-between gap-4">
@@ -60,7 +68,7 @@ export default function Partners() {
               <Globe2 className="w-3.5 h-3.5" />
               {cleanHost(partner.url)}
             </div>
-          </a>
+          </motion.a>
         ))}
       </div>
     </PageShell>

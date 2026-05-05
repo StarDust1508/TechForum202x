@@ -204,7 +204,7 @@ export default function Schedule() {
 
       <div className="space-y-5 mt-6">
         <div>
-          {filteredSessions.map((session) => {
+          {filteredSessions.map((session, idx) => {
             const track = getTrackById(session.trackId);
             const trackColor = track?.color ?? '#4ec9c0';
             const isRegistered = registeredIds.includes(session.id);
@@ -215,8 +215,15 @@ export default function Schedule() {
               : null;
 
             return (
-              <div
+              <motion.div
                 key={session.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.32,
+                  ease: [0.32, 0.72, 0, 1],
+                  delay: Math.min(idx * 0.035, 0.4),
+                }}
                 className={cn(
                   'mb-5 backdrop-blur-xl p-6 rounded-3xl space-y-5 group relative overflow-hidden transition-all',
                   isCommonFormat
@@ -307,7 +314,7 @@ export default function Schedule() {
                     </button>
                   )}
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>

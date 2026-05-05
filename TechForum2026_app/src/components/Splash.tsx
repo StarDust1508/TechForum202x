@@ -14,13 +14,15 @@ import EventBadge from './ui/EventBadge';
 // «у эталона splash статичный, без анимации» — здесь то же самое.
 export default function Splash() {
   return (
+    // Без backgroundColor — blueprint AppBackground виден сзади до того как
+    // hero JPG догрузится из dist (на cold-start без кэша WebView). После
+    // загрузки hero перекрывает blueprint через absolute inset-0.
     <div
       className="relative flex flex-col items-center justify-center px-6 overflow-hidden"
       style={{
         minHeight: '100lvh',
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
-        backgroundColor: '#03161c',
       }}
     >
       {/* Hero — та же картинка что в нативном splash (drawable/splash.png).

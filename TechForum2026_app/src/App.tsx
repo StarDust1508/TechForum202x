@@ -99,11 +99,12 @@ function AppContent() {
       } catch { /* web env */ }
       try {
         const { SplashScreen } = await import('@capacitor/splash-screen');
-        // 80ms — даём Web рендеру дорисовать первый кадр поверх native splash.
-        // fadeOutDuration:200 → плавный кросс-фейд.
-        setTimeout(() => {
-          SplashScreen.hide({ fadeOutDuration: 200 }).catch(() => {});
-        }, 80);
+        // Ждём 2× requestAnimationFrame, чтобы Web Splash гарантированно
+        // отрисовался поверх native (тот же hero JPG → cross-fade невидим).
+        // Раньше был setTimeout(80) — на медленных устройствах между native
+        // hide и Web Splash mount был чёрный gap.
+        const hide = () => SplashScreen.hide({ fadeOutDuration: 200 }).catch(() => {});
+        requestAnimationFrame(() => requestAnimationFrame(hide));
       } catch { /* web env */ }
     })();
   }, []);
@@ -246,20 +247,24 @@ function AppContent() {
     //
     // Outer-div теперь просто wrapper без всяких overflow / flex-col.
     // Padding безопасный area inset top/bottom — на самом контенте, не на wrapper.
-    <div className="bg-[#03161c] relative">
+    // AppBackground оборачивает ВСЁ — blueprint-bg.svg всегда виден сзади
+    // (`position: fixed` внутри AppBackground). Splash рисует свой hero
+    // поверх через absolute inset-0; при exit-fade splash blueprint остаётся
+    // на месте, app/auth fade-in ПОВЕРХ ТОГО ЖЕ blueprint. Это и есть
+    // бесшовный переход native-splash → web-splash → app — без замены фона.
+    <AppBackground className="bg-[#03161c]">
       <OfflineBanner />
       <main
-        className="w-full bg-[#03161c] relative z-10"
+        className="w-full relative z-10"
         style={{
           paddingTop: 'env(safe-area-inset-top, 0)',
           paddingBottom: 'env(safe-area-inset-bottom, 0)',
         }}
       >
-        {/* Один root-AnimatePresence для splash/auth/onboarding/app — единый
-            пресет fade 0.22с, без пёстрого зоопарка длительностей. */}
+        {/* Root AnimatePresence — единый fade 0.22с между splash/auth/onboarding/app. */}
         <AnimatePresence mode="wait">
           {loading ? (
-            <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}>
+            <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}>
               <Splash />
             </motion.div>
           ) : !user ? (
@@ -271,48 +276,46 @@ function AppContent() {
               <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
             </motion.div>
           ) : (
-            <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.18 }}>
-              <AppBackground>
-                {/* Внутренний AnimatePresence по location.pathname — единая
-                    slide-fade анимация на каждой смене route. Раньше Routes
-                    сидел внутри одного motion.div и переходов между Home↔
-                    Schedule↔Speakers не было вовсе. */}
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={location.pathname}
-                    initial={{ opacity: 0, x: 8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -8 }}
-                    transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-                  >
-                    <Routes location={location}>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/feed" element={<Feed />} />
-                      <Route path="/news/:id" element={<NewsDetail />} />
-                      <Route path="/schedule" element={<Schedule />} />
-                      <Route path="/speakers" element={<Speakers />} />
-                      <Route path="/speakers/:id" element={<SpeakerDetail />} />
-                      <Route path="/map" element={<Map />} />
-                      <Route path="/chat" element={<Chat />} />
-                      <Route path="/chat/:userId" element={<Chat />} />
-                      <Route path="/users/:userId" element={<UserProfile />} />
-                      <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
-                      <Route path="/ticket" element={<Ticket />} />
-                      <Route path="/giveaways" element={<Giveaways />} />
-                      <Route path="/partners" element={<Partners />} />
-                      <Route path="/diagnostics" element={<Diagnostics />} />
-                      <Route path="/about" element={<About />} />
-                      <Route path="/my-records" element={<MyRecords />} />
-                      <Route path="*" element={<Navigate to="/" />} />
-                    </Routes>
-                  </motion.div>
-                </AnimatePresence>
-              </AppBackground>
+            <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
+              {/* Внутренний AnimatePresence по location.pathname — единая
+                  slide-fade анимация на каждой смене route. Раньше Routes
+                  сидел внутри одного motion.div и переходов между Home↔
+                  Schedule↔Speakers не было вовсе. */}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={location.pathname}
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <Routes location={location}>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/feed" element={<Feed />} />
+                    <Route path="/news/:id" element={<NewsDetail />} />
+                    <Route path="/schedule" element={<Schedule />} />
+                    <Route path="/speakers" element={<Speakers />} />
+                    <Route path="/speakers/:id" element={<SpeakerDetail />} />
+                    <Route path="/map" element={<Map />} />
+                    <Route path="/chat" element={<Chat />} />
+                    <Route path="/chat/:userId" element={<Chat />} />
+                    <Route path="/users/:userId" element={<UserProfile />} />
+                    <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
+                    <Route path="/ticket" element={<Ticket />} />
+                    <Route path="/giveaways" element={<Giveaways />} />
+                    <Route path="/partners" element={<Partners />} />
+                    <Route path="/diagnostics" element={<Diagnostics />} />
+                    <Route path="/about" element={<About />} />
+                    <Route path="/my-records" element={<MyRecords />} />
+                    <Route path="*" element={<Navigate to="/" />} />
+                  </Routes>
+                </motion.div>
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
       </main>
-    </div>
+    </AppBackground>
   );
 }
 
