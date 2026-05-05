@@ -250,8 +250,30 @@ function DmRoom({ userId }: { userId: string }) {
   const [lightbox, setLightbox] = useState<string | null>(null);
   // Сообщение, на которое нажали-удержали → показать context-menu.
   const [actionsFor, setActionsFor] = useState<ChatMessage | null>(null);
-  // Toast-у текст для feedback (Скопировано / Сохранено / etc).
+  // Toast-у текст для feedback.
   const [toast, setToast] = useState<string | null>(null);
+  // Reply: на какое сообщение отвечаем (chip над input).
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  // Edit: какое своё сообщение редактируем (input заполняется текстом).
+  const [editingMsg, setEditingMsg] = useState<ChatMessage | null>(null);
+  // Forward: какое сообщение форвардим, открывает модал-выбор контакта.
+  const [forwarding, setForwarding] = useState<ChatMessage | null>(null);
+  // Pin: id закреплённого сообщения в этом DM (per dmUserId, localStorage).
+  const PIN_LS_PREFIX = 'techforum_pinned_dm:';
+  const [pinnedId, setPinnedId] = useState<string | null>(() => {
+    try { return localStorage.getItem(PIN_LS_PREFIX + userId); } catch { return null; }
+  });
+  const setPinned = (id: string | null) => {
+    setPinnedId(id);
+    try {
+      if (id) localStorage.setItem(PIN_LS_PREFIX + userId, id);
+      else localStorage.removeItem(PIN_LS_PREFIX + userId);
+    } catch { /* noop */ }
+  };
+  const showToast = (text: string, ms = 1800) => {
+    setToast(text);
+    window.setTimeout(() => setToast(null), ms);
+  };
 
   // /auth/me для определения fromMe
   useEffect(() => {
@@ -406,8 +428,48 @@ function DmRoom({ userId }: { userId: string }) {
   const handleSend = async () => {
     const text = input.trim();
     if (!text) return;
+
+    // Edit-mode: PATCH /messages/:id вместо нового message.
+    if (editingMsg) {
+      const target = editingMsg;
+      setInput('');
+      setEditingMsg(null);
+      try {
+        const r = await fetch(resolveApiUrl(`/messages/${target.id}`), {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (r.ok) {
+          // Обновляем локально мгновенно — poll потом подтвердит.
+          setMessages((prev) => prev.map((m) =>
+            m.id === target.id ? { ...m, text } : m,
+          ));
+          showToast('Изменено');
+        } else {
+          const err = await r.json().catch(() => ({}));
+          showToast(err.error === 'too_old_to_edit' ? 'Сообщение слишком старое' : 'Не удалось изменить');
+          setInput(text); // вернуть текст в input для retry
+          setEditingMsg(target);
+        }
+      } catch {
+        showToast('Нет соединения');
+        setInput(text);
+        setEditingMsg(target);
+      }
+      return;
+    }
+
+    // Reply-mode: префикс «↳ first 60 chars» добавляется к тексту.
+    let finalText = text;
+    if (replyTo) {
+      const quote = (replyTo.text || (replyTo.mediaType ? `[${replyTo.mediaType}]` : '')).trim().slice(0, 80);
+      finalText = `↳ ${quote}\n${text}`;
+      setReplyTo(null);
+    }
     setInput('');
-    await sendMessage({ text });
+    await sendMessage({ text: finalText });
   };
 
   // ====== Media: file picker ======
@@ -716,6 +778,33 @@ function DmRoom({ userId }: { userId: string }) {
       {/* Spacer под fixed header. 56px = py-2*2 + 38px avatar height. */}
       <div style={{ paddingTop: '56px' }} />
 
+      {/* Pinned message bar (если есть закрепление в этом DM) */}
+      {pinnedId && (() => {
+        const pinned = messages.find((m) => m.id === pinnedId);
+        if (!pinned) return null;
+        return (
+          <div className="px-3 pt-2 pb-1">
+            <div className="flex items-center gap-2 rounded-xl border border-[#4ec9c0]/35 bg-[#0a2f38]/55 px-3 py-2">
+              <Pin className="w-3.5 h-3.5 text-[#4ec9c0]" strokeWidth={2} fill="currentColor" />
+              <div className="flex-1 min-w-0">
+                <p className="font-mono text-[9px] uppercase tracking-widest text-[#4ec9c0]/85">Закреплено</p>
+                <p className="text-[12px] text-[#d8f0ee] truncate">
+                  {pinned.text || (pinned.mediaType ? `[${pinned.mediaType}]` : '')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPinned(null)}
+                aria-label="Открепить"
+                className="h-7 w-7 flex items-center justify-center rounded-md text-[#7aa8a4] hover:text-[#d8f0ee] hover:bg-[#03161c]/40"
+              >
+                <XIcon className="w-3.5 h-3.5" strokeWidth={2} />
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="px-3 py-4 space-y-2" style={{ paddingBottom: '120px' }}>
         {messages.length === 0 && (
           <p className="text-center text-[12px] text-[#7aa8a4] py-8">
@@ -760,6 +849,34 @@ function DmRoom({ userId }: { userId: string }) {
         className="fixed left-0 right-0 bottom-0 z-30 bg-[#03161c] border-t border-[#4ec9c0]/22 px-3 py-2"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}
       >
+        {/* Reply / Edit chip (если активны) над input bar */}
+        {(replyTo || editingMsg) && (
+          <div className="mb-2 flex items-center gap-2 rounded-xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-3 py-2">
+            {editingMsg ? (
+              <Edit3 className="w-3.5 h-3.5 text-[#4ec9c0]" strokeWidth={2} />
+            ) : (
+              <Reply className="w-3.5 h-3.5 text-[#4ec9c0]" strokeWidth={2} />
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-mono text-[9px] uppercase tracking-widest text-[#4ec9c0]/85">
+                {editingMsg ? 'Редактирование' : 'Ответ'}
+              </p>
+              <p className="text-[12px] text-[#d8f0ee] truncate">
+                {(editingMsg || replyTo)?.text
+                 || ((editingMsg || replyTo)?.mediaType ? `[${(editingMsg || replyTo)?.mediaType}]` : '')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setReplyTo(null); if (editingMsg) { setEditingMsg(null); setInput(''); } }}
+              aria-label="Отменить"
+              className="h-7 w-7 flex items-center justify-center rounded-md text-[#7aa8a4] hover:text-[#d8f0ee] hover:bg-[#03161c]/40"
+            >
+              <XIcon className="w-3.5 h-3.5" strokeWidth={2} />
+            </button>
+          </div>
+        )}
+
         {recording ? (
           <div className="flex items-center gap-3 py-2 px-2">
             {recording === 'video' && (
@@ -877,12 +994,25 @@ function DmRoom({ userId }: { userId: string }) {
       {/* Message context menu (long-press) */}
       <MessageActions
         message={actionsFor}
+        isPinned={!!actionsFor && actionsFor.id === pinnedId}
         onClose={() => setActionsFor(null)}
-        onToast={(text) => { setToast(text); window.setTimeout(() => setToast(null), 1800); }}
+        onToast={showToast}
+        onReply={(m) => { setReplyTo(m); setEditingMsg(null); }}
+        onForward={(m) => setForwarding(m)}
+        onTogglePin={(m) => {
+          const next = pinnedId === m.id ? null : m.id;
+          setPinned(next);
+          showToast(next ? 'Закреплено' : 'Откреплено');
+        }}
+        onEdit={(m) => {
+          setEditingMsg(m);
+          setReplyTo(null);
+          setInput(m.text || '');
+        }}
         onDelete={async (m) => {
           if (m.id.startsWith('tmp_') || m.id.startsWith('up_')) {
-            // Optimistic ещё не подтверждён → удаляем только локально.
             setMessages((prev) => prev.filter((x) => x.id !== m.id));
+            if (pinnedId === m.id) setPinned(null);
             return true;
           }
           try {
@@ -891,9 +1021,18 @@ function DmRoom({ userId }: { userId: string }) {
             });
             if (!r.ok) return false;
             setMessages((prev) => prev.filter((x) => x.id !== m.id));
+            if (pinnedId === m.id) setPinned(null);
             return true;
           } catch { return false; }
         }}
+      />
+
+      {/* Forward — модал-выбор контакта для пересылки */}
+      <ForwardModal
+        message={forwarding}
+        onClose={() => setForwarding(null)}
+        onSent={() => { setForwarding(null); showToast('Переслано'); }}
+        onError={() => showToast('Не удалось переслать')}
       />
 
       {/* Toast */}
@@ -1200,13 +1339,23 @@ function ImageBubble({
 // ============================================================================
 function MessageActions({
   message,
+  isPinned,
   onClose,
   onToast,
+  onReply,
+  onForward,
+  onTogglePin,
+  onEdit,
   onDelete,
 }: {
   message: ChatMessage | null;
+  isPinned: boolean;
   onClose: () => void;
   onToast: (text: string) => void;
+  onReply: (m: ChatMessage) => void;
+  onForward: (m: ChatMessage) => void;
+  onTogglePin: (m: ChatMessage) => void;
+  onEdit: (m: ChatMessage) => void;
   onDelete: (m: ChatMessage) => Promise<boolean>;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -1234,15 +1383,53 @@ function MessageActions({
     close();
   };
 
+  // Real save-to-gallery через @capacitor/filesystem. Раньше был просто
+  // <a download> — в Capacitor WebView он часто открывается в браузере
+  // вместо скачивания, файл в галерею не попадал. Теперь скачиваем
+  // бинарь через fetch (CapacitorHttp с session cookie), декодируем
+  // в base64 и пишем в Directory.External (Pictures/TechForum).
+  // На web (vite dev) — fallback на <a download>.
   const handleSaveMedia = async () => {
     if (!m.mediaUrl) { close(); return; }
     const url = resolveAssetUrl(m.mediaUrl);
-    const ext = (m.mediaType === 'image' ? 'jpg' : m.mediaType === 'video' ? 'mp4' : 'webm');
+    const ext = m.mediaType === 'image' ? 'jpg' : m.mediaType === 'video' ? 'mp4' : 'webm';
     const filename = `techforum-${m.id.slice(0, 8)}.${ext}`;
+
+    const Capacitor: any = (window as any).Capacitor;
+    if (Capacitor?.isNativePlatform?.()) {
+      try {
+        const { Filesystem, Directory } = await import('@capacitor/filesystem');
+        // Качаем как arraybuffer (CapacitorHttp возвращает base64-строку
+        // в .data при responseType:'blob' — используем readAsDataURL через FileReader).
+        const r = await fetch(url, { credentials: 'include' });
+        if (!r.ok) throw new Error(`fetch_failed_${r.status}`);
+        // CapacitorHttp.fetch.blob() возвращает кривой blob — берём
+        // arrayBuffer + конвертим в base64 вручную.
+        const ab = await r.arrayBuffer();
+        const u8 = new Uint8Array(ab);
+        let binary = '';
+        const chunk = 0x8000;
+        for (let i = 0; i < u8.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, Array.from(u8.subarray(i, i + chunk)));
+        }
+        const base64 = btoa(binary);
+        // Пишем в External (на Android = /storage/emulated/0/Documents).
+        // Видимо в Files-app и сканируется галереей при перезапуске.
+        await Filesystem.writeFile({
+          path: `TechForum/${filename}`,
+          data: base64,
+          directory: Directory.External,
+          recursive: true,
+        });
+        onToast('Сохранено в Documents/TechForum');
+      } catch (err) {
+        onToast(`Не удалось сохранить: ${(err as Error).message || 'ошибка'}`);
+      }
+      close();
+      return;
+    }
+    // Web fallback.
     try {
-      // Сначала пробуем download через <a> — на Android Capacitor WebView
-      // делегирует в DownloadManager → файл идёт в Downloads/Pictures/etc.
-      // Качество и звук сохраняются, потому что копируется бинарь как есть.
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
@@ -1258,15 +1445,13 @@ function MessageActions({
     close();
   };
 
-  const stub = (label: string) => () => { onToast(`${label} — скоро`); close(); };
-
-  const items: Array<{ icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; onClick: () => void; danger?: boolean; mediaOnly?: boolean }> = [
-    { icon: Reply, label: 'Ответить', onClick: stub('Ответ') },
+  const items: Array<{ icon: React.ComponentType<{ className?: string; strokeWidth?: number }>; label: string; onClick: () => void; danger?: boolean }> = [
+    { icon: Reply, label: 'Ответить', onClick: () => { onReply(m); close(); } },
     { icon: Copy, label: 'Копировать', onClick: handleCopy },
-    { icon: Forward, label: 'Переслать', onClick: stub('Пересылка') },
-    { icon: Pin, label: 'Закрепить', onClick: stub('Закрепление') },
-    ...(m.fromMe ? [{ icon: Edit3, label: 'Изменить', onClick: stub('Редактирование') }] : []),
-    ...(hasMedia ? [{ icon: DownloadIcon, label: 'Сохранить в галерею', onClick: handleSaveMedia, mediaOnly: true }] : []),
+    { icon: Forward, label: 'Переслать', onClick: () => { onForward(m); close(); } },
+    { icon: Pin, label: isPinned ? 'Открепить' : 'Закрепить', onClick: () => { onTogglePin(m); close(); } },
+    ...(m.fromMe && !m.mediaUrl ? [{ icon: Edit3, label: 'Изменить', onClick: () => { onEdit(m); close(); } }] : []),
+    ...(hasMedia ? [{ icon: DownloadIcon, label: 'Сохранить в галерею', onClick: handleSaveMedia }] : []),
     ...(m.fromMe ? [{ icon: Trash2, label: 'Удалить', onClick: () => setConfirming(true), danger: true }] : []),
   ];
 
@@ -1339,6 +1524,158 @@ function MessageActions({
               ))}
             </ul>
           )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+// ============================================================================
+// FORWARD MODAL — список контактов, тап → отправляет копию исходного
+// сообщения (text + mediaUrl) выбранному контакту через POST /messages.
+// ============================================================================
+function ForwardModal({
+  message,
+  onClose,
+  onSent,
+  onError,
+}: {
+  message: ChatMessage | null;
+  onClose: () => void;
+  onSent: () => void;
+  onError: () => void;
+}) {
+  const navigate = useNavigate();
+  const [contacts, setContacts] = useState<Array<{ userId: string; name: string; role: string; avatar: string | null }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchQ, setSearchQ] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!message) return;
+    setLoading(true);
+    void (async () => {
+      try {
+        const r = await fetch(resolveApiUrl('/messages/contacts'), { credentials: 'include' });
+        if (r.ok) {
+          const data: Array<{ userId: string; user: { name: string; role: string; avatar: string } | null }> = await r.json();
+          setContacts(data.filter((c) => c.user).map((c) => ({
+            userId: c.userId,
+            name: c.user!.name,
+            role: c.user!.role || 'Участник',
+            avatar: c.user!.avatar,
+          })));
+        }
+      } catch { /* offline */ } finally {
+        setLoading(false);
+      }
+    })();
+  }, [message]);
+
+  const filtered = contacts.filter((c) =>
+    !searchQ.trim() || c.name.toLowerCase().includes(searchQ.trim().toLowerCase()),
+  );
+
+  if (!message) return null;
+  const m = message;
+  const mediaForward = m.mediaUrl && !m.mediaUrl.startsWith('blob:') ? m.mediaUrl : undefined;
+
+  const sendTo = async (toUserId: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(resolveApiUrl('/messages'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toUserId,
+          text: m.text || '',
+          mediaUrl: mediaForward ? mediaForward.split('?')[0] : undefined,
+          mediaType: m.mediaType ?? undefined,
+        }),
+      });
+      if (!r.ok) { onError(); return; }
+      onSent();
+      // Если форвардим текущему — остаёмся, иначе переходим в новый DM.
+      navigate(`/chat/${toUserId}`);
+    } catch { onError(); } finally { setBusy(false); }
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="forward-bd"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[80] bg-black/65 backdrop-blur-sm flex items-end justify-center"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ y: 30, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 30, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+          className="w-full max-w-[440px] mx-3 mb-3 rounded-2xl border border-[#4ec9c0]/35 bg-[#03161c]/95 backdrop-blur-md shadow-[0_18px_60px_rgba(0,0,0,0.55)] flex flex-col overflow-hidden"
+          style={{
+            marginBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
+            maxHeight: '70vh',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[#4ec9c0]/22">
+            <h3 className="font-display-cyrl text-[16px] font-semibold text-[#d8f0ee]">Переслать</h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть"
+              className="h-8 w-8 rounded-[10px] flex items-center justify-center text-[#7aa8a4] hover:bg-[#0a2f38]/55"
+            >
+              <XIcon className="w-4 h-4" strokeWidth={1.8} />
+            </button>
+          </div>
+
+          <div className="px-3 pt-3 pb-2">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#7aa8a4]" strokeWidth={1.6} />
+              <input
+                type="text"
+                value={searchQ}
+                onChange={(e) => setSearchQ(e.target.value)}
+                placeholder="Поиск контакта"
+                className="w-full bg-[#0a2f38]/55 border border-[#4ec9c0]/30 rounded-xl pl-10 pr-3 py-2.5 text-[13px] text-[#d8f0ee] placeholder:text-[#7aa8a4]/65 outline-none focus:border-[#4ec9c0]/60 font-ui"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-3 pb-3">
+            {loading ? (
+              <p className="text-center text-[12px] text-[#7aa8a4] py-6">Загрузка…</p>
+            ) : filtered.length === 0 ? (
+              <p className="text-center text-[12px] text-[#7aa8a4] py-6">Нет контактов</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {filtered.map((c) => (
+                  <li key={c.userId}>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => sendTo(c.userId)}
+                      className="w-full flex items-center gap-3 p-2.5 rounded-xl border border-[#4ec9c0]/15 hover:border-[#4ec9c0]/40 hover:bg-[#0a2f38]/55 active:scale-[0.99] transition-all text-left disabled:opacity-50"
+                    >
+                      <Avatar name={c.name} src={c.avatar} size={36} />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-ui font-semibold text-[13px] text-[#d8f0ee] truncate">{c.name}</p>
+                        <p className="text-[11px] text-[#7aa8a4] truncate">{c.role}</p>
+                      </div>
+                      <Forward className="w-4 h-4 text-[#4ec9c0]/65" strokeWidth={1.6} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>

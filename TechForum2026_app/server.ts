@@ -1650,6 +1650,40 @@ async function startServer(): Promise<void> {
     res.json({ ok: true });
   });
 
+  // PATCH /messages/:id — редактирование своего сообщения (только text).
+  // Media не трогаем (если был — оставляем как есть). 24h soft-limit чтобы
+  // не редактировать древние сообщения.
+  api.patch('/messages/:id', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id || '');
+    if (!id || id.length < 8) {
+      res.status(400).json({ error: 'invalid_id' });
+      return;
+    }
+    const newText = String((req.body as { text?: string })?.text || '');
+    if (newText.length > 4000) {
+      res.status(400).json({ error: 'text_too_long' });
+      return;
+    }
+    const rows = await db.select().from(directMessages).where(eq(directMessages.id, id)).limit(1);
+    const dm = rows[0];
+    if (!dm) {
+      res.status(404).json({ error: 'message_not_found' });
+      return;
+    }
+    if (dm.fromUserId !== me) {
+      res.status(403).json({ error: 'not_sender' });
+      return;
+    }
+    const ageMs = Date.now() - new Date(dm.createdAt).getTime();
+    if (ageMs > 24 * 60 * 60 * 1000) {
+      res.status(403).json({ error: 'too_old_to_edit' });
+      return;
+    }
+    await db.update(directMessages).set({ text: newText }).where(eq(directMessages.id, id));
+    res.json({ ok: true, text: newText });
+  });
+
   // GET /messages/with/:userId — последние 100 сообщений диалога с :userId.
   // Также помечает входящие как прочитанные (UPDATE read_at = now()).
   api.get('/messages/with/:userId', requireAuth, async (req, res) => {

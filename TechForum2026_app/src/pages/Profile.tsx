@@ -180,19 +180,28 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
   // HUD-аватар: октагональная рамка. AvatarImage primitive ставит инициал
   // как fallback при ошибке загрузки или отсутствии src — единая логика
   // с Chat-списком и других местах.
-  // Аватар внутри HUD-octagon: фото заполняет ВСЮ октагональную форму,
-  // обрезано clip-path'ом по внутреннему контуру HudFrame. Раньше внутри
-  // был круг 64% от размера — фото казалось маленьким. Теперь фото
-  // занимает весь octagon, не вылезает за его границы.
-  // Octagon-polygon в % координатах HudFrame по тем же опорным точкам
-  // как у HudFrame's outer path:
-  const OCTAGON_CLIP = 'polygon(14% 4.5%, 86% 4.5%, 96.5% 18%, 96.5% 82%, 86% 95.5%, 23% 95.5%, 3.5% 82%, 3.5% 22%)';
+  // Полигон вычисляется ДИНАМИЧЕСКИ по тем же опорным точкам что HudFrame
+  // (cut = round(min(w,h)*0.18)). Раньше был зашит под 112×88, для других
+  // пропорций (Profile использует 112×103 = sizePx × sizePx*0.92) полигон
+  // не совпадал с octagon, и углы фото вылезали за стенки.
+  const buildOctagonClip = (w: number, h: number): string => {
+    const cut = Math.round(Math.min(w, h) * 0.18);
+    const cutBL = cut * 1.6;
+    const cutTL = cut * 1.2;
+    const px = (x: number, y: number): string =>
+      `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`;
+    return `polygon(${px(cut, 4)}, ${px(w - cut, 4)}, ${px(w - 4, cut)}, ${px(w - 4, h - cut)}, ${px(w - cut, h - 4)}, ${px(cutBL, h - 4)}, ${px(4, h - cut)}, ${px(4, cutTL)})`;
+  };
+
   const renderAvatar = (sizePx: number) => {
+    const w = sizePx;
+    const h = Math.round(sizePx * 0.92);
+    const clip = buildOctagonClip(w, h);
     return (
-      <HudFrame size={{ w: sizePx, h: sizePx * 0.92 }} fillOpacity={0.35} glow={14}>
+      <HudFrame size={{ w, h }} fillOpacity={0.35} glow={14}>
         <div
           className="absolute inset-0 overflow-hidden bg-[#0a2f38]"
-          style={{ clipPath: OCTAGON_CLIP, WebkitClipPath: OCTAGON_CLIP }}
+          style={{ clipPath: clip, WebkitClipPath: clip }}
         >
           <AvatarImage src={avatarSrc} name={user.name} className="h-full w-full" letterClassName="text-2xl" />
         </div>
