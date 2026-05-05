@@ -5,7 +5,6 @@ import {
   Calendar,
   Map,
   Handshake,
-  ShieldCheck,
   Mic,
   FileText,
   Info,
@@ -20,8 +19,8 @@ import IconTile from '@/src/components/ui/IconTile';
 import BrandTitle from '@/src/components/ui/BrandTitle';
 import EventBadge from '@/src/components/ui/EventBadge';
 
-// Round 6: 15 плиток (3×5) — добавлены Гид, Участники, Моя визитка по
-// эталону Eventicious. Диагностика убрана из главного меню (служебная).
+// Round 8: 13 плиток. Плитка «Билет» убрана по жалобе юзера — QR-функция
+// перенесена в «Моя визитка» (один QR для нетворкинга вместо дублей).
 const menuItems = [
   { label: 'Профиль', icon: User, to: '/profile' },
   { label: 'Программа', icon: Calendar, to: '/schedule' },
@@ -29,7 +28,6 @@ const menuItems = [
   { label: 'Чат', icon: MessageCircle, to: '/chat' },
   { label: 'Участники', icon: UsersIcon, to: '/attendees' },
   { label: 'Моя визитка', icon: ContactRound, to: '/my-card' },
-  { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
   { label: 'Записи', icon: FileText, to: '/my-records' },
   { label: 'Розыгрыши', icon: Sparkles, to: '/giveaways' },
   { label: 'Партнёры', icon: Handshake, to: '/partners' },

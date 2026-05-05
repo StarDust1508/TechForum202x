@@ -309,13 +309,22 @@ function AppContent() {
                   slide-fade анимация на каждой смене route. Раньше Routes
                   сидел внутри одного motion.div и переходов между Home↔
                   Schedule↔Speakers не было вовсе. */}
-              <AnimatePresence mode="wait" initial={false}>
+              {/* Round 8: переходы между route'ами стали плавнее.
+                  - mode="popLayout" вместо "wait" — новая страница начинает
+                    fade-in одновременно с fade-out старой, нет 220мс паузы
+                    «чёрного кадра».
+                  - opacity-only с subtle scale (0.985→1) — без боковой
+                    slide-x, выглядит мягче. Boxes/lists не «прыгают» влево.
+                  - easeOut (cubic-bezier(0.22,1,0.36,1)) — natural decel.
+                  - duration 0.32с — осознанно медленнее, чтобы глаз поспевал. */}
+              <AnimatePresence mode="popLayout" initial={false}>
                 <motion.div
                   key={location.pathname}
-                  initial={{ opacity: 0, x: 8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                  initial={{ opacity: 0, scale: 0.985 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.015 }}
+                  transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ willChange: 'opacity, transform' }}
                 >
                   <Routes location={location}>
                     <Route path="/" element={<Home />} />

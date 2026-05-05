@@ -20,6 +20,7 @@ import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
 import Skeleton from '@/src/components/ui/Skeleton';
 import AvatarImage from '@/src/components/ui/AvatarImage';
+import HudFrame from '@/src/components/ui/HudFrame';
 import { useToast } from '@/src/components/Toast';
 import { hapticNotify } from '@/src/lib/haptics';
 
@@ -214,11 +215,34 @@ export default function MyCard() {
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl flex items-center justify-center">
+          {/* Round 8: QR в octagon-обводке (HudFrame). Внутрь врисовывается
+              белый square с QR через clip-path octagon. Сканер по углам не
+              читает QR-данные (всегда внутри margin), поэтому угловые срезы
+              не повреждают код. */}
+          <div className="flex items-center justify-center">
             {qrSvg ? (
-              <div className="w-full max-w-[300px] aspect-square" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+              (() => {
+                const SIZE = 300;
+                const cut = Math.round(SIZE * 0.18);
+                const px = (x: number, y: number): string =>
+                  `${((x / SIZE) * 100).toFixed(2)}% ${((y / SIZE) * 100).toFixed(2)}%`;
+                const clip = `polygon(${px(cut, 4)}, ${px(SIZE - cut, 4)}, ${px(SIZE - 4, cut)}, ${px(SIZE - 4, SIZE - cut)}, ${px(SIZE - cut, SIZE - 4)}, ${px(cut, SIZE - 4)}, ${px(4, SIZE - cut)}, ${px(4, cut)})`;
+                return (
+                  <HudFrame size={{ w: SIZE, h: SIZE }} fillOpacity={0} glow={18}>
+                    <div
+                      className="absolute inset-0 bg-white flex items-center justify-center"
+                      style={{ clipPath: clip, WebkitClipPath: clip }}
+                    >
+                      <div
+                        className="w-[78%] h-[78%] [&>svg]:w-full [&>svg]:h-full"
+                        dangerouslySetInnerHTML={{ __html: qrSvg }}
+                      />
+                    </div>
+                  </HudFrame>
+                );
+              })()
             ) : (
-              <Skeleton height={300} />
+              <Skeleton height={300} width={300} />
             )}
           </div>
 
