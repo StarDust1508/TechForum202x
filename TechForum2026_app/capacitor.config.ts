@@ -35,8 +35,13 @@ const config: CapacitorConfig = {
     // вручную из App.tsx после первого useful frame, чтобы переход был
     // бесшовный, без двойного флика.
     SplashScreen: {
-      launchShowDuration: 3000,
+      // Round 8: native splash 1.5с max (safety — если React почему-то не
+      // вызовет SplashScreen.hide(), splash сам уйдёт). Реально hide вызывается
+      // из App.tsx через rAF×2 после первого useful frame (~150мс на нормальном
+      // устройстве). launchAutoHide:false — управляем вручную.
+      launchShowDuration: 1500,
       launchAutoHide: false,
+      launchFadeOutDuration: 200,
       backgroundColor: '#03161c',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,

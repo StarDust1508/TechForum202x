@@ -148,12 +148,12 @@ function AppContent() {
     try { lastBootAt = parseInt(sessionStorage.getItem('techforum_last_boot') || '0', 10) || 0; } catch { /* noop */ }
     const isWarmRestart = lastBootAt > 0 && (Date.now() - lastBootAt) < 30 * 60 * 1000;
     try { sessionStorage.setItem('techforum_last_boot', String(Date.now())); } catch { /* noop */ }
-    // Нативный Capacitor SplashScreen покрывает первые ~300ms Android boot
-    // (drawable/splash.png, см. capacitor.config.ts). Web-splash больше не должен
-    // искусственно держать пользователя — снижаем до 700ms (cold-start) и 0
-    // (warm). Раньше было 1400ms «чтобы успели догрузиться шрифты», но
-    // блокировать восприятие быстрого старта дороже, чем редкий FOUT.
-    const MIN_SPLASH_MS = isWarmRestart ? 0 : 700;
+    // Round 8: native Capacitor SplashScreen с drawable splash.png показывает
+    // картинку ~1.5с (см. capacitor.config.ts launchShowDuration). Web-splash
+    // теперь просто пустой blueprint (см. Splash.tsx) — должен исчезнуть
+    // сразу как auth-check завершился. MIN=200мс на cold чтобы исключить
+    // визуальный flicker если auth ответил мгновенно.
+    const MIN_SPLASH_MS = isWarmRestart ? 0 : 200;
 
     // BUG_FIX_CONTEXT: П6 — рандомный сброс на онбординг. Onboarding раньше
     // делал PUT /me/interests fire-and-forget, и если запрос падал, выбор
