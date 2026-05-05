@@ -30,6 +30,19 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    // Нативный splash покрывает чёрный экран Android boot между запуском
+    // Activity и mount React (~300ms). launchAutoHide: false — скрываем
+    // вручную из App.tsx после первого useful frame, чтобы переход был
+    // бесшовный, без двойного флика.
+    SplashScreen: {
+      launchShowDuration: 3000,
+      launchAutoHide: false,
+      backgroundColor: '#03161c',
+      androidScaleType: 'CENTER_CROP',
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true,
+    },
   },
 };
 

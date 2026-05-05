@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=Forum&family=JetBrains+Mono:wght@400;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+/* Шрифты подключены через <link rel="stylesheet"> в index.html (с preconnect
+   на fonts.gstatic.com), чтобы не блокировать первый рендер @import-ом
+   и иметь parallel-resolve. Раньше было @import — на cold-start без кэша
+   WebView ждал DNS+TLS до Google → виден FOUT с серифным fallback. */
 @import "tailwindcss";
 
 /*
@@ -126,6 +129,23 @@ html, body, #root {
   min-height: 100dvh;
   background-color: #03161c;
   overscroll-behavior: none;
+}
+
+/*
+  prefers-reduced-motion: уважаем системную настройку «Уменьшить движение»
+  (Android: Settings → Accessibility → Remove animations; iOS: Settings →
+  Accessibility → Motion). Если включена — все CSS-анимации/transitions
+  и Framer Motion (через свою motion-feature-detection) сворачиваются до
+  ~мгновенных. Это нужно и для accessibility, и для тех, у кого реально
+  кружится голова от плавающих переходов.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {

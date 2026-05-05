@@ -12,6 +12,16 @@
     <link rel="icon" type="image/png" href="./favicon-32x32.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
 
+    <!-- Шрифты подключаем через preconnect + non-blocking link, чтобы не
+         задерживать первый рендер. Раньше был @import в index.css — он
+         блокировал critical CSS до DNS+TLS на fonts.googleapis.com. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=Forum&family=JetBrains+Mono:wght@400;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+    />
+
     <!-- iOS PWA support: позволяет «Добавить на главный экран» в Safari выглядеть как нативное приложение -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

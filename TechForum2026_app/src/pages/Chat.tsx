@@ -14,6 +14,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
 import AvatarImage from '@/src/components/ui/AvatarImage';
+import Skeleton from '@/src/components/ui/Skeleton';
+import { hapticImpact, hapticNotify } from '@/src/lib/haptics';
 
 // ===== TYPES =====
 type DmContact = {
@@ -48,7 +50,13 @@ function makeLongPressHandlers(onTrigger: () => void) {
     onPointerDown: () => {
       triggered = false;
       if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => { triggered = true; onTrigger(); }, LONG_PRESS_MS);
+      timer = window.setTimeout(() => {
+        triggered = true;
+        // Тактильный feedback в момент срабатывания long-press — даёт юзеру
+        // понять, что меню сейчас откроется. Web/без плагина — silent.
+        void hapticImpact('medium');
+        onTrigger();
+      }, LONG_PRESS_MS);
     },
     onPointerUp: () => {
       if (timer) { window.clearTimeout(timer); timer = null; }
@@ -200,7 +208,17 @@ function ChatList() {
       <section>
         <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#7aa8a4] mb-2">Переписки</p>
         {loading && contacts.length === 0 && (
-          <p className="text-center text-[12px] text-[#7aa8a4] py-6">Загрузка…</p>
+          <div className="space-y-2">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-3 bg-[#0a2f38]/45 border border-[#4ec9c0]/22 p-3.5 rounded-2xl">
+                <Skeleton className="rounded-full" width={48} height={48} />
+                <div className="flex-1 space-y-2">
+                  <Skeleton height={12} width="50%" />
+                  <Skeleton height={10} width="80%" />
+                </div>
+              </div>
+            ))}
+          </div>
         )}
         {!loading && contacts.length === 0 && searchQ.trim().length < 2 && (
           <div className="text-center py-8 text-[13px] text-[#7aa8a4] leading-relaxed">
@@ -360,9 +378,23 @@ function DmRoom({ userId }: { userId: string }) {
     return () => window.clearInterval(t);
   }, [fetchDialog, meId]);
 
-  // Auto-scroll вниз на новые сообщения
+  // Auto-scroll вниз на новые сообщения — НО только если юзер был у нижнего
+  // края (~120px). Раньше скроллило всегда, и при чтении истории пришедшее
+  // сообщение выкидывало в самый низ. Теперь: листает историю — не дёргаем;
+  // у дна (читает live) — auto-follow.
+  const lastMsgCountRef = useRef(0);
   useEffect(() => {
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+    const prevCount = lastMsgCountRef.current;
+    lastMsgCountRef.current = messages.length;
+    if (messages.length === prevCount) return;
+    const doc = document.documentElement;
+    const distanceFromBottom = doc.scrollHeight - (window.scrollY + window.innerHeight);
+    const NEAR_BOTTOM_PX = 160;
+    // Первый рендер (prevCount===0) — всегда вниз, чтобы открыть последний
+    // экран переписки. Последующие — только если юзер уже у дна.
+    if (prevCount === 0 || distanceFromBottom < NEAR_BOTTOM_PX) {
+      window.scrollTo({ top: doc.scrollHeight, behavior: prevCount === 0 ? 'auto' : 'smooth' });
+    }
   }, [messages.length]);
 
   // ====== Send: text or media ======
@@ -523,8 +555,8 @@ function DmRoom({ userId }: { userId: string }) {
           promptLabelHeader: source === 'CAMERA' ? 'Снять фото' : 'Выбрать фото',
         });
         if (!photo?.dataUrl) {
-          // eslint-disable-next-line no-alert
-          alert('Не получили фото — попробуйте ещё раз.');
+          showToast('Не получили фото — попробуйте ещё раз');
+          void hapticNotify('warning');
           return;
         }
         const blob = dataUrlToBlob(photo.dataUrl);
@@ -534,8 +566,8 @@ function DmRoom({ userId }: { userId: string }) {
         if (/cancel/i.test(msg) || /User cancelled/i.test(msg) || /User denied/i.test(msg) && source === 'PHOTOS') return;
         // Видимая ошибка вместо silent-fail. Это позволяет диагностировать,
         // если плагин не работает (permission denied / not implemented / т.д.).
-        // eslint-disable-next-line no-alert
-        alert(`Не удалось ${source === 'CAMERA' ? 'открыть камеру' : 'получить фото из галереи'}: ${msg}`);
+        showToast(`Не удалось ${source === 'CAMERA' ? 'открыть камеру' : 'получить фото из галереи'}`, 2400);
+        void hapticNotify('error');
       }
       return;
     }
@@ -616,12 +648,13 @@ function DmRoom({ userId }: { userId: string }) {
         const err = await r.json().catch(() => ({}));
         URL.revokeObjectURL(localPreviewUrl);
         setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
-        // eslint-disable-next-line no-alert
-        alert(
+        showToast(
           err.error === 'invalid_media' ? 'Формат не поддерживается'
           : err.error === 'size_out_of_range' ? 'Файл слишком большой (максимум 9 MB)'
-          : `Загрузка не удалась: ${err.error || r.status}`,
+          : `Загрузка не удалась`,
+          2400,
         );
+        void hapticNotify('error');
         return;
       }
       const data: { url: string; type: 'image' | 'audio' | 'video' } = await r.json();
@@ -639,8 +672,8 @@ function DmRoom({ userId }: { userId: string }) {
     } catch (err) {
       URL.revokeObjectURL(localPreviewUrl);
       setMessages((prev) => prev.filter((m) => m.id !== placeholderId));
-      // eslint-disable-next-line no-alert
-      alert(`Не удалось отправить: ${err instanceof Error ? err.message : 'нет соединения'}`);
+      showToast(`Не удалось отправить: ${err instanceof Error ? err.message : 'нет соединения'}`, 2400);
+      void hapticNotify('error');
     }
   };
 
@@ -698,8 +731,9 @@ function DmRoom({ userId }: { userId: string }) {
         return s + 1;
       }), 1000);
     } catch (err) {
-      // eslint-disable-next-line no-alert
-      alert(`Микрофон/камера недоступны: ${(err as Error).message || 'permission_denied'}`);
+      showToast(`Микрофон/камера недоступны`, 2400);
+      void hapticNotify('error');
+      console.warn('record_failed:', (err as Error).message);
     }
   };
 
@@ -1651,7 +1685,17 @@ function ForwardModal({
 
           <div className="flex-1 overflow-y-auto px-3 pb-3">
             {loading ? (
-              <p className="text-center text-[12px] text-[#7aa8a4] py-6">Загрузка…</p>
+              <div className="space-y-1.5">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-2.5 p-2 rounded-xl">
+                    <Skeleton className="rounded-full" width={36} height={36} />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton height={11} width="55%" />
+                      <Skeleton height={9} width="75%" />
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : filtered.length === 0 ? (
               <p className="text-center text-[12px] text-[#7aa8a4] py-6">Нет контактов</p>
             ) : (
