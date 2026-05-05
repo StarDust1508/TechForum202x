@@ -58,6 +58,9 @@ export const users = pgTable(
     phone: text('phone'),
     role: text('role').notNull().default('Участник'),
     isPrivate: boolean('is_private').notNull().default(false),
+    // Round 7: privacy для push body. Если true → notification body =
+    // «Новое сообщение» вместо реального текста. Lock-screen leakage protection.
+    pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -294,6 +297,9 @@ export const registrations = pgTable(
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     sessionId: text('session_id').notNull().references(() => sessionsEvent.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // Round 7: cron-флаг чтобы reminders за 15мин до начала не отправлялись
+    // дважды (cron бежит каждую минуту, окно 14-16мин).
+    reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.sessionId] }),

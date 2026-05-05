@@ -27,6 +27,7 @@ import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth
 import { resolveApiUrl } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
 import { prefetchPublicData } from './lib/prefetch';
+import { attachPushListeners } from './lib/push';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
@@ -112,6 +113,29 @@ function AppContent() {
       } catch { /* web env */ }
     })();
   }, []);
+
+  // Round 7: deep-link на push'ы. Когда юзер тапает по push-уведомлению,
+  // Capacitor отдаёт нам data из notification → навигируем к нужному экрану.
+  // Поддерживаемые типы: dm (data.from = userId) → /chat/:userId;
+  // session (data.sessionId) → /schedule.
+  const navigate = useNavigate();
+  useEffect(() => {
+    const Capacitor: any = (window as any).Capacitor;
+    if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
+      return;
+    }
+    void attachPushListeners(
+      undefined,
+      (data) => {
+        const type = String(data.type ?? '');
+        if (type === 'dm' && typeof data.from === 'string') {
+          navigate(`/chat/${data.from}`);
+        } else if (type === 'session') {
+          navigate('/schedule');
+        }
+      },
+    );
+  }, [navigate]);
 
   useEffect(() => {
     let isMounted = true;

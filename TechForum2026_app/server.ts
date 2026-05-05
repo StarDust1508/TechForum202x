@@ -57,6 +57,7 @@ import {
   pushTokenRegisterSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
+import { initFcm, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
 
 // Типизируем поле userId на сессии — убирает ad-hoc cast'ы по handler'ам.
 declare module 'express-session' {
@@ -159,6 +160,7 @@ type PublicUser = {
   phone: string | null;
   role: string;
   isPrivate: boolean;
+  pushPreviewHidden: boolean;
 };
 
 function toPublicUser(row: typeof users.$inferSelect): PublicUser {
@@ -171,6 +173,7 @@ function toPublicUser(row: typeof users.$inferSelect): PublicUser {
     phone: row.phone,
     role: row.role,
     isPrivate: row.isPrivate,
+    pushPreviewHidden: row.pushPreviewHidden ?? false,
   };
 }
 
@@ -924,7 +927,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const { name, bio, phone, email: emailRaw } = req.body as import('./src/lib/validation.js').AuthMePatchBody;
+    const { name, bio, phone, email: emailRaw, pushPreviewHidden } = req.body as import('./src/lib/validation.js').AuthMePatchBody;
 
     let nextEmail = user.email;
     if (emailRaw && emailRaw !== user.email) {
@@ -941,6 +944,7 @@ async function startServer(): Promise<void> {
       bio: bio ?? user.bio,
       phone: phone ?? user.phone,
       email: nextEmail,
+      pushPreviewHidden: pushPreviewHidden ?? user.pushPreviewHidden,
     }).where(eq(users.id, user.id));
 
     const updated = await findUserById(user.id);
@@ -1555,6 +1559,21 @@ async function startServer(): Promise<void> {
     // Round 4: WebSocket push участникам диалога (отправителю и получателю).
     // Клиенты, у которых открыт WS, увидят сообщение мгновенно — без 4с-poll.
     dmBroadcast({ type: 'dm:new', from: inserted.fromUserId, to: inserted.toUserId, message: out });
+    // Round 7: FCM push receiver'у когда приложение в фоне / закрыто.
+    // Проверяем pushPreviewHidden — если включено, body = generic.
+    void (async () => {
+      const sender = await findUserById(fromUserId);
+      const senderName = sender?.name ?? 'Участник';
+      const recipient = await findUserById(toUserId);
+      const hidden = !!recipient?.pushPreviewHidden;
+      const previewBody = (text && text.length > 0) ? text : (mediaType ? `[${mediaType}]` : '');
+      await sendPushToUser(toUserId, {
+        title: hidden ? 'Новое сообщение' : senderName,
+        body: hidden ? '' : previewBody.slice(0, 120),
+        data: { type: 'dm', from: fromUserId },
+        priority: 'high',
+      }, db, pushTokens);
+    })().catch(() => { /* push failure — DM still delivered via WS+poll */ });
     res.json(out);
   });
 
@@ -2750,10 +2769,77 @@ async function startServer(): Promise<void> {
   // Polling 4с остаётся как fallback (если WS не открылся / упал).
   const httpServer = (await import('node:http')).createServer(app);
   await initDmWs(httpServer);
+  // Round 7: FCM init на startup. Lazy: если FCM_SERVICE_ACCOUNT_PATH
+  // не задан — disabled, sendPushToUser() становится no-op (но в БД
+  // /me/push-token продолжает копить токены, чтобы при включении FCM
+  // рассылка пошла на уже зарегистрированных юзеров).
+  initFcm();
+
+  // Cron: session reminders за 15 минут до начала. Каждую минуту проверяем
+  // регистрации, окно: now + 14..16мин. Атомарный UPDATE ... RETURNING чтобы
+  // несколько инстансов не отправили дубликат (на сейчас один инстанс).
+  // Для каждого hit'а fire-and-forget push. После — все успешные помечены
+  // reminder_sent_at чтобы не отправить повторно.
+  try {
+    const cron = await import('node-cron');
+    cron.default.schedule('* * * * *', async () => {
+      try {
+        const now = new Date();
+        const lower = new Date(now.getTime() + 14 * 60_000);
+        const upper = new Date(now.getTime() + 16 * 60_000);
+        // sessions_event.startTime — это TEXT 'HH:MM' + день из days.date.
+        // Простой подход: SELECT с join'ом, фильтр в коде. Объёмы малые.
+        const candidates = await db
+          .select({
+            userId: registrations.userId,
+            sessionId: registrations.sessionId,
+            startTime: sessionsEvent.startTime,
+            title: sessionsEvent.title,
+            dayDate: days.date,
+            location: sessionsEvent.hallId,
+          })
+          .from(registrations)
+          .innerJoin(sessionsEvent, eq(registrations.sessionId, sessionsEvent.id))
+          .innerJoin(days, eq(sessionsEvent.dayId, days.id))
+          .where(sql`${registrations.reminderSentAt} IS NULL`);
+        for (const c of candidates) {
+          // Парсим день+время в Date.
+          const [hh, mm] = String(c.startTime).split(':').map((s) => parseInt(s, 10));
+          const sessionStart = new Date(`${c.dayDate}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+          if (sessionStart >= lower && sessionStart <= upper) {
+            // Атомарно ставим флаг (если кто-то уже взял — UPDATE не вернёт row).
+            const updated = await db.update(registrations)
+              .set({ reminderSentAt: new Date() })
+              .where(and(
+                eq(registrations.userId, c.userId),
+                eq(registrations.sessionId, c.sessionId),
+                sql`${registrations.reminderSentAt} IS NULL`,
+              ))
+              .returning();
+            if (updated.length === 0) continue;
+            void sendPushToUser(c.userId, {
+              title: 'Через 15 минут',
+              body: c.title,
+              data: { type: 'session', sessionId: c.sessionId },
+              priority: 'normal',
+            }, db, pushTokens);
+          }
+        }
+      } catch (err) {
+        log.error('cron', `reminder tick failed: ${(err as Error).message}`);
+      }
+    });
+    log.info('cron', 'session reminder cron scheduled (every minute)');
+  } catch (err) {
+    log.warn('cron', `node-cron not available: ${(err as Error).message}`);
+  }
+
   httpServer.listen(PORT, '0.0.0.0', () => {
+    const fcm = fcmStatus();
     console.log(`Hybrid Architecture Server running on http://0.0.0.0:${PORT}`);
     console.log(`API health: http://localhost:${PORT}${API_V1_PREFIX}/health`);
     console.log(`WebSocket: ws://0.0.0.0:${PORT}${API_V1_PREFIX}/ws/dm`);
+    console.log(`FCM: ${fcm.disabled ? 'disabled (set FCM_SERVICE_ACCOUNT_PATH)' : 'live'}`);
   });
 
   // BUG_FIX_CONTEXT: graceful shutdown — Postgres pool должен закрыться явно,

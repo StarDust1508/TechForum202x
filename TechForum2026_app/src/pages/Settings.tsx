@@ -11,14 +11,15 @@
 // Уведомления — пока локальная toggle (без бэкенда push), Round 4 заведёт
 // push_tokens table и реальные подписки.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2,
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff,
 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
 import { hapticSelection } from '@/src/lib/haptics';
 import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
+import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 type Section = 'notifications' | 'terms' | 'privacy' | 'about';
 
@@ -57,15 +58,51 @@ const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?
 
 function NotificationsPage() {
   // Round 5: переключатель реально регистрирует/удаляет push-токен на бэке.
-  // ON: запрашивает permission, FCM token, отправляет POST /me/push-token.
-  // OFF: DELETE /me/push-token + удаляет сохранённый token локально.
-  // Реальная отправка push'ей с бэка ещё не настроена (нужен FCM project).
+  // Round 7: + privacy-toggle «Скрывать предпросмотр» — body push'а становится
+  // generic «Новое сообщение» вместо реального текста (lock-screen не светит).
   const NOTIF_LS_KEY = 'techforum_notifications_enabled';
   const [enabled, setEnabled] = useState<boolean>(() => {
     try { return localStorage.getItem(NOTIF_LS_KEY) === '1'; } catch { return false; }
   });
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const [previewHidden, setPreviewHidden] = useState<boolean>(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+
+  // Подгружаем текущее значение pushPreviewHidden c бэка.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
+        if (r.ok) {
+          const me = await r.json();
+          if (!cancelled) setPreviewHidden(!!me.pushPreviewHidden);
+        }
+      } catch { /* offline */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const togglePreviewHidden = async () => {
+    if (previewBusy) return;
+    const next = !previewHidden;
+    setPreviewBusy(true);
+    setPreviewHidden(next);
+    void hapticSelection();
+    try {
+      const r = await fetch(resolveApiUrl('/auth/me'), {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pushPreviewHidden: next }),
+      });
+      if (!r.ok) throw new Error(`patch_failed_${r.status}`);
+    } catch {
+      setPreviewHidden(!next); // rollback
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
   const toggle = async () => {
     if (busy) return;
     setBusy(true);
@@ -134,6 +171,47 @@ function NotificationsPage() {
           новые сообщения, объявления оргкомитета. Отключение применяется
           мгновенно и не требует переустановки.
         </p>
+      )}
+
+      {/* Round 7: privacy-toggle. Только если push-уведомления вообще включены —
+          иначе скрываем (нечего скрывать). */}
+      {enabled && (
+        <button
+          type="button"
+          onClick={togglePreviewHidden}
+          disabled={previewBusy}
+          className="mt-4 w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+        >
+          <div className="flex items-start gap-3 text-left flex-1 min-w-0">
+            <EyeOff className="w-4 h-4 mt-0.5 text-[#4ec9c0] shrink-0" strokeWidth={1.6} />
+            <div>
+              <p className="font-display-cyrl text-[14px] font-semibold text-[#d8f0ee]">
+                Скрывать предпросмотр
+              </p>
+              <p className="text-[11px] text-[#7aa8a4] mt-0.5 leading-relaxed">
+                Текст сообщения не будет виден на заблокированном экране — только «Новое сообщение».
+              </p>
+            </div>
+          </div>
+          {previewBusy ? (
+            <Loader2 className="w-4 h-4 animate-spin text-[#4ec9c0] shrink-0" strokeWidth={1.8} />
+          ) : (
+            <span
+              className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${
+                previewHidden ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
+              }`}
+              style={{ height: 22, width: 40 }}
+            >
+              <motion.span
+                layout
+                transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+                className={`absolute top-0.5 w-4 h-4 rounded-full ${
+                  previewHidden ? 'left-[20px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+                }`}
+              />
+            </span>
+          )}
+        </button>
       )}
     </div>
   );

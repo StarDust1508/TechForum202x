@@ -77,6 +77,9 @@ export const authMePatchSchema = z.object({
   bio: z.string().max(500).optional(),
   phone: phoneSchema.optional(),
   email: emailSchema.optional(),
+  // Round 7: privacy-toggle для push body. Если true — body становится
+  // generic «Новое сообщение», скрывает leak текста на lock-screen.
+  pushPreviewHidden: z.boolean().optional(),
 });
 
 // Бизнес-инвариант onboarding: 3..10 направлений. Раньше был только max(10)
