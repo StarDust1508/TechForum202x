@@ -6,11 +6,13 @@ import {
   Map,
   Handshake,
   ShieldCheck,
-  MonitorCog,
   Mic,
   FileText,
   Info,
   Sparkles,
+  HelpCircle,
+  Users as UsersIcon,
+  ContactRound,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -18,19 +20,23 @@ import IconTile from '@/src/components/ui/IconTile';
 import BrandTitle from '@/src/components/ui/BrandTitle';
 import EventBadge from '@/src/components/ui/EventBadge';
 
+// Round 6: 15 плиток (3×5) — добавлены Гид, Участники, Моя визитка по
+// эталону Eventicious. Диагностика убрана из главного меню (служебная).
 const menuItems = [
   { label: 'Профиль', icon: User, to: '/profile' },
-  { label: 'Новости', icon: Newspaper, to: '/feed' },
-  { label: 'Чат', icon: MessageCircle, to: '/chat' },
   { label: 'Программа', icon: Calendar, to: '/schedule' },
-  { label: 'Схема', icon: Map, to: '/map' },
-  { label: 'Партнёры', icon: Handshake, to: '/partners' },
-  { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
-  { label: 'Диагностика', icon: MonitorCog, to: '/diagnostics' },
   { label: 'Спикеры', icon: Mic, to: '/speakers' },
+  { label: 'Чат', icon: MessageCircle, to: '/chat' },
+  { label: 'Участники', icon: UsersIcon, to: '/attendees' },
+  { label: 'Моя визитка', icon: ContactRound, to: '/my-card' },
+  { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
   { label: 'Записи', icon: FileText, to: '/my-records' },
-  { label: 'О форуме', icon: Info, to: '/about' },
   { label: 'Розыгрыши', icon: Sparkles, to: '/giveaways' },
+  { label: 'Партнёры', icon: Handshake, to: '/partners' },
+  { label: 'Новости', icon: Newspaper, to: '/feed' },
+  { label: 'Схема', icon: Map, to: '/map' },
+  { label: 'Гид', icon: HelpCircle, to: '/faq' },
+  { label: 'О форуме', icon: Info, to: '/about' },
 ] as const;
 
 export default function Home() {

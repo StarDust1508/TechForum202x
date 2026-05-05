@@ -28,7 +28,7 @@ import { db, closeDb } from './index';
 import {
   tracks, halls, days, speakers,
   sessionsEvent, sessionSpeakers,
-  partners, users, interests, news, giveaways,
+  partners, users, interests, news, giveaways, faq,
 } from './schema';
 import {
   TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS, NEWS,
@@ -247,6 +247,46 @@ async function seedReferenceTables(): Promise<void> {
   }
   console.log(`[seed] giveaways: upserted ${GIVEAWAYS_SEED.length}`);
   // END_BLOCK_GIVEAWAYS
+
+  // START_BLOCK_FAQ: «Гид по мероприятию» — категоризованные вопросы.
+  const FAQ_SEED = [
+    { id: 'faq_arrival',  category: 'Логистика',     question: 'Когда лучше приехать?',
+      answer: 'Регистрация работает с 08:30 у главного входа. Чтобы успеть на церемонию открытия в 10:00, приходите минимум за 30 минут — собрать бейдж и стартовый пакет.' },
+    { id: 'faq_parking',  category: 'Логистика',     question: 'Есть ли парковка?',
+      answer: 'Бесплатная парковка для 200 машин у входа Б. На 1-й день рекомендуем приехать на метро или такси — ожидаются заторы. Координаты: см. раздел «Схема».' },
+    { id: 'faq_dress',    category: 'Логистика',     question: 'Какой дресс-код?',
+      answer: 'Smart casual. Для после-форумных вечеринок — на ваше усмотрение. Главное — удобная обувь: за день вы пройдёте 5–10 км между залами.' },
+    { id: 'faq_qr',       category: 'Приложение',    question: 'Зачем QR-билет?',
+      answer: 'Сканируется на входе в зал — фиксирует ваше посещение сессий (нужно для розыгрышей). Также QR-визитка в разделе «Моя карточка» — для нетворкинга, обмена контактами с другими участниками за 2 секунды.' },
+    { id: 'faq_chat',     category: 'Приложение',    question: 'Как написать спикеру?',
+      answer: 'Откройте «Спикеры», тапните по нужному, на странице спикера нажмите «Написать». Спикеры стараются отвечать в перерывах между сессиями.' },
+    { id: 'faq_photo',    category: 'Приложение',    question: 'Где фото с форума?',
+      answer: 'Официальные фото публикуются в «Ленте» спустя 1–2 часа после ивента. Юзер-контент с хэштегом #TechForum2026 организаторы реблогят.' },
+    { id: 'faq_reschedule', category: 'Программа',  question: 'Что если перенесли сессию?',
+      answer: 'В разделе «Программа» статус сессии меняется на «Перенесено» с новым временем. Если вы записаны — придёт push (если включены уведомления).' },
+    { id: 'faq_record',   category: 'Программа',     question: 'Будут ли записи?',
+      answer: 'Keynote и треки 1–3 пишутся в видео, появятся на YouTube-канале форума через 7–10 дней. Воркшопы — без записи (NDA участников).' },
+    { id: 'faq_lounge',   category: 'Площадка',      question: 'Где встретиться с коллегой?',
+      answer: 'Лаунж-зона на 1 этаже — открытая зона с креслами и столами для ноутбуков. Кофе бесплатный.' },
+    { id: 'faq_contact',  category: 'Связь',         question: 'Как связаться с организаторами?',
+      answer: 'Стойка «Поддержка» на 1 этаже работает весь день. Срочные вопросы — support@techforum.ru или раздел «Поддержка» в приложении (Настройки → Поддержка).' },
+  ];
+  for (let i = 0; i < FAQ_SEED.length; i += 1) {
+    const f = FAQ_SEED[i]!;
+    const values = { ...f, sortOrder: i, isActive: true };
+    await db.insert(faq).values(values).onConflictDoUpdate({
+      target: faq.id,
+      set: {
+        question: values.question,
+        answer: values.answer,
+        category: values.category,
+        sortOrder: values.sortOrder,
+        isActive: values.isActive,
+      },
+    });
+  }
+  console.log(`[seed] faq: upserted ${FAQ_SEED.length}`);
+  // END_BLOCK_FAQ
 }
 
 async function seedDevUser(): Promise<void> {

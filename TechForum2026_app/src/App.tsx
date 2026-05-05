@@ -20,6 +20,9 @@ import About from './pages/About';
 import MyRecords from './pages/MyRecords';
 import NewsDetail from './pages/NewsDetail';
 import Settings from './pages/Settings';
+import Faq from './pages/Faq';
+import Attendees from './pages/Attendees';
+import MyCard from './pages/MyCard';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
 import { resolveApiUrl } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
@@ -309,6 +312,9 @@ function AppContent() {
                     <Route path="/about" element={<About />} />
                     <Route path="/my-records" element={<MyRecords />} />
                     <Route path="/settings" element={<Settings />} />
+                    <Route path="/faq" element={<Faq />} />
+                    <Route path="/attendees" element={<Attendees />} />
+                    <Route path="/my-card" element={<MyCard />} />
                     <Route path="*" element={<Navigate to="/" />} />
                   </Routes>
                 </motion.div>

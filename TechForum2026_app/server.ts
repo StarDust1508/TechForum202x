@@ -119,6 +119,7 @@ const {
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
   tracks, halls, days, speakers, partners, sessionSpeakers, news, events,
   pushTokens, giveaways, giveawayEntries,
+  faq, contactExchanges,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -2477,6 +2478,160 @@ async function startServer(): Promise<void> {
   // ========================================================================
   // TICKET (для QR на входе)
   // ========================================================================
+
+  // ========================================================================
+  // FAQ — «Гид по мероприятию» (Round 6). Public read.
+  // ========================================================================
+  api.get('/faq', async (_req, res) => {
+    const rows = await db.select().from(faq)
+      .where(eq(faq.isActive, true))
+      .orderBy(faq.sortOrder);
+    res.json(rows.map((r) => ({
+      id: r.id,
+      question: r.question,
+      answer: r.answer,
+      category: r.category,
+    })));
+  });
+
+  // ========================================================================
+  // ATTENDEES — раздел «Участники» (Round 6).
+  // ========================================================================
+  // GET /users/list?q=... — paginated public list (только с auth, чтобы не
+  // отдавать всю базу email-ов скрейперам). Возвращает только public-fields
+  // (id, name, role, avatar). Поисковая строка q — substring по name/role/email.
+  // limit 100, без курсора (на small-scale форум этого хватает).
+  api.get('/users/list', requireAuth, async (req, res) => {
+    const q = String(req.query.q ?? '').trim().toLowerCase();
+    const me = getSessionUserId(req)!;
+    let rows = await db.select().from(users);
+    // Не показываем себя в списке + private-юзеров.
+    rows = rows.filter((u) => u.id !== me && !u.isPrivate);
+    if (q) {
+      rows = rows.filter((u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.role.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q),
+      );
+    }
+    // Сорт по имени, лимит 200 (страница покажет паджинацию если станет тесно).
+    rows.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    res.json(rows.slice(0, 200).map((u) => toPublicUser(u)));
+  });
+
+  // ========================================================================
+  // BUSINESS CARD / CONTACT EXCHANGE (Round 6)
+  // ========================================================================
+  // GET /me/business-card — мой QR payload для нетворкинга (отличается от
+  //   /ticket/me: тут card-payload типа 'card|userId|sig', сканер обменивается
+  //   контактами вместо пускания на форум). HMAC от (userId|name|role|exp).
+  // POST /me/contacts/exchange { qrPayload, note? } — отсканировал QR
+  //   другого юзера, серверная сторона валидирует sig, записывает обоим
+  //   запись в contact_exchanges (симметрично).
+  // GET /me/contacts — мой список «обменялись QR».
+  api.get('/me/business-card', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req)!;
+    const user = await findUserById(userId);
+    if (!user) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    // exp = +24h чтобы старые QR-снимки не работали бесконечно (фотограф
+    // на стенде сделал screenshot, через 2 года кто-то пытается «обменяться»).
+    const expSec = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+    const safeName = user.name.replace(/\|/g, ' ');
+    const safeRole = (user.role || '').replace(/\|/g, ' ');
+    const payload = `card|${user.id}|${safeName}|${safeRole}|${expSec}`;
+    const hmac = crypto.createHmac('sha256', ticketHmacSecret).update(payload).digest('hex').slice(0, 32);
+    res.json({
+      qrPayload: `${payload}|${hmac}`,
+      userId: user.id,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(expSec * 1000).toISOString(),
+    });
+  });
+
+  api.post('/me/contacts/exchange', requireAuth, writeRateLimit, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const body = req.body as { qrPayload?: unknown; note?: unknown } | undefined;
+    const qrPayload = String(body?.qrPayload ?? '');
+    const note = String(body?.note ?? '').slice(0, 500);
+    // payload: 'card|userId|name|role|expSec|hmac'
+    const parts = qrPayload.split('|');
+    if (parts.length !== 6 || parts[0] !== 'card') {
+      res.status(400).json({ error: 'invalid_qr' });
+      return;
+    }
+    const [, otherId, , , expSecStr, sig] = parts;
+    const expSec = parseInt(expSecStr ?? '0', 10);
+    if (!otherId || !sig || !expSec) {
+      res.status(400).json({ error: 'invalid_qr' });
+      return;
+    }
+    if (expSec * 1000 < Date.now()) {
+      res.status(400).json({ error: 'qr_expired' });
+      return;
+    }
+    if (otherId === me) {
+      res.status(400).json({ error: 'self_exchange' });
+      return;
+    }
+    // Реконструируем подписанную часть и сверяем sig.
+    const signedPart = parts.slice(0, 5).join('|');
+    const expected = crypto.createHmac('sha256', ticketHmacSecret).update(signedPart).digest('hex').slice(0, 32);
+    if (expected !== sig) {
+      res.status(400).json({ error: 'invalid_signature' });
+      return;
+    }
+    const otherUser = await findUserById(otherId);
+    if (!otherUser) {
+      res.status(404).json({ error: 'user_not_found' });
+      return;
+    }
+    // Симметричная запись: я→он + он→я. Note сохраняется только мой
+    // (note про знакомство — скан-сторона решает).
+    await db.insert(contactExchanges)
+      .values({ ownerId: me, contactId: otherId, note })
+      .onConflictDoUpdate({
+        target: [contactExchanges.ownerId, contactExchanges.contactId],
+        set: { note, metAt: new Date() },
+      });
+    await db.insert(contactExchanges)
+      .values({ ownerId: otherId, contactId: me, note: '' })
+      .onConflictDoNothing();
+    res.json({
+      ok: true,
+      contact: {
+        id: otherUser.id,
+        name: otherUser.name,
+        role: otherUser.role,
+        avatar: otherUser.avatar,
+      },
+    });
+  });
+
+  api.get('/me/contacts', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const rows = await db.select().from(contactExchanges)
+      .where(eq(contactExchanges.ownerId, me))
+      .orderBy(desc(contactExchanges.metAt));
+    if (rows.length === 0) { res.json([]); return; }
+    const ids = rows.map((r) => r.contactId);
+    const userRows = await db.select().from(users).where(inArray(users.id, ids));
+    const userById = new Map(userRows.map((u) => [u.id, u]));
+    res.json(rows.map((r) => {
+      const u = userById.get(r.contactId);
+      return {
+        contactId: r.contactId,
+        note: r.note,
+        metAt: r.metAt,
+        user: u ? toPublicUser(u) : null,
+      };
+    }));
+  });
 
   // Возвращает payload-ы для QR-кода билета. Подпись HMAC-SHA256 от
   // (userId|email|name|tier) с использованием SESSION_SECRET. Сканер на входе

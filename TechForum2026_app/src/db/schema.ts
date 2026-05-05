@@ -473,6 +473,50 @@ export const giveawayEntries = pgTable(
 );
 
 // ============================================================================
+// FAQ (Round 6) — «Гид по мероприятию», категоризованные вопросы/ответы
+// ============================================================================
+// Простая статика: question, answer, category (для группировки в UI),
+// sort_order (внутри категории), is_active. Источник истины — БД, можно
+// править без релиза. Public read (без auth).
+export const faq = pgTable(
+  'faq',
+  {
+    id: text('id').primaryKey(),
+    question: text('question').notNull(),
+    answer: text('answer').notNull(),
+    category: text('category').notNull().default('Общее'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+  },
+  (t) => ({
+    sortIdx: index('faq_sort_idx').on(t.sortOrder),
+    categoryIdx: index('faq_category_idx').on(t.category),
+  }),
+);
+
+// ============================================================================
+// CONTACT EXCHANGES (Round 6) — нетворкинг через QR-визитку
+// ============================================================================
+// Юзер A открывает «Мою визитку» (QR содержит {userId, sig}). Юзер B
+// сканирует. Сервер пишет запись: A↔B обменялись контактами в момент T.
+// Симметрично: записываем ОБЕ строки (A→B и B→A), чтобы у обоих в списке
+// контактов появилась запись (без сложных JOIN-ов на чтение).
+// Optional note — заметка от scanner'а («познакомились на докладе про K8s»).
+export const contactExchanges = pgTable(
+  'contact_exchanges',
+  {
+    ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    note: text('note').notNull().default(''),
+    metAt: timestamp('met_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.ownerId, t.contactId] }),
+    contactIdx: index('contact_exchanges_contact_idx').on(t.contactId),
+  }),
+);
+
+// ============================================================================
 // PASSWORD RESET (forgot-password flow)
 // ============================================================================
 // Хранит short-lived reset-токены. token хешируется (SHA-256) — в БД лежит
