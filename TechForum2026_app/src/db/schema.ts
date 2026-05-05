@@ -69,6 +69,47 @@ export type User = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
 
 // ============================================================================
+// EVENTS — multi-event фундамент (Round 4)
+// ============================================================================
+// Раньше приложение было однособытийное (хардкод 'techforum-2026' в server.ts:
+// ticket-payload). Теперь events — отдельная таблица, и одно приложение может
+// обслуживать N событий (как Eventicious-эталон). Существующие таблицы
+// (sessions, speakers, partners, news, etc) пока БЕЗ event_id колонок —
+// реальная миграция к multi-event схеме делается позже, когда:
+//  1) появится второе событие в реальности (осенний форум 2026)
+//  2) будет готова админка для seed'а нового event'а
+// Пока этого нет — все queries неявно работают с default-событием.
+//
+// hmacSecret отдельный per-event — используется для подписи QR-билета
+// (см. server.ts ticket payload). Если протекает один — другой event
+// остаётся защищённым.
+//
+// settings jsonb — гибкий контейнер для feature-flags конкретного события
+// (показывать/скрывать модули, кастомные ссылки в Settings, etc).
+export const events = pgTable(
+  'events',
+  {
+    id: text('id').primaryKey(),
+    slug: text('slug').notNull().unique(),
+    name: text('name').notNull(),
+    location: text('location').notNull().default(''),
+    city: text('city').notNull().default(''),
+    timezone: text('timezone').notNull().default('Europe/Moscow'),
+    organizer: text('organizer').notNull().default(''),
+    organizerEmail: text('organizer_email'),
+    url: text('url'),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    endsAt: timestamp('ends_at', { withTimezone: true }),
+    hmacSecret: text('hmac_secret').notNull().default(''),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    slugIdx: index('events_slug_idx').on(t.slug),
+  }),
+);
+
+// ============================================================================
 // PROGRAM REFERENCE TABLES (треки / залы / дни / спикеры / сессии / партнёры)
 // ============================================================================
 

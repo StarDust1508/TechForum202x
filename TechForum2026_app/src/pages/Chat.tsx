@@ -16,6 +16,7 @@ import PageShell from '@/src/components/ui/PageShell';
 import AvatarImage from '@/src/components/ui/AvatarImage';
 import Skeleton from '@/src/components/ui/Skeleton';
 import { hapticImpact, hapticNotify } from '@/src/lib/haptics';
+import { useDmSocket, type DmSocketEvent } from '@/src/lib/dmSocket';
 
 // ===== TYPES =====
 type DmContact = {
@@ -146,9 +147,17 @@ function ChatList() {
 
   useEffect(() => {
     void fetchContacts();
-    const t = window.setInterval(() => { void fetchContacts(); }, 10_000);
+    // Polling 30с — fallback. Round 4: WS push'и сразу обновляют unread.
+    const t = window.setInterval(() => { void fetchContacts(); }, 30_000);
     return () => window.clearInterval(t);
   }, [fetchContacts]);
+
+  // Live-обновление списка переписок при WS push'е dm:new.
+  useDmSocket((ev) => {
+    if (ev.type === 'dm:new' || ev.type === 'dm:edit' || ev.type === 'dm:delete') {
+      void fetchContacts();
+    }
+  });
 
   // Search debounce 350ms.
   useEffect(() => {
@@ -410,9 +419,28 @@ function DmRoom({ userId }: { userId: string }) {
   useEffect(() => {
     if (!meId) return;
     void fetchDialog();
-    const t = window.setInterval(() => { void fetchDialog(); }, 4_000);
+    // Polling 12с — fallback. Раньше было 4с, но Round 4 поднял WebSocket
+    // (см. useDmSocket ниже) — push'и приходят моментально, polling нужен
+    // только если WS не подключился (offline / proxy stripping). 12с
+    // экономит трафик и батарею.
+    const t = window.setInterval(() => { void fetchDialog(); }, 12_000);
     return () => window.clearInterval(t);
   }, [fetchDialog, meId]);
+
+  // Round 4: WebSocket для live-обновлений. На каждый событие диалога
+  // пере-фетчим (легче чем merge в state, и polling всё равно сольёт).
+  useDmSocket((ev: DmSocketEvent) => {
+    if (!meId) return;
+    if (ev.type === 'dm:new' || ev.type === 'dm:edit' || ev.type === 'dm:delete') {
+      // Только если событие касается ЭТОГО диалога (me ↔ userId).
+      const involved =
+        (ev.from === meId && ev.to === userId) ||
+        (ev.from === userId && ev.to === meId);
+      if (involved) void fetchDialog();
+    } else if (ev.type === 'dm:pin' && ev.partnerUserId === userId) {
+      setPinnedId(ev.messageId);
+    }
+  });
 
   // Auto-scroll вниз на новые сообщения — НО только если юзер был у нижнего
   // края (~120px). Раньше скроллило всегда, и при чтении истории пришедшее

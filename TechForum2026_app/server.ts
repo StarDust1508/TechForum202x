@@ -116,7 +116,7 @@ const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
-  tracks, halls, days, speakers, partners, sessionSpeakers, news,
+  tracks, halls, days, speakers, partners, sessionSpeakers, news, events,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -335,7 +335,10 @@ async function startServer(): Promise<void> {
     pruneSessionInterval: 60 * 15,
   });
 
-  app.use(session({
+  // Session middleware вынесен в переменную, чтобы можно было применять его
+  // в WebSocket-upgrade handler'е (см. initDmWebSocketServer ниже) — WS
+  // должен авторизоваться по тому же session-cookie что и HTTP.
+  const sessionMiddleware = session({
     store: sessionStore,
     secret: sessionSecret,
     resave: false,
@@ -347,7 +350,35 @@ async function startServer(): Promise<void> {
       maxAge: 1000 * 60 * 60 * 24 * 30,
       httpOnly: true,
     },
-  }));
+  });
+  app.use(sessionMiddleware);
+
+  // ========================================================================
+  // WebSocket для DM (Round 4 АРХИТЕКТУРА) — declaration up top чтобы
+  // endpoint handlers ниже могли вызывать dmBroadcast.
+  // ========================================================================
+  // Подключение: ws://host/api/v1/ws/dm — после upgrade авторизуем по
+  // session-cookie (тот же sessionMiddleware что HTTP). После connect клиент
+  // получает push'и: { type: 'dm:new'|'dm:edit'|'dm:delete'|'dm:pin', from,
+  // to, ... } только когда он участник диалога (from===me ИЛИ to===me).
+  // На сервере держим Map<userId, Set<WebSocket>> — мультиклиент допускается
+  // (web-tab + APK у одного юзера).
+  const userSockets = new Map<string, Set<import('ws').WebSocket>>();
+  function dmBroadcast(event: { type: string; from?: string | null; to?: string | null; [k: string]: unknown }): void {
+    const targets = new Set<string>();
+    if (event.from) targets.add(String(event.from));
+    if (event.to) targets.add(String(event.to));
+    const payload = JSON.stringify(event);
+    for (const userId of targets) {
+      const set = userSockets.get(userId);
+      if (!set) continue;
+      for (const ws of set) {
+        if (ws.readyState === 1 /* OPEN */) {
+          try { ws.send(payload); } catch { /* socket lost */ }
+        }
+      }
+    }
+  }
 
   // DIAG (повторно включено): полный лог auth-flow + interests +
   // body-summary при ошибках 4xx. Без этого нельзя поймать жалобы вида
@@ -1506,7 +1537,7 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'dm_create_failed' });
       return;
     }
-    res.json({
+    const out = {
       id: inserted.id,
       fromUserId: inserted.fromUserId,
       toUserId: inserted.toUserId,
@@ -1517,7 +1548,11 @@ async function startServer(): Promise<void> {
       forwardedFromUserId: inserted.forwardedFromUserId,
       createdAt: inserted.createdAt,
       readAt: inserted.readAt,
-    });
+    };
+    // Round 4: WebSocket push участникам диалога (отправителю и получателю).
+    // Клиенты, у которых открыт WS, увидят сообщение мгновенно — без 4с-poll.
+    dmBroadcast({ type: 'dm:new', from: inserted.fromUserId, to: inserted.toUserId, message: out });
+    res.json(out);
   });
 
   // POST /messages/upload-media — заливка вложения для DM.
@@ -1684,6 +1719,7 @@ async function startServer(): Promise<void> {
       }
     }
     await db.delete(directMessages).where(eq(directMessages.id, id));
+    dmBroadcast({ type: 'dm:delete', from: dm.fromUserId, to: dm.toUserId, messageId: id });
     res.json({ ok: true });
   });
 
@@ -1718,6 +1754,7 @@ async function startServer(): Promise<void> {
       return;
     }
     await db.update(directMessages).set({ text: newText }).where(eq(directMessages.id, id));
+    dmBroadcast({ type: 'dm:edit', from: dm.fromUserId, to: dm.toUserId, messageId: id, text: newText });
     res.json({ ok: true, text: newText });
   });
 
@@ -1803,6 +1840,8 @@ async function startServer(): Promise<void> {
         target: [dmPins.userId, dmPins.partnerUserId],
         set: { messageId, pinnedAt: new Date() },
       });
+    // Sync pin между устройствами одного юзера (web-tab + APK).
+    dmBroadcast({ type: 'dm:pin', from: me, to: null, partnerUserId, messageId });
     res.json({ messageId });
   });
 
@@ -1811,6 +1850,7 @@ async function startServer(): Promise<void> {
     const partnerUserId = String(req.params.partnerUserId);
     await db.delete(dmPins)
       .where(and(eq(dmPins.userId, me), eq(dmPins.partnerUserId, partnerUserId)));
+    dmBroadcast({ type: 'dm:pin', from: me, to: null, partnerUserId, messageId: null });
     res.json({ ok: true });
   });
 
@@ -2078,6 +2118,46 @@ async function startServer(): Promise<void> {
     res.json(rows);
   });
 
+  // Round 4: GET /events — список активных событий, /events/:slug — один.
+  // Используется на splash + (будет) для переключателя «Другое событие».
+  // Сейчас — один default 'techforum-2026'.
+  api.get('/events', async (_req, res) => {
+    const rows = await db.select().from(events).where(eq(events.isActive, true));
+    res.json(rows.map((e) => ({
+      id: e.id,
+      slug: e.slug,
+      name: e.name,
+      location: e.location,
+      city: e.city,
+      timezone: e.timezone,
+      organizer: e.organizer,
+      url: e.url,
+      startsAt: e.startsAt,
+      endsAt: e.endsAt,
+    })));
+  });
+
+  api.get('/events/:slug', async (req, res) => {
+    const slug = String(req.params.slug);
+    const row = (await db.select().from(events).where(eq(events.slug, slug)).limit(1))[0];
+    if (!row) {
+      res.status(404).json({ error: 'event_not_found' });
+      return;
+    }
+    res.json({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      location: row.location,
+      city: row.city,
+      timezone: row.timezone,
+      organizer: row.organizer,
+      url: row.url,
+      startsAt: row.startsAt,
+      endsAt: row.endsAt,
+    });
+  });
+
   api.get('/news', async (_req, res) => {
     const rows = await db.select().from(news).orderBy(news.sortOrder);
     res.json(rows.map((n) => ({
@@ -2338,9 +2418,65 @@ async function startServer(): Promise<void> {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  async function initDmWs(httpServer: import('node:http').Server): Promise<void> {
+    const { WebSocketServer } = await import('ws');
+    const wss = new WebSocketServer({ noServer: true });
+
+    httpServer.on('upgrade', (req, socket, head) => {
+      // Авторизуем только наш WS path. Любой другой upgrade закрываем.
+      const url = req.url ?? '';
+      if (!url.startsWith(`${API_V1_PREFIX}/ws/dm`)) {
+        socket.destroy();
+        return;
+      }
+      // Прогоняем session middleware на фейковом res, чтобы получить
+      // req.session с userId из cookie.
+      sessionMiddleware(req as any, {} as any, () => {
+        const userId = (req as any).session?.userId;
+        if (!userId || typeof userId !== 'string') {
+          // 401 не отдадим красиво (uprgade hijack), просто закрываем.
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          // Регистрируем сокет в Map.
+          let set = userSockets.get(userId);
+          if (!set) { set = new Set(); userSockets.set(userId, set); }
+          set.add(ws);
+          ws.send(JSON.stringify({ type: 'hello', userId }));
+          // Heart-beat: пинг каждые 30с, отключаем мёртвых клиентов.
+          const heartbeat = setInterval(() => {
+            if (ws.readyState !== 1) { clearInterval(heartbeat); return; }
+            try { ws.ping(); } catch { /* socket lost */ }
+          }, 30_000);
+          ws.on('close', () => {
+            clearInterval(heartbeat);
+            const s = userSockets.get(userId);
+            if (s) {
+              s.delete(ws);
+              if (s.size === 0) userSockets.delete(userId);
+            }
+          });
+          ws.on('error', () => {
+            try { ws.close(); } catch { /* noop */ }
+          });
+          // Клиент-инициированных сообщений у нас нет (пока). Игнорируем.
+        });
+      });
+    });
+  }
+
+  // Round 4 (АРХИТЕКТУРА): WebSocket для DM. Поднимаем http.Server вручную,
+  // прицепляем ws.Server на upgrade event, broadcast'им dm-events на send/edit/
+  // delete/pin. Frontend подключается к /api/v1/ws/dm и получает push'ы.
+  // Polling 4с остаётся как fallback (если WS не открылся / упал).
+  const httpServer = (await import('node:http')).createServer(app);
+  await initDmWs(httpServer);
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Hybrid Architecture Server running on http://0.0.0.0:${PORT}`);
     console.log(`API health: http://localhost:${PORT}${API_V1_PREFIX}/health`);
+    console.log(`WebSocket: ws://0.0.0.0:${PORT}${API_V1_PREFIX}/ws/dm`);
   });
 
   // BUG_FIX_CONTEXT: graceful shutdown — Postgres pool должен закрыться явно,
