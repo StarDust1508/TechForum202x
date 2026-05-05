@@ -1,7 +1,8 @@
 import { Building2, ExternalLink, Globe2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import PageShell from '@/src/components/ui/PageShell';
-import { PARTNERS } from '../data';
+import Skeleton from '@/src/components/ui/Skeleton';
+import { usePartners } from '@/src/lib/programData';
 
 // Раньше тут лежал inline-массив с fake-партнёрами (Quantum Cloud /
 // quantumcloud.example и т.п.). Источник истины — PARTNERS в src/data.ts,
@@ -16,6 +17,7 @@ const TIER_ORDER: Record<string, number> = {
 };
 
 export default function Partners() {
+  const { data: PARTNERS, loading } = usePartners();
   const sorted = [...PARTNERS].sort((a, b) => {
     const ai = TIER_ORDER[a.tier] ?? 99;
     const bi = TIER_ORDER[b.tier] ?? 99;
@@ -33,6 +35,22 @@ export default function Partners() {
       title="Партнёры"
       subtitle={`${sorted.length} компаний поддерживают форум в этом году`}
     >
+      {loading && sorted.length === 0 ? (
+        <div className="space-y-3">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-3">
+              <div className="flex items-start gap-3">
+                <Skeleton className="rounded-2xl" width={40} height={40} />
+                <div className="flex-1 space-y-2">
+                  <Skeleton height={15} width="55%" />
+                  <Skeleton height={10} width="35%" />
+                </div>
+              </div>
+              <Skeleton height={28} />
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="space-y-3">
         {sorted.map((partner, idx) => (
           <motion.a
@@ -71,6 +89,7 @@ export default function Partners() {
           </motion.a>
         ))}
       </div>
+      )}
     </PageShell>
   );
 }

@@ -155,6 +155,31 @@ export const partners = pgTable('partners', {
   description: text('description').notNull(),
 });
 
+// News (Лента) — раньше жил в src/data.ts. Round 3 переносит в БД, чтобы
+// контент мог обновляться без релиза APK. speakerId — опциональная ссылка
+// на автора (FK SET NULL: если спикер удалён, новость остаётся).
+// isCritical — красная точка-индикатор в UI. category — рубрика.
+export const news = pgTable(
+  'news',
+  {
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    body: text('body').notNull().default(''),
+    time: text('time').notNull(),
+    isCritical: boolean('is_critical').notNull().default(false),
+    category: text('category'),
+    speakerId: text('speaker_id').references(() => speakers.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    sortOrder: integer('sort_order').notNull().default(0),
+  },
+  (t) => ({
+    sortIdx: index('news_sort_idx').on(t.sortOrder),
+    speakerIdx: index('news_speaker_idx').on(t.speakerId),
+  }),
+);
+
 // ============================================================================
 // SOCIAL FEED
 // ============================================================================

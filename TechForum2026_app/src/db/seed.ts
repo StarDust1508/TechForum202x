@@ -28,10 +28,10 @@ import { db, closeDb } from './index';
 import {
   tracks, halls, days, speakers,
   sessionsEvent, sessionSpeakers,
-  partners, users, interests,
+  partners, users, interests, news,
 } from './schema';
 import {
-  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS,
+  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS, NEWS,
 } from '../data';
 
 function hashPassword(password: string, salt?: string): string {
@@ -176,6 +176,40 @@ async function seedReferenceTables(): Promise<void> {
   }
   console.log(`[seed] partners: upserted ${PARTNERS.length}`);
   // END_BLOCK_PARTNERS
+
+  // START_BLOCK_NEWS: новости (Лента). sortOrder = индекс в массиве,
+  // потому что хронологический порядок данных задан вручную (свежие сверху).
+  for (let i = 0; i < NEWS.length; i += 1) {
+    const n = NEWS[i]!;
+    const values = {
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      content: n.content,
+      body: n.body ?? '',
+      time: n.time,
+      isCritical: n.isCritical,
+      category: n.category ?? null,
+      speakerId: n.speakerId ?? null,
+      sortOrder: i,
+    };
+    await db.insert(news).values(values).onConflictDoUpdate({
+      target: news.id,
+      set: {
+        type: values.type,
+        title: values.title,
+        content: values.content,
+        body: values.body,
+        time: values.time,
+        isCritical: values.isCritical,
+        category: values.category,
+        speakerId: values.speakerId,
+        sortOrder: values.sortOrder,
+      },
+    });
+  }
+  console.log(`[seed] news: upserted ${NEWS.length}`);
+  // END_BLOCK_NEWS
 }
 
 async function seedDevUser(): Promise<void> {

@@ -28,7 +28,9 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
+import { TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
+import { useSessions } from '@/src/lib/programData';
+import Skeleton from '@/src/components/ui/Skeleton';
 import { MapPin, Filter, AlertTriangle, X, Coffee, Mic, Hand } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
@@ -50,10 +52,10 @@ function timeToMinutes(hhmm: string): number {
  * Возвращает все сессии того же дня, которые пересекаются по времени с target,
  * и при этом уже в registeredIds (т.е. конфликтуют). Сама target исключается.
  */
-function findConflicts(target: Session, registeredIds: string[]): Session[] {
+function findConflicts(allSessions: Session[], target: Session, registeredIds: string[]): Session[] {
   const targetStart = timeToMinutes(target.startTime);
   const targetEnd = timeToMinutes(target.endTime);
-  return SESSIONS.filter(s => {
+  return allSessions.filter(s => {
     if (s.id === target.id) return false;
     if (s.dayId !== target.dayId) return false;
     if (!registeredIds.includes(s.id)) return false;
@@ -64,6 +66,7 @@ function findConflicts(target: Session, registeredIds: string[]): Session[] {
 }
 
 export default function Schedule() {
+  const { data: SESSIONS, loading: sessionsLoading } = useSessions();
   const [activeHallId, setActiveHallId] = useState<string>('all');
   const [activeTrackId, setActiveTrackId] = useState<string>('all');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
@@ -126,7 +129,7 @@ export default function Schedule() {
       setRegisteredAndPersist(session.id, false);
       return;
     }
-    const conflicts = findConflicts(session, registeredIds);
+    const conflicts = findConflicts(SESSIONS, session, registeredIds);
     if (conflicts.length > 0) {
       setConflictTarget({ session, conflicts });
       return;
@@ -204,6 +207,21 @@ export default function Schedule() {
 
       <div className="space-y-5 mt-6">
         <div>
+          {sessionsLoading && filteredSessions.length === 0 && (
+            <div className="space-y-4">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Skeleton height={11} width="35%" />
+                    <Skeleton height={26} width={80} />
+                  </div>
+                  <Skeleton height={20} width="80%" />
+                  <Skeleton height={12} width="60%" />
+                  <Skeleton height={36} />
+                </div>
+              ))}
+            </div>
+          )}
           {filteredSessions.map((session, idx) => {
             const track = getTrackById(session.trackId);
             const trackColor = track?.color ?? '#4ec9c0';

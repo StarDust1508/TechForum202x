@@ -116,6 +116,7 @@ const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
+  tracks, halls, days, speakers, partners, sessionSpeakers, news,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -1988,6 +1989,108 @@ async function startServer(): Promise<void> {
   // случай если решим показывать его сразу после регистрации без редиректа).
   api.get('/interests', (_req, res) => {
     res.json(INTERESTS);
+  });
+
+  // ========================================================================
+  // PROGRAM CONTENT (Round 3 — раньше src/data.ts шипился внутри APK,
+  // теперь читается из БД → можно править без релиза приложения).
+  // Public endpoints (без auth), кэш через HTTP-headers нет — но содержимое
+  // мало (десятки строк), запрос быстрый, prefetch на splash прогревает.
+  // ========================================================================
+  api.get('/tracks', async (_req, res) => {
+    const rows = await db.select().from(tracks);
+    res.json(rows);
+  });
+
+  api.get('/halls', async (_req, res) => {
+    const rows = await db.select().from(halls);
+    res.json(rows);
+  });
+
+  api.get('/days', async (_req, res) => {
+    const rows = await db.select().from(days);
+    res.json(rows);
+  });
+
+  api.get('/speakers', async (_req, res) => {
+    const rows = await db.select().from(speakers);
+    res.json(rows.map((s) => ({
+      id: s.id,
+      name: s.name,
+      role: s.role,
+      company: s.company,
+      bio: s.bio,
+      avatarLetter: s.avatarLetter,
+      topic: s.topic,
+      trackId: s.trackId,
+      interestIds: s.interestIds,
+    })));
+  });
+
+  api.get('/sessions', async (_req, res) => {
+    // Один большой fetch с computed-полями (location/speakerName/track/day),
+    // которые ожидают v1 страницы (Schedule, MyRecords, SpeakerDetail).
+    // Раньше эти поля заполнялись в src/data.ts вручную; теперь — при выдаче.
+    const [sessRows, linkRows, hallRows, dayRows, trackRows, speakerRows] = await Promise.all([
+      db.select().from(sessionsEvent),
+      db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
+      db.select().from(halls),
+      db.select().from(days),
+      db.select().from(tracks),
+      db.select().from(speakers),
+    ]);
+    const hallById = new Map(hallRows.map((h) => [h.id, h]));
+    const dayById = new Map(dayRows.map((d) => [d.id, d]));
+    const trackById = new Map(trackRows.map((t) => [t.id, t]));
+    const speakerById = new Map(speakerRows.map((s) => [s.id, s]));
+    const speakerIdsByMsg = new Map<string, string[]>();
+    for (const l of linkRows) {
+      const arr = speakerIdsByMsg.get(l.sessionId) ?? [];
+      arr.push(l.speakerId);
+      speakerIdsByMsg.set(l.sessionId, arr);
+    }
+    res.json(sessRows.map((s) => {
+      const speakerIds = speakerIdsByMsg.get(s.id) ?? [];
+      const firstSpeaker = speakerIds[0] ? speakerById.get(speakerIds[0]) : null;
+      return {
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        format: s.format,
+        hallId: s.hallId,
+        dayId: s.dayId,
+        trackId: s.trackId,
+        status: s.status,
+        speakerIds,
+        // Backwards-compat computed для v1 страниц.
+        location: s.hallId ? (hallById.get(s.hallId)?.name ?? '') : 'Главный зал',
+        speakerName: firstSpeaker?.name ?? '—',
+        track: s.trackId ? (trackById.get(s.trackId)?.name ?? '') : '',
+        day: dayById.get(s.dayId)?.label ?? '',
+      };
+    }));
+  });
+
+  api.get('/partners', async (_req, res) => {
+    const rows = await db.select().from(partners);
+    res.json(rows);
+  });
+
+  api.get('/news', async (_req, res) => {
+    const rows = await db.select().from(news).orderBy(news.sortOrder);
+    res.json(rows.map((n) => ({
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      content: n.content,
+      body: n.body,
+      time: n.time,
+      isCritical: n.isCritical,
+      category: n.category,
+      speakerId: n.speakerId,
+    })));
   });
 
   api.get('/me/interests', requireAuth, async (req, res) => {

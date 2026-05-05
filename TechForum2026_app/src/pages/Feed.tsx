@@ -1,12 +1,27 @@
 import { Clock, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { NEWS, getSpeakerById } from '../data';
+import { getSpeakerById } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
+import Skeleton from '@/src/components/ui/Skeleton';
+import { useNews } from '@/src/lib/programData';
 
 export default function Feed() {
+  const { data: NEWS, loading } = useNews();
   return (
-    <PageShell kicker="Новости форума" title="Лента" subtitle={`${NEWS.length} материалов от спикеров`}>
+    <PageShell kicker="Новости форума" title="Лента" subtitle={loading ? undefined : `${NEWS.length} материалов от спикеров`}>
+      {loading && NEWS.length === 0 && (
+        <ul className="space-y-3">
+          {[0, 1, 2, 3].map((i) => (
+            <li key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-2">
+              <Skeleton height={11} width="35%" />
+              <Skeleton height={17} width="80%" />
+              <Skeleton height={11} width="95%" />
+              <Skeleton height={10} width="60%" />
+            </li>
+          ))}
+        </ul>
+      )}
       <ul className="space-y-3">
         {NEWS.map((news, idx) => {
           const speaker = news.speakerId ? getSpeakerById(news.speakerId) : undefined;

@@ -4,7 +4,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CalendarCheck2, Clock3, MapPin, Download, Trophy, Award, X, NotebookPen, Plus, Trash2, Edit3 } from 'lucide-react';
-import { SESSIONS, DAYS, getDayById } from '../data';
+import { DAYS, getDayById } from '../data';
+import { useSessions } from '@/src/lib/programData';
 import PageShell from '@/src/components/ui/PageShell';
 import Skeleton from '@/src/components/ui/Skeleton';
 import Button from '@/src/components/ui/Button';
@@ -50,6 +51,7 @@ function timeToMinutes(hhmm: string): number {
 type Tab = 'sessions' | 'giveaways' | 'notes';
 
 export default function MyRecords() {
+  const { data: SESSIONS } = useSessions();
   const [tab, setTab] = useState<Tab>('sessions');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
   const [joinedGiveaways, setJoinedGiveaways] = useState<string[]>([]);

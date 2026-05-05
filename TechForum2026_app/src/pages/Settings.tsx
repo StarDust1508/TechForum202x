@@ -1,0 +1,217 @@
+// FILE: src/pages/Settings.tsx
+// VERSION: 1.0.0
+// Settings страница — минимальный набор по эталону Eventicious-приложений
+// (TechWeek Moscow). 4 пункта: Уведомления, Условия, Согласие на ПД, О приложении.
+// Раньше «настроек» как раздела не было; cog-иконка в Profile открывала
+// модалку редактирования профиля — что не интуитивно.
+//
+// Все 4 экрана внутри — простые info-страницы. Условия / Соглашение —
+// полные тексты в комплект 152-ФЗ. О приложении — версия + ссылки.
+//
+// Уведомления — пока локальная toggle (без бэкенда push), Round 4 заведёт
+// push_tokens table и реальные подписки.
+
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft,
+} from 'lucide-react';
+import PageShell from '@/src/components/ui/PageShell';
+import { hapticSelection } from '@/src/lib/haptics';
+
+type Section = 'notifications' | 'terms' | 'privacy' | 'about';
+
+const TERMS_TEXT = `Используя приложение TechForum 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
+
+Приложение разработано для участников конференции и предоставляется для удобства навигации по программе, общения с другими участниками и получения уведомлений от организатора.
+
+Запрещено: спам, оскорбления других участников, использование чужих учётных записей, попытки получить несанкционированный доступ к чужим данным или серверу.
+
+При обнаружении нарушений организатор оставляет за собой право заблокировать аккаунт без возврата стоимости билета.
+
+Все материалы (доклады, фото, видео) защищены авторским правом и не могут быть опубликованы вне приложения без разрешения авторов и организатора.
+
+Полную версию пользовательского соглашения см. на сайте techforum.ru.`;
+
+const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
+— ФИО, контактный email, телефон;
+— фото профиля (если загружено);
+— ваша активность в приложении (регистрации на сессии, переписка с другими участниками — содержимое сообщений шифруется на сервере при хранении);
+— технические данные устройства (модель, ОС, IP-адрес) — для диагностики и защиты от злоупотреблений.
+
+Цели обработки: предоставление функционала приложения, отправка уведомлений о форуме, статистика для организатора (анонимизированная).
+
+Срок хранения: пока действует ваш аккаунт + 6 месяцев после удаления (юридический архив).
+
+Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
+
+Вы можете в любой момент:
+— скачать копию своих данных (запрос через support@techforum.ru);
+— удалить аккаунт через профиль (необратимо).
+
+Полная политика конфиденциальности доступна на сайте techforum.ru/privacy.`;
+
+const APP_VERSION = '1.0.0';
+const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
+
+function NotificationsPage() {
+  // Local toggle, без бэкенда — Round 4 заведёт push_tokens.
+  const NOTIF_LS_KEY = 'techforum_notifications_enabled';
+  const [enabled, setEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem(NOTIF_LS_KEY) !== '0'; } catch { return true; }
+  });
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    void hapticSelection();
+    try { localStorage.setItem(NOTIF_LS_KEY, next ? '1' : '0'); } catch { /* noop */ }
+  };
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-5 py-4 active:scale-[0.99] transition-transform"
+      >
+        <div className="text-left">
+          <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
+            Push-уведомления
+          </p>
+          <p className="text-[12px] text-[#7aa8a4] mt-0.5">
+            Анонсы сессий, ответы на сообщения
+          </p>
+        </div>
+        <span
+          className={`relative w-11 h-6 rounded-full transition-colors ${
+            enabled ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
+          }`}
+        >
+          <motion.span
+            layout
+            transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+            className={`absolute top-0.5 w-5 h-5 rounded-full ${
+              enabled ? 'left-[22px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+            }`}
+          />
+        </span>
+      </button>
+      <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+        Подписка на push активируется на следующем релизе приложения.
+        Сейчас переключатель сохраняет ваше предпочтение локально, и оно
+        будет применено при первом запросе разрешения у системы.
+      </p>
+    </div>
+  );
+}
+
+export default function Settings() {
+  const [section, setSection] = useState<Section | null>(null);
+
+  const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
+    { key: 'notifications', icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' },
+    { key: 'terms', icon: FileText, label: 'Условия использования', sub: 'Правила форума' },
+    { key: 'privacy', icon: ShieldCheck, label: 'Согласие на обработку ПД', sub: '152-ФЗ' },
+    { key: 'about', icon: Info, label: 'О приложении', sub: `Версия ${APP_VERSION}` },
+  ];
+
+  return (
+    <PageShell title="Настройки" kicker="Параметры">
+      <div className="space-y-2.5">
+        {items.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            onClick={() => setSection(it.key)}
+            className="w-full flex items-center gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 hover:border-[#4ec9c0]/45 active:scale-[0.99] transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl border border-[#4ec9c0]/35 bg-[#03161c]/55 flex items-center justify-center text-[#4ec9c0] shrink-0">
+              <it.icon className="w-4.5 h-4.5" strokeWidth={1.6} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
+                {it.label}
+              </p>
+              <p className="text-[12px] text-[#7aa8a4] mt-0.5 truncate">{it.sub}</p>
+            </div>
+            <ChevronRight className="w-4 h-4 text-[#4ec9c0]/55" strokeWidth={1.6} />
+          </button>
+        ))}
+      </div>
+
+      <AnimatePresence>
+        {section && (
+          <motion.div
+            key="settings-detail"
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 24 }}
+            transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+            className="fixed inset-0 z-[80] bg-[#03161c] flex flex-col"
+            style={{
+              paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+              paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+            }}
+          >
+            <div className="flex items-center gap-3 px-5 pb-4 border-b border-[#4ec9c0]/22">
+              <button
+                type="button"
+                onClick={() => setSection(null)}
+                aria-label="Назад"
+                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/35 bg-[#0a2f38]/45 flex items-center justify-center text-[#4ec9c0] active:scale-90 transition-transform"
+              >
+                <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
+              </button>
+              <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">
+                {section === 'notifications' && 'Уведомления'}
+                {section === 'terms' && 'Условия использования'}
+                {section === 'privacy' && 'Согласие на обработку ПД'}
+                {section === 'about' && 'О приложении'}
+              </h2>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => setSection(null)}
+                aria-label="Закрыть"
+                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/22 flex items-center justify-center text-[#7aa8a4] active:scale-90 transition-transform"
+              >
+                <X className="w-4 h-4" strokeWidth={1.8} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-5">
+              {section === 'notifications' && <NotificationsPage />}
+              {section === 'terms' && (
+                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
+                  {TERMS_TEXT}
+                </p>
+              )}
+              {section === 'privacy' && (
+                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
+                  {PRIVACY_TEXT}
+                </p>
+              )}
+              {section === 'about' && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/45 p-5 text-center">
+                    <p className="font-display text-[24px] font-semibold text-[#d8f0ee]">TechForum 2026</p>
+                    <p className="font-mono text-[11px] uppercase tracking-widest text-[#4ec9c0] mt-1">
+                      Версия {APP_VERSION} · build {APP_BUILD}
+                    </p>
+                  </div>
+                  <p className="text-[13px] text-[#d8f0ee]/85 leading-relaxed">
+                    Приложение TechForum 2026 — официальный гид по программе форума,
+                    инструмент нетворкинга и личный кабинет участника.
+                  </p>
+                  <p className="text-[12px] text-[#7aa8a4] leading-relaxed">
+                    Поддержка: support@techforum.ru<br />
+                    Сайт: techforum.ru
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </PageShell>
+  );
+}

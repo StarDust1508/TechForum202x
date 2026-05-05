@@ -2,22 +2,24 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Search, Info, X, ChevronRight } from 'lucide-react';
-import { SPEAKERS } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
+import Skeleton from '@/src/components/ui/Skeleton';
+import { useSpeakers } from '@/src/lib/programData';
 
 export default function Speakers() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
+  const { data: speakersList, loading } = useSpeakers();
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return SPEAKERS;
-    return SPEAKERS.filter((s) =>
+    if (!q) return speakersList;
+    return speakersList.filter((s) =>
       s.name.toLowerCase().includes(q) ||
       s.company.toLowerCase().includes(q) ||
       (s.topic ? s.topic.toLowerCase().includes(q) : false),
     );
-  }, [search]);
+  }, [search, speakersList]);
 
   return (
     <PageShell title="Спикеры">
@@ -46,6 +48,23 @@ export default function Speakers() {
         )}
       </div>
 
+      {loading && filtered.length === 0 ? (
+        <div className="space-y-3.5">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-4">
+              <div className="flex items-center gap-4">
+                <Skeleton className="rounded-[14px]" width={56} height={56} />
+                <div className="flex-1 space-y-2">
+                  <Skeleton height={18} width="65%" />
+                  <Skeleton height={11} width="50%" />
+                  <Skeleton height={10} width="40%" />
+                </div>
+              </div>
+              <Skeleton height={50} />
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="space-y-3.5">
         {filtered.map((speaker, idx) => (
           <motion.article
@@ -93,8 +112,9 @@ export default function Speakers() {
           </motion.article>
         ))}
       </div>
+      )}
 
-      {filtered.length === 0 && (
+      {!loading && filtered.length === 0 && (
         <div className="py-20 text-center">
           <p className="text-[#7aa8a4]">По запросу «{search}» никого не нашли</p>
         </div>
