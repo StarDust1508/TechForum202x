@@ -130,6 +130,15 @@ export const noteUpsertSchema = z.object({
   body: z.string().max(16_000),
 });
 
+// Push-token регистрация (Round 5).
+// platform: 'fcm' (Android FCM) | 'apns' (iOS) | 'rustore' | 'web'.
+// token до 4096 символов — длинные FCM tokens.
+export const pushTokenRegisterSchema = z.object({
+  token: z.string().trim().min(8).max(4096),
+  platform: z.enum(['fcm', 'apns', 'rustore', 'web']),
+  deviceLabel: z.string().max(120).optional(),
+});
+
 // Forgot-password (см. server.ts /auth/forgot-password/*).
 export const forgotPasswordStartSchema = z.object({
   email: emailSchema,
@@ -157,3 +166,4 @@ export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
 export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;
 export type DmSendBody = z.infer<typeof dmSendSchema>;
 export type NoteUpsertBody = z.infer<typeof noteUpsertSchema>;
+export type PushTokenRegisterBody = z.infer<typeof pushTokenRegisterSchema>;

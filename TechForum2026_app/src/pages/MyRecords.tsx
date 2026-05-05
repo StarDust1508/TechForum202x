@@ -10,7 +10,7 @@ import PageShell from '@/src/components/ui/PageShell';
 import Skeleton from '@/src/components/ui/Skeleton';
 import Button from '@/src/components/ui/Button';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
-import { GIVEAWAYS, LS_KEY as GIVEAWAYS_LS_KEY, readJoinedGiveaways } from './Giveaways';
+import { iconForKey, type GiveawayApi } from '@/src/lib/giveawayIcons';
 import { cn } from '@/src/lib/utils';
 
 // === NOTES (server-backed) ===
@@ -55,6 +55,7 @@ export default function MyRecords() {
   const [tab, setTab] = useState<Tab>('sessions');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
   const [joinedGiveaways, setJoinedGiveaways] = useState<string[]>([]);
+  const [allGiveaways, setAllGiveaways] = useState<GiveawayApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
@@ -81,9 +82,22 @@ export default function MyRecords() {
     return () => { cancelled = true; };
   }, []);
 
-  // Розыгрыши — refresh при заходе на таб
+  // Розыгрыши — refresh при заходе на таб (Round 5: API).
   useEffect(() => {
-    setJoinedGiveaways(readJoinedGiveaways());
+    if (tab !== 'giveaways') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [glist, mine] = await Promise.all([
+          fetch(resolveApiUrl('/giveaways'), { credentials: 'include' }).then((r) => r.ok ? r.json() : [] as GiveawayApi[]),
+          fetch(resolveApiUrl('/me/giveaways'), { credentials: 'include' }).then((r) => r.ok ? r.json() : { giveawayIds: [] }),
+        ]);
+        if (cancelled) return;
+        setAllGiveaways(glist as GiveawayApi[]);
+        setJoinedGiveaways(((mine as { giveawayIds: string[] }).giveawayIds) ?? []);
+      } catch { /* offline */ }
+    })();
+    return () => { cancelled = true; };
   }, [tab]);
 
   // Notes — fetch с сервера при первом заходе на таб (lazy).
@@ -119,12 +133,19 @@ export default function MyRecords() {
     return acc;
   }, {});
 
-  const myGiveaways = GIVEAWAYS.filter((g) => joinedGiveaways.includes(g.id));
+  const myGiveaways = allGiveaways.filter((g) => joinedGiveaways.includes(g.id));
 
-  const leaveGiveaway = (id: string) => {
-    const next = joinedGiveaways.filter((x) => x !== id);
-    setJoinedGiveaways(next);
-    try { localStorage.setItem(GIVEAWAYS_LS_KEY, JSON.stringify(next)); } catch { /* noop */ }
+  const leaveGiveaway = async (id: string) => {
+    const before = joinedGiveaways;
+    setJoinedGiveaways((prev) => prev.filter((x) => x !== id));
+    try {
+      const r = await fetch(resolveApiUrl(`/giveaways/${id}/join`), {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (!r.ok) throw new Error(`leave_failed_${r.status}`);
+    } catch {
+      setJoinedGiveaways(before);
+    }
   };
 
   // Notes CRUD ===========================================
@@ -342,10 +363,12 @@ export default function MyRecords() {
           </div>
         ) : (
           <div className="space-y-3">
-            {myGiveaways.map((g) => (
+            {myGiveaways.map((g) => {
+              const Icon = iconForKey(g.iconKey);
+              return (
               <article key={g.id} className="rounded-3xl border border-emerald-500/40 bg-[#0a2f38]/40 overflow-hidden">
                 <div className={cn('relative h-28 overflow-hidden flex items-center justify-center bg-gradient-to-br', g.gradient)}>
-                  <g.Icon className="relative z-10 w-16 h-16 text-[#d8f0ee] drop-shadow-[0_0_18px_rgba(255,255,255,0.4)]" strokeWidth={1.1} />
+                  <Icon className="relative z-10 w-16 h-16 text-[#d8f0ee] drop-shadow-[0_0_18px_rgba(255,255,255,0.4)]" strokeWidth={1.1} />
                   <span className="absolute top-2.5 left-2.5 bg-[#03161c]/85 backdrop-blur-md text-[#d8f0ee] font-mono text-[9px] font-semibold px-2 py-0.5 rounded-full border border-[#4ec9c0]/40 uppercase tracking-widest">
                     {g.category}
                   </span>
@@ -373,7 +396,8 @@ export default function MyRecords() {
                   </p>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         )
       )}

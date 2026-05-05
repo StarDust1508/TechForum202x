@@ -14,10 +14,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft,
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2,
 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
 import { hapticSelection } from '@/src/lib/haptics';
+import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
 
 type Section = 'notifications' | 'terms' | 'privacy' | 'about';
 
@@ -55,23 +56,46 @@ const APP_VERSION = '1.0.0';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
-  // Local toggle, без бэкенда — Round 4 заведёт push_tokens.
+  // Round 5: переключатель реально регистрирует/удаляет push-токен на бэке.
+  // ON: запрашивает permission, FCM token, отправляет POST /me/push-token.
+  // OFF: DELETE /me/push-token + удаляет сохранённый token локально.
+  // Реальная отправка push'ей с бэка ещё не настроена (нужен FCM project).
   const NOTIF_LS_KEY = 'techforum_notifications_enabled';
   const [enabled, setEnabled] = useState<boolean>(() => {
-    try { return localStorage.getItem(NOTIF_LS_KEY) !== '0'; } catch { return true; }
+    try { return localStorage.getItem(NOTIF_LS_KEY) === '1'; } catch { return false; }
   });
-  const toggle = () => {
-    const next = !enabled;
-    setEnabled(next);
+  const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState<string | null>(null);
+  const toggle = async () => {
+    if (busy) return;
+    setBusy(true);
     void hapticSelection();
-    try { localStorage.setItem(NOTIF_LS_KEY, next ? '1' : '0'); } catch { /* noop */ }
+    if (!enabled) {
+      // ON: register
+      const ok = await registerPushNotifications();
+      if (ok) {
+        setEnabled(true);
+        try { localStorage.setItem(NOTIF_LS_KEY, '1'); } catch { /* noop */ }
+        setHint('Подписка зарегистрирована на этом устройстве.');
+      } else {
+        setHint('Разрешение на уведомления не получено или сервис недоступен. Откройте Настройки → Приложения → TechForum 2026 → Уведомления и включите вручную.');
+      }
+    } else {
+      // OFF: unregister
+      await unregisterPushNotifications();
+      setEnabled(false);
+      try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
+      setHint('Подписка отключена. Push-уведомления приходить не будут.');
+    }
+    setBusy(false);
   };
   return (
     <div className="space-y-3">
       <button
         type="button"
         onClick={toggle}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-5 py-4 active:scale-[0.99] transition-transform"
+        disabled={busy}
+        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
       >
         <div className="text-left">
           <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
@@ -81,25 +105,36 @@ function NotificationsPage() {
             Анонсы сессий, ответы на сообщения
           </p>
         </div>
-        <span
-          className={`relative w-11 h-6 rounded-full transition-colors ${
-            enabled ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
-          }`}
-        >
-          <motion.span
-            layout
-            transition={{ type: 'spring', stiffness: 380, damping: 26 }}
-            className={`absolute top-0.5 w-5 h-5 rounded-full ${
-              enabled ? 'left-[22px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+        {busy ? (
+          <Loader2 className="w-5 h-5 animate-spin text-[#4ec9c0]" strokeWidth={1.8} />
+        ) : (
+          <span
+            className={`relative w-11 h-6 rounded-full transition-colors ${
+              enabled ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
             }`}
-          />
-        </span>
+          >
+            <motion.span
+              layout
+              transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+              className={`absolute top-0.5 w-5 h-5 rounded-full ${
+                enabled ? 'left-[22px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+              }`}
+            />
+          </span>
+        )}
       </button>
-      <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
-        Подписка на push активируется на следующем релизе приложения.
-        Сейчас переключатель сохраняет ваше предпочтение локально, и оно
-        будет применено при первом запросе разрешения у системы.
-      </p>
+      {hint && (
+        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+          {hint}
+        </p>
+      )}
+      {!hint && (
+        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+          Включите чтобы получать важные оповещения форума: начало сессии,
+          новые сообщения, объявления оргкомитета. Отключение применяется
+          мгновенно и не требует переустановки.
+        </p>
+      )}
     </div>
   );
 }

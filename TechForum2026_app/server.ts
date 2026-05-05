@@ -54,6 +54,7 @@ import {
   forgotPasswordVerifySchema,
   dmSendSchema,
   noteUpsertSchema,
+  pushTokenRegisterSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
 
@@ -117,6 +118,7 @@ const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
   tracks, halls, days, speakers, partners, sessionSpeakers, news, events,
+  pushTokens, giveaways, giveawayEntries,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -2116,6 +2118,126 @@ async function startServer(): Promise<void> {
   api.get('/partners', async (_req, res) => {
     const rows = await db.select().from(partners);
     res.json(rows);
+  });
+
+  // ========================================================================
+  // PUSH TOKENS — регистрация подписок устройств (Round 5)
+  // ========================================================================
+  // POST /me/push-token — upsert по token (один token = одно устройство).
+  //   Если уже зарегистрирован у этого юзера — обновляем last_seen_at.
+  //   Если у ДРУГОГО юзера (передача устройства / shared device) —
+  //   переписываем user_id (первый юзер уже не получит push на этот токен).
+  // DELETE /me/push-token — удалить конкретный токен (logout).
+  // GET /me/push-tokens — список своих регистраций (для UI Settings, опционально).
+  api.post(
+    '/me/push-token',
+    requireAuth,
+    writeRateLimit,
+    validateBody(pushTokenRegisterSchema),
+    async (req, res) => {
+      const me = getSessionUserId(req)!;
+      const { token, platform, deviceLabel } = req.body as import('./src/lib/validation.js').PushTokenRegisterBody;
+      // Upsert по token (UNIQUE). Если token уже есть — обновляем
+      // user_id (на случай смены аккаунта на устройстве) + last_seen_at.
+      const id = crypto.randomUUID();
+      await db.insert(pushTokens).values({
+        id, userId: me, platform, token, deviceLabel: deviceLabel ?? null,
+      }).onConflictDoUpdate({
+        target: pushTokens.token,
+        set: {
+          userId: me,
+          platform,
+          deviceLabel: deviceLabel ?? null,
+          lastSeenAt: new Date(),
+        },
+      });
+      res.json({ ok: true });
+    },
+  );
+
+  api.delete('/me/push-token', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const tokenRaw = req.query.token;
+    if (typeof tokenRaw !== 'string' || tokenRaw.length < 8) {
+      res.status(400).json({ error: 'token_required' });
+      return;
+    }
+    await db.delete(pushTokens).where(and(
+      eq(pushTokens.userId, me),
+      eq(pushTokens.token, tokenRaw),
+    ));
+    res.json({ ok: true });
+  });
+
+  api.get('/me/push-tokens', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const rows = await db.select().from(pushTokens).where(eq(pushTokens.userId, me));
+    res.json(rows.map((r) => ({
+      id: r.id,
+      platform: r.platform,
+      deviceLabel: r.deviceLabel,
+      // token НЕ отдаём — это секрет (если попадёт в логи фронта = leak).
+      createdAt: r.createdAt,
+      lastSeenAt: r.lastSeenAt,
+    })));
+  });
+
+  // ========================================================================
+  // GIVEAWAYS — призы и заявки участников (Round 5)
+  // ========================================================================
+  // GET /giveaways — активные призы, отсортированные по sort_order.
+  // GET /me/giveaways — список ID призов в которых я участвую.
+  // POST /giveaways/:id/join — подать заявку.
+  // DELETE /giveaways/:id/join — отозвать заявку.
+  api.get('/giveaways', async (_req, res) => {
+    const rows = await db.select().from(giveaways)
+      .where(eq(giveaways.isActive, true))
+      .orderBy(giveaways.sortOrder);
+    res.json(rows.map((g) => ({
+      id: g.id,
+      category: g.category,
+      item: g.item,
+      iconKey: g.iconKey,
+      gradient: g.gradient,
+      description: g.description,
+      condition: g.condition,
+      endTime: g.endTime,
+      featured: g.featured,
+    })));
+  });
+
+  api.get('/me/giveaways', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const rows = await db.select().from(giveawayEntries).where(eq(giveawayEntries.userId, me));
+    res.json({ giveawayIds: rows.map((r) => r.giveawayId) });
+  });
+
+  api.post('/giveaways/:id/join', requireAuth, writeRateLimit, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id);
+    const g = (await db.select().from(giveaways).where(eq(giveaways.id, id)).limit(1))[0];
+    if (!g) {
+      res.status(404).json({ error: 'giveaway_not_found' });
+      return;
+    }
+    if (!g.isActive) {
+      res.status(403).json({ error: 'giveaway_closed' });
+      return;
+    }
+    await db.insert(giveawayEntries)
+      .values({ userId: me, giveawayId: id })
+      .onConflictDoNothing();
+    res.json({ ok: true });
+  });
+
+  api.delete('/giveaways/:id/join', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const id = String(req.params.id);
+    await db.delete(giveawayEntries).where(and(
+      eq(giveawayEntries.userId, me),
+      eq(giveawayEntries.giveawayId, id),
+    ));
+    res.json({ ok: true });
   });
 
   // Round 4: GET /events — список активных событий, /events/:slug — один.

@@ -1,193 +1,92 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Gift, Trophy, ChevronRight, CheckCircle2, Clock, Sparkles, X,
-  Laptop, Headphones, Watch, Smartphone, Camera, Plane, BookOpen,
-  Mic2, Coffee, Backpack, Award,
-  type LucideIcon,
+  Gift, Trophy, ChevronRight, CheckCircle2, Clock, Sparkles, X, Loader2, Award,
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import PageShell from '@/src/components/ui/PageShell';
+import Skeleton from '@/src/components/ui/Skeleton';
+import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { iconForKey, type GiveawayApi } from '@/src/lib/giveawayIcons';
 
-export interface Giveaway {
-  id: string;
-  /** Краткое название (1-3 слова, для бейджа в верху карточки). */
-  category: string;
-  /** Что разыгрывается (h3 в карточке). */
-  item: string;
-  Icon: LucideIcon;
-  /** Цветовой акцент карточки — gradient «from → to» в Tailwind-формате. */
-  gradient: string;
-  /** Маркетинговое описание приза. */
-  description: string;
-  /** Условие участия — что нужно сделать. */
-  condition: string;
-  /** Когда подведут итоги. */
-  endTime: string;
-  /** Premium-флаг — для главного приза. */
-  featured?: boolean;
-  /** Стартовая «социальная» цифра (просто визуал — реальный счётчик локальный). */
-  participants: number;
-}
+// Round 5: данные тянутся из БД (/giveaways). LucideIcon resolves через
+// iconForKey(iconKey). Раньше захардкоженный GIVEAWAYS массив + LS_KEY +
+// readJoinedGiveaways остаётся только как backwards-compat re-export для
+// MyRecords (он импортирует readJoinedGiveaways как fallback при offline).
+export type Giveaway = GiveawayApi;
 
 // Призы от партнёров форума. Сейчас захардкожены — если форум вырастет
 // в постоянный продукт и потребует админку, переедем на серверный
 // эндпоинт `/giveaways` с CRUD.
-const GIVEAWAYS: Giveaway[] = [
-  {
-    id: 'g_main',
-    category: 'Главный приз',
-    item: 'Игровой ноутбук от партнёра',
-    Icon: Laptop,
-    gradient: 'from-[#4ec9c0]/40 to-[#4ec9c0]/10',
-    description: 'Топовый ноутбук с дискретной видеокартой — для разработки, рендера и игр на максимуме.',
-    condition: 'Зарегистрироваться на форум до 20 мая 18:00, посетить минимум 3 сессии (отметка через QR-сканер у входа в зал).',
-    endTime: '21 мая, 18:00',
-    participants: 0,
-    featured: true,
-  },
-  {
-    id: 'g_phone',
-    category: 'Smartphone',
-    item: 'Флагманский смартфон',
-    Icon: Smartphone,
-    gradient: 'from-purple-500/35 to-fuchsia-500/15',
-    description: 'Современный флагман с Pro-камерой и AI-ассистентом на устройстве.',
-    condition: 'Опубликовать пост о форуме в любой соцсети с хэштегом #TechForum2026 и отметить @techforum.',
-    endTime: '21 мая, 17:00',
-    participants: 0,
-  },
-  {
-    id: 'g_headphones',
-    category: 'Audio',
-    item: 'Беспроводные наушники',
-    Icon: Headphones,
-    gradient: 'from-indigo-500/35 to-blue-500/15',
-    description: 'Премиальные over-ear наушники с активным шумоподавлением и Hi-Res звуком.',
-    condition: 'Задать самый интересный вопрос любому из спикеров — лучший выбирает сам спикер на сцене.',
-    endTime: '21 мая, 16:00',
-    participants: 0,
-  },
-  {
-    id: 'g_watch',
-    category: 'Wearables',
-    item: 'Smart-часы Sport Edition',
-    Icon: Watch,
-    gradient: 'from-emerald-500/35 to-teal-500/15',
-    description: 'Часы с продвинутым health-tracking, GPS и автономностью до 7 дней.',
-    condition: 'Пройти 6000+ шагов в течение дня форума (трек через любой fitness-app, скриншот на стенде).',
-    endTime: '21 мая, 15:30',
-    participants: 0,
-  },
-  {
-    id: 'g_camera',
-    category: 'Photo',
-    item: 'Беззеркальная камера',
-    Icon: Camera,
-    gradient: 'from-rose-500/35 to-pink-500/15',
-    description: 'Mirrorless-камера с матрицей APS-C и универсальным kit-объективом.',
-    condition: 'Снять лучшее фото форума, опубликовать с хэштегом #TFCapture2026. Жюри отбирает 3-х финалистов.',
-    endTime: '21 мая, 14:00',
-    participants: 0,
-  },
-  {
-    id: 'g_trip',
-    category: 'Experience',
-    item: 'Поездка на международную конференцию',
-    Icon: Plane,
-    gradient: 'from-sky-500/35 to-cyan-500/15',
-    description: 'Билеты + проживание на одну из крупных IT-конференций (KubeCon / WebSummit / DevDays на выбор).',
-    condition: 'Победитель хакатона форума (трек 20 мая, 14:00–18:00). Открытая регистрация для всех участников.',
-    endTime: '20 мая, 19:00',
-    participants: 0,
-  },
-  {
-    id: 'g_courses',
-    category: 'Education',
-    item: 'Годовая подписка на онлайн-курсы',
-    Icon: BookOpen,
-    gradient: 'from-amber-500/35 to-orange-500/15',
-    description: 'Полный доступ ко всем материалам образовательной платформы партнёра на 12 месяцев.',
-    condition: 'Заполнить feedback-форму после форума (присылается на email 22 мая) с развёрнутыми ответами.',
-    endTime: '22 мая, 23:59',
-    participants: 0,
-  },
-  {
-    id: 'g_podcast',
-    category: 'Media',
-    item: 'Гость в IT-подкасте',
-    Icon: Mic2,
-    gradient: 'from-violet-500/35 to-purple-500/15',
-    description: 'Запись эпизода на одном из ведущих IT-подкастов в качестве гостя — расскажите о своём опыте.',
-    condition: 'Лучший питч на сцене Open Mic (21 мая, 12:00) — у каждого участника 90 секунд.',
-    endTime: '21 мая, 13:00',
-    participants: 0,
-  },
-  {
-    id: 'g_merch',
-    category: 'Merch',
-    item: 'Премиум-набор мерча',
-    Icon: Backpack,
-    gradient: 'from-lime-500/35 to-green-500/15',
-    description: 'Рюкзак Premium + лимитированная футболка форума + термокружка + наклейки.',
-    condition: 'Посетить стенды всех 4 генеральных партнёров и собрать QR-печати в приложении (раздел «Партнёры»).',
-    endTime: '21 мая, 17:30',
-    participants: 0,
-  },
-  {
-    id: 'g_coffee',
-    category: 'Networking',
-    item: 'Кофе со спикером',
-    Icon: Coffee,
-    gradient: 'from-yellow-600/35 to-amber-700/15',
-    description: 'Часовая встреча тет-а-тет с любым спикером форума по выбору победителя.',
-    condition: 'Случайный выбор среди тех, кто отметил минимум 5 сессий в личном расписании в разделе «Программа».',
-    endTime: '21 мая, 18:30',
-    participants: 0,
-  },
-];
 
-const LS_KEY = 'techforum_giveaways';
-
-// Экспорт для MyRecords — там используется тот же ключ.
-export { GIVEAWAYS, LS_KEY };
-export function readJoinedGiveaways(): string[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
-  } catch { return []; }
-}
+// Round 5: данные перешли в БД (миграция 0009 + seed). Backwards-compat
+// экспорты — пустые / no-op чтобы MyRecords не сломался при импорте старого
+// API. Real source: useGiveaways hook ниже.
+export const LS_KEY = 'techforum_giveaways_legacy';
+export const GIVEAWAYS: Giveaway[] = [];
+export function readJoinedGiveaways(): string[] { return []; }
 
 export default function Giveaways() {
+  const [list, setList] = useState<Giveaway[]>([]);
   const [participatingIds, setParticipatingIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showSuccess, setShowSuccess] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setParticipatingIds(readJoinedGiveaways());
+  // Round 5: список призов из БД (/giveaways), участия из /me/giveaways.
+  // Параллельный fetch на mount.
+  const fetchAll = useCallback(async (): Promise<void> => {
+    try {
+      const [glist, mine] = await Promise.all([
+        fetch(resolveApiUrl('/giveaways'), { credentials: 'include' }).then((r) => r.ok ? r.json() : [] as Giveaway[]),
+        fetch(resolveApiUrl('/me/giveaways'), { credentials: 'include' })
+          .then((r) => r.ok ? r.json() : { giveawayIds: [] }),
+      ]);
+      setList(glist as Giveaway[]);
+      setParticipatingIds(((mine as { giveawayIds: string[] }).giveawayIds) ?? []);
+    } catch { /* offline — список останется пустым */ } finally {
+      setLoading(false);
+    }
   }, []);
+  useEffect(() => { void fetchAll(); }, [fetchAll]);
 
-  const persist = (ids: string[]) => {
-    setParticipatingIds(ids);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(ids)); } catch { /* noop */ }
+  const join = async (id: string) => {
+    if (busyId || participatingIds.includes(id)) return;
+    setBusyId(id);
+    // Optimistic update.
+    setParticipatingIds((prev) => [...prev, id]);
+    try {
+      const r = await fetch(resolveApiUrl(`/giveaways/${id}/join`), {
+        method: 'POST', credentials: 'include',
+      });
+      if (!r.ok) throw new Error(`join_failed_${r.status}`);
+      setShowSuccess(id);
+      window.setTimeout(() => setShowSuccess(null), 3200);
+    } catch {
+      // Rollback.
+      setParticipatingIds((prev) => prev.filter((x) => x !== id));
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const join = (id: string) => {
-    if (participatingIds.includes(id)) return;
-    persist([...participatingIds, id]);
-    // Раньше тут генерили fake "Билет №<rng>" через Math.random() и
-    // показывали юзеру — это было обманом: сервер ничего не знал. Теперь
-    // честный flow: «заявка отмечена», условия будут проверены при выдаче
-    // приза на сцене (см. server-side admin-pipeline в плане Round 3).
-    setShowSuccess(id);
-    window.setTimeout(() => setShowSuccess(null), 3200);
-  };
-
-  const leave = (id: string) => {
-    persist(participatingIds.filter((x) => x !== id));
+  const leave = async (id: string) => {
     setConfirmLeave(null);
+    if (busyId) return;
+    setBusyId(id);
+    const before = participatingIds;
+    setParticipatingIds((prev) => prev.filter((x) => x !== id));
+    try {
+      const r = await fetch(resolveApiUrl(`/giveaways/${id}/join`), {
+        method: 'DELETE', credentials: 'include',
+      });
+      if (!r.ok) throw new Error(`leave_failed_${r.status}`);
+    } catch {
+      setParticipatingIds(before);
+    } finally {
+      setBusyId(null);
+    }
   };
 
   return (
@@ -200,7 +99,7 @@ export default function Giveaways() {
         <div className="relative z-10 space-y-4">
           <div className="inline-flex items-center gap-2 rounded-full border border-[#4ec9c0]/45 bg-[#03161c]/70 px-3 py-1">
             <span className="w-1.5 h-1.5 rounded-full bg-[#4ec9c0] animate-pulse" />
-            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#4ec9c0]">{GIVEAWAYS.length} активных розыгрышей</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-[#4ec9c0]">{list.length} активных розыгрышей</span>
           </div>
           <h2 className="font-display-cyrl text-[24px] font-semibold text-[#d8f0ee] leading-tight max-w-[80%]">
             Призовой фонд — больше миллиона рублей
@@ -216,15 +115,38 @@ export default function Giveaways() {
             </div>
             <div className="flex-1 rounded-2xl border border-[#4ec9c0]/22 bg-[#03161c]/55 p-3">
               <p className="font-mono text-[10px] uppercase tracking-widest text-[#7aa8a4]">Доступно</p>
-              <p className="font-display-cyrl text-[20px] font-semibold text-[#d8f0ee] mt-0.5">{GIVEAWAYS.length - participatingIds.length}</p>
+              <p className="font-display-cyrl text-[20px] font-semibold text-[#d8f0ee] mt-0.5">{list.length - participatingIds.length}</p>
             </div>
           </div>
         </div>
       </section>
 
+      {loading && list.length === 0 && (
+        <div className="space-y-4 mb-4">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 overflow-hidden">
+              <Skeleton height={176} className="rounded-none" />
+              <div className="p-5 space-y-3">
+                <Skeleton height={18} width="65%" />
+                <Skeleton height={11} width="92%" />
+                <Skeleton height={36} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && list.length === 0 && (
+        <div className="rounded-3xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-8 text-center">
+          <Trophy className="w-9 h-9 mx-auto text-[#4ec9c0]/60" strokeWidth={1.4} />
+          <p className="mt-3 text-[#d8f0ee]/75">Пока нет активных розыгрышей.</p>
+          <p className="mt-1 text-[12px] text-[#7aa8a4]">Загляните позже — призы открываются ближе к форуму.</p>
+        </div>
+      )}
+
       <div className="space-y-4">
-        {GIVEAWAYS.map((g) => {
+        {list.map((g) => {
           const joined = participatingIds.includes(g.id);
+          const Icon = iconForKey(g.iconKey);
           return (
             <article
               key={g.id}
@@ -244,8 +166,8 @@ export default function Giveaways() {
                   </defs>
                   <rect width="100%" height="100%" fill={`url(#grid-${g.id})`} />
                 </svg>
-                <g.Icon className="absolute -right-4 -bottom-6 w-44 h-44 text-white/8" strokeWidth={0.8} />
-                <g.Icon className="relative z-10 w-24 h-24 text-[#d8f0ee] drop-shadow-[0_0_24px_rgba(255,255,255,0.4)]" strokeWidth={1.1} />
+                <Icon className="absolute -right-4 -bottom-6 w-44 h-44 text-white/8" strokeWidth={0.8} />
+                <Icon className="relative z-10 w-24 h-24 text-[#d8f0ee] drop-shadow-[0_0_24px_rgba(255,255,255,0.4)]" strokeWidth={1.1} />
 
                 <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                   {g.featured && (

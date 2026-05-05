@@ -405,6 +405,74 @@ export const notes = pgTable(
 );
 
 // ============================================================================
+// PUSH TOKENS (Round 5) — регистрация push-подписок устройств юзера
+// ============================================================================
+// Один юзер — много токенов (телефон + планшет + web). При logout удаляем
+// токен текущего устройства. При выдаче нового токена FCM/RuStore — upsert
+// по token (он уникален). platform: 'fcm' | 'rustore' | 'web' (web push API).
+// last_seen_at — для GC старых неиспользуемых токенов (>30 дней без update).
+export const pushTokens = pgTable(
+  'push_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    platform: text('platform').notNull(),
+    token: text('token').notNull().unique(),
+    deviceLabel: text('device_label'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('push_tokens_user_idx').on(t.userId),
+    tokenIdx: index('push_tokens_token_idx').on(t.token),
+  }),
+);
+
+// ============================================================================
+// GIVEAWAYS (Round 5) — раньше были хардкод в src/pages/Giveaways.tsx +
+// localStorage для участия (Math.random() ticketNo — обман).
+// Теперь полноценные таблицы: список призов + entries (per-user).
+// ============================================================================
+export const giveaways = pgTable(
+  'giveaways',
+  {
+    id: text('id').primaryKey(),
+    category: text('category').notNull(),
+    item: text('item').notNull(),
+    /** Имя иконки из lucide-react (напр. "Laptop"). Frontend matches на компонент. */
+    iconKey: text('icon_key').notNull().default('Gift'),
+    /** Tailwind gradient classes "from-[#xxx] to-[#yyy]". */
+    gradient: text('gradient').notNull().default('from-[#4ec9c0]/40 to-[#4ec9c0]/10'),
+    description: text('description').notNull(),
+    condition: text('condition').notNull(),
+    /** Свободный текст "21 мая, 18:00" — UI отображает как есть. */
+    endTime: text('end_time').notNull(),
+    featured: boolean('featured').notNull().default(false),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    sortIdx: index('giveaways_sort_idx').on(t.sortOrder),
+  }),
+);
+
+// Per-user участия. PK (user, giveaway) гарантирует one-entry-per-user.
+// joined_at для тай-брейкера в случае «первые 100 регистраций».
+export const giveawayEntries = pgTable(
+  'giveaway_entries',
+  {
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    giveawayId: text('giveaway_id').notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
+    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.giveawayId] }),
+    giveawayIdx: index('giveaway_entries_giveaway_idx').on(t.giveawayId),
+  }),
+);
+
+// ============================================================================
 // PASSWORD RESET (forgot-password flow)
 // ============================================================================
 // Хранит short-lived reset-токены. token хешируется (SHA-256) — в БД лежит
