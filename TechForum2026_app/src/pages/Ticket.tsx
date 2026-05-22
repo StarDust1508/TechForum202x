@@ -1,11 +1,28 @@
+// FILE: src/pages/Ticket.tsx
+// VERSION: 2.1.0
+// START_MODULE_CONTRACT:
+// PURPOSE: Экран билета — реальный сканируемый QR с подписью HMAC, имя
+//          держателя из API.
+// SCOPE: UI билета + fetch /ticket/me + QR-генерация через qrcode-lib.
+// INPUT: /api/v1/ticket/me → { qrPayload, name, email, tier, eventId }.
+// OUTPUT: JSX страница.
+// KEYWORDS: DOMAIN(8): TicketScanning; CONCEPT(8): QRCode, HMAC; TECH(8): qrcode lib
+// LINKS: CALLS_API(9): /ticket/me
+// END_MODULE_CONTRACT
+//
+// START_CHANGE_SUMMARY:
+// LAST_CHANGE: [v2.1.0 - Visual refresh: unified design language, improved
+//                       ticket card styling, consistent typography.]
+// PREV_CHANGE_SUMMARY: [v2.0.0 - Реальный QR через qrcode-lib (SVG), имя/email из API.]
+// END_CHANGE_SUMMARY
+
 import { motion } from 'motion/react';
-import { ScanLine, ShieldCheck } from 'lucide-react';
+import { Loader2, QrCode, CalendarDays, MapPin } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
-import PageShell from '@/src/components/ui/PageShell';
-import Skeleton from '@/src/components/ui/Skeleton';
-import { EVENT_DATE, EVENT_CITY } from '@/src/lib/event';
+import BackButton from '@/src/components/BackButton';
+import { EVENT_META } from '../data';
 
 interface TicketData {
   eventId: string;
@@ -38,12 +55,11 @@ export default function Ticket() {
           type: 'svg',
           errorCorrectionLevel: 'M',
           margin: 1,
-          color: { dark: '#03161c', light: '#ffffff' },
+          color: { dark: '#0a0e17', light: '#ffffff' },
           width: 480,
         });
         if (!cancelled) setQrSvg(svg);
-      } catch (e) {
-        console.error('[Ticket] fetch failed', e);
+      } catch {
         if (!cancelled) setError('Нет соединения с сервером');
       }
     })();
@@ -53,72 +69,82 @@ export default function Ticket() {
   const ticketShortId = ticket ? ticket.userId.replace(/-/g, '').slice(0, 8).toUpperCase() : '';
 
   return (
-    <PageShell kicker="Электронный билет" title="Мой билет">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-        className="rounded-[28px] border border-[#4ec9c0]/30 bg-[#0a2f38]/55 backdrop-blur-md overflow-hidden shadow-[0_18px_60px_rgba(0,0,0,0.5)]"
-      >
-        <div className="p-7 space-y-7">
-          <div className="flex flex-col items-center gap-5">
-            <div className="bg-white p-5 rounded-[20px] shadow-[0_8px_24px_rgba(78,201,192,0.18)]">
-              <div className="w-56 h-56 relative overflow-hidden flex items-center justify-center">
+    <div className="flex-1 flex flex-col px-5 pb-10" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
+
+      <header className="space-y-2 mb-8">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold flex items-center gap-2">
+          <QrCode className="w-3.5 h-3.5" />
+          ЭЛЕКТРОННЫЙ БИЛЕТ
+        </p>
+        <h1 className="font-elite text-3xl leading-none text-white">Мой билет</h1>
+      </header>
+
+      <div className="flex-1 space-y-6 overflow-y-auto scrollbar-hide">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden"
+        >
+          {/* QR Section */}
+          <div className="p-8 flex flex-col items-center gap-5">
+            <div className="bg-white p-4 rounded-2xl shadow-lg shadow-black/30">
+              <div className="w-52 h-52 relative overflow-hidden flex items-center justify-center">
                 {qrSvg ? (
-                  <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+                  <div
+                    className="w-full h-full"
+                    // QR-svg от qrcode-lib — статический контент, генерируется
+                    // нашим клиентом, не приходит из user-input. Безопасно.
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  />
                 ) : error ? (
-                  <p className="text-[#03161c] text-xs font-bold text-center px-4">{error}</p>
+                  <p className="text-[#0a0e17] text-xs font-bold text-center px-4">{error}</p>
                 ) : (
-                  <Skeleton className="w-full h-full !rounded-md" style={{ backgroundColor: '#e5e7eb' }} />
+                  <Loader2 className="w-8 h-8 text-[#0a0e17] animate-spin" />
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <ScanLine className="w-3.5 h-3.5 text-[#4ec9c0]/85" strokeWidth={1.6} />
-              <p className="font-mono text-[11px] text-[#4ec9c0]/85 tracking-[0.3em] uppercase">
-                ТФ26 · {ticketShortId || '——————'}
-              </p>
-            </div>
-          </div>
 
-          <div className="text-center space-y-1.5 pt-5 border-t border-[#4ec9c0]/22">
-            <p className="font-display-cyrl text-[10px] text-[#7aa8a4] font-semibold uppercase tracking-[0.3em]">
-              Владелец билета
-            </p>
-            {ticket ? (
-              <>
-                <h2 className="font-display-cyrl text-[20px] font-semibold text-[#d8f0ee] tracking-wide leading-tight">
-                  {ticket.name}
-                </h2>
-                <p className="text-[11px] text-[#7aa8a4] tracking-wider mt-0.5">{ticket.email}</p>
-              </>
-            ) : (
-              <div className="flex flex-col items-center gap-1.5 mt-1">
-                <Skeleton className="!rounded-md" height={20} width={160} />
-                <Skeleton className="!rounded-md" height={11} width={120} />
-              </div>
+            {ticket && (
+              <p className="text-[11px] text-white/30 font-mono font-bold tracking-[0.4em] uppercase">
+                ТФ26 · {ticketShortId}
+              </p>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-2">
-            <div className="rounded-[10px] border border-[#4ec9c0]/22 bg-[#03161c]/40 p-3 text-center">
-              <p className="font-mono text-[9px] text-[#7aa8a4] uppercase tracking-[0.22em]">Даты</p>
-              <p className="font-display-cyrl text-[12px] text-[#d8f0ee] mt-0.5">{EVENT_DATE.toLowerCase()}</p>
+          {/* Divider — perforated line */}
+          <div className="relative h-px mx-6">
+            <div className="absolute inset-0 border-t border-dashed border-white/[0.08]" />
+          </div>
+
+          {/* Holder info */}
+          <div className="p-6 space-y-4">
+            <div className="text-center space-y-1.5">
+              <p className="text-[9px] text-white/30 font-bold uppercase tracking-[0.2em]">Владелец билета</p>
+              <h2 className="text-[18px] font-bold text-white/95 tracking-tight leading-tight">
+                {ticket?.name ?? '—'}
+              </h2>
+              {ticket && (
+                <p className="text-[11px] text-white/35">{ticket.email}</p>
+              )}
             </div>
-            <div className="rounded-[10px] border border-[#4ec9c0]/22 bg-[#03161c]/40 p-3 text-center">
-              <p className="font-mono text-[9px] text-[#7aa8a4] uppercase tracking-[0.22em]">Город</p>
-              <p className="font-display-cyrl text-[12px] text-[#d8f0ee] mt-0.5">{EVENT_CITY[0] + EVENT_CITY.slice(1).toLowerCase()}</p>
+
+            {/* Event info */}
+            <div className="flex items-center justify-center gap-4 pt-2">
+              <div className="inline-flex items-center gap-1.5 text-[10px] text-white/40 font-semibold">
+                <CalendarDays className="w-3 h-3 text-[#00ffff]/50" />
+                20–21 мая 2026
+              </div>
+              <div className="w-1 h-1 rounded-full bg-white/15" />
+              <div className="inline-flex items-center gap-1.5 text-[10px] text-white/40 font-semibold">
+                <MapPin className="w-3 h-3 text-[#ff3399]/50" />
+                {EVENT_META.city}
+              </div>
             </div>
           </div>
-        </div>
-      </motion.div>
-
-      <div className="mt-5 flex items-start gap-3 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/35 p-4">
-        <ShieldCheck className="w-4 h-4 text-[#4ec9c0] shrink-0 mt-0.5" strokeWidth={1.6} />
-        <p className="text-[12px] text-[#7aa8a4] leading-relaxed">
-          QR-код подписан HMAC-SHA256. Не отдавайте скрин третьим лицам — для входа достаточно одного сканирования.
-        </p>
+        </motion.div>
       </div>
-    </PageShell>
+    </div>
   );
 }

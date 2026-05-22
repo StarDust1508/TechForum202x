@@ -35,9 +35,8 @@ import { z } from 'zod';
 // Email — нормализуем в lower case через .transform; .email() даёт RFC-валидацию.
 const emailSchema = z.string().trim().toLowerCase().email('Некорректный email');
 
-// Пароль — минимум 8 (повышено с 6 после red-team, который показал что
-// 6-символьный пароль + per-IP rate-limit обходимый = брутфорс за минуту).
-const passwordSchema = z.string().min(8, 'Пароль должен быть не менее 8 символов').max(128);
+// Пароль — минимум 6 (соответствует текущей политике в localAuth fallback).
+const passwordSchema = z.string().min(6, 'Пароль должен быть не менее 6 символов').max(128);
 
 // Имя — 1..80 символов, .trim для удаления хвостовых пробелов.
 const nameSchema = z.string().trim().min(1, 'Укажите имя').max(80);
@@ -53,46 +52,19 @@ export const authLoginSchema = z.object({
   password: passwordSchema,
 });
 
-// Phone — нормализуем к виду +<digits>. Принимаем любой формат
-// '+7 (912) 345-67-89', '8-912-345-67-89', '+79123456789' и т.п.,
-// убираем всё кроме цифр и ведущего +. Российские номера с ведущей 8
-// нормализуем к +7. Пустая или неполная строка (<10 значимых цифр) → null
-// — НЕ ошибка валидации, чтобы PATCH /auth/me с другим полем не падал.
-const phoneSchema = z.string().trim().max(32)
-  .transform((raw) => {
-    if (!raw) return null;
-    const onlyDigits = raw.replace(/\D/g, '');
-    if (onlyDigits.length < 10) return null;
-    let d = onlyDigits;
-    if (d.startsWith('8') && d.length === 11) d = `7${d.slice(1)}`;
-    if (d.length === 10) d = `7${d}`; // мобильные без кода страны
-    return `+${d}`;
-  })
-  .refine((v) => v === null || /^\+\d{10,15}$/.test(v), {
-    message: 'Некорректный номер телефона',
-  });
-
 export const authMePatchSchema = z.object({
   name: nameSchema.optional(),
   bio: z.string().max(500).optional(),
-  phone: phoneSchema.optional(),
+  phone: z.string().trim().max(32).optional(),
   email: emailSchema.optional(),
-  // Round 7: privacy-toggle для push body. Если true — body становится
-  // generic «Новое сообщение», скрывает leak текста на lock-screen.
-  pushPreviewHidden: z.boolean().optional(),
 });
 
-// Бизнес-инвариант onboarding: 3..10 направлений. Раньше был только max(10)
-// — через curl можно было записать 1 интерес, фронт-recommended ломался.
 export const meInterestsPutSchema = z.object({
-  interestIds: z.array(z.string().min(1).max(64))
-    .min(3, 'Выбери минимум 3 направления')
-    .max(10, 'Максимум 10 направлений'),
+  interestIds: z.array(z.string().min(1).max(64)).max(10, 'Максимум 10 направлений'),
 });
 
-// type ограничиваем enum, чтобы фронт не получал произвольные строки.
 export const postCreateSchema = z.object({
-  type: z.enum(['text', 'photo', 'video']).optional().default('text'),
+  type: z.string().max(32).optional().default('text'),
   url: z.string().max(2048).optional().default(''),
   text: z.string().max(2000).optional().default(''),
 });
@@ -102,54 +74,9 @@ export const commentCreateSchema = z.object({
 });
 
 export const statusCreateSchema = z.object({
-  type: z.enum(['text', 'photo', 'video']).optional().default('text'),
+  type: z.string().max(32).optional().default('text'),
   url: z.string().max(2048).optional().default(''),
   text: z.string().max(500).optional().default(''),
-});
-
-// Direct messages (Chat → Личные).
-// Сообщение должно содержать text ИЛИ media (или оба). Чистая отправка
-// «пустого» сообщения без вложения отвергается.
-// replyToId: id оригинала для structured-reply (тапом по цитате прыгает к
-//   оригиналу). Сервер валидирует что оригинал существует и из ТОГО ЖЕ
-//   диалога (нельзя «ответить» сообщению из чужой переписки).
-// forwardedFromUserId: id автора оригинала при forward (UI рисует
-//   «Переслано от <user>»).
-export const dmSendSchema = z.object({
-  toUserId: z.string().min(1).max(64),
-  text: z.string().trim().max(2000).optional().default(''),
-  mediaUrl: z.string().max(512).optional(),
-  mediaType: z.enum(['image', 'audio', 'video']).optional(),
-  replyToId: z.string().min(1).max(64).optional(),
-  forwardedFromUserId: z.string().min(1).max(64).optional(),
-}).refine((d) => (d.text && d.text.length > 0) || (d.mediaUrl && d.mediaType), {
-  message: 'Сообщение пустое',
-});
-
-// Notes — персональные заметки в MyRecords.
-// body — единое поле, заголовок берётся из первой непустой строки на UI.
-// Лимит 16k для длинных текстов (рецепты, конспекты).
-export const noteUpsertSchema = z.object({
-  body: z.string().max(16_000),
-});
-
-// Push-token регистрация (Round 5).
-// platform: 'fcm' (Android FCM) | 'apns' (iOS) | 'rustore' | 'web'.
-// token до 4096 символов — длинные FCM tokens.
-export const pushTokenRegisterSchema = z.object({
-  token: z.string().trim().min(8).max(4096),
-  platform: z.enum(['fcm', 'apns', 'rustore', 'web']),
-  deviceLabel: z.string().max(120).optional(),
-});
-
-// Forgot-password (см. server.ts /auth/forgot-password/*).
-export const forgotPasswordStartSchema = z.object({
-  email: emailSchema,
-});
-
-export const forgotPasswordVerifySchema = z.object({
-  token: z.string().min(8).max(128),
-  newPassword: passwordSchema,
 });
 
 export const aiChatSchema = z.object({
@@ -165,8 +92,3 @@ export type PostCreateBody = z.infer<typeof postCreateSchema>;
 export type CommentCreateBody = z.infer<typeof commentCreateSchema>;
 export type StatusCreateBody = z.infer<typeof statusCreateSchema>;
 export type AiChatBody = z.infer<typeof aiChatSchema>;
-export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
-export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;
-export type DmSendBody = z.infer<typeof dmSendSchema>;
-export type NoteUpsertBody = z.infer<typeof noteUpsertSchema>;
-export type PushTokenRegisterBody = z.infer<typeof pushTokenRegisterSchema>;

@@ -1,95 +1,68 @@
-import { Building2, ExternalLink, Globe2 } from 'lucide-react';
-import { motion } from 'motion/react';
-import PageShell from '@/src/components/ui/PageShell';
-import Skeleton from '@/src/components/ui/Skeleton';
-import { usePartners } from '@/src/lib/programData';
+import { Building2, ExternalLink, Globe2, Crown, Award, Star, Cpu } from 'lucide-react';
+import { PARTNERS } from '../data';
+import BackButton from '@/src/components/BackButton';
 
-// Раньше тут лежал inline-массив с fake-партнёрами (Quantum Cloud /
-// quantumcloud.example и т.п.). Источник истины — PARTNERS в src/data.ts,
-// тот же что использует server.ts для AI-context. Tier-сортировка по
-// иерархии спонсорства.
-const TIER_ORDER: Record<string, number> = {
-  'Генеральный': 0,
-  'Платиновый': 1,
-  'Золотой': 2,
-  'Серебряный': 3,
-  'Бронзовый': 4,
+const tierConfig: Record<string, { icon: typeof Crown; color: string; glow: string; border: string; bg: string }> = {
+  'Генеральный':     { icon: Crown,  color: 'text-[#ff3399]', glow: 'shadow-[0_0_20px_rgba(255,51,153,0.2)]', border: 'border-[#ff3399]/30', bg: 'bg-[#ff3399]/[0.06]' },
+  'Платиновый':      { icon: Award,  color: 'text-[#00ffff]', glow: 'shadow-[0_0_20px_rgba(0,255,255,0.15)]', border: 'border-[#00ffff]/25', bg: 'bg-[#00ffff]/[0.04]' },
+  'Золотой':         { icon: Star,   color: 'text-[#fbbf24]', glow: 'shadow-[0_0_15px_rgba(251,191,36,0.15)]', border: 'border-[#fbbf24]/20', bg: 'bg-[#fbbf24]/[0.04]' },
+  'Серебряный':      { icon: Star,   color: 'text-white/60', glow: '', border: 'border-white/10', bg: 'bg-white/[0.03]' },
+  'Технологический': { icon: Cpu,    color: 'text-[#a855f7]', glow: '', border: 'border-[#a855f7]/20', bg: 'bg-[#a855f7]/[0.04]' },
 };
 
 export default function Partners() {
-  const { data: PARTNERS, loading } = usePartners();
-  const sorted = [...PARTNERS].sort((a, b) => {
-    const ai = TIER_ORDER[a.tier] ?? 99;
-    const bi = TIER_ORDER[b.tier] ?? 99;
-    return ai - bi;
-  });
-
-  const cleanHost = (raw: string): string => {
-    try { return new URL(raw).host.replace(/^www\./, ''); }
-    catch { return raw.replace(/^https?:\/\//, '').replace(/\/$/, ''); }
-  };
-
   return (
-    <PageShell
-      kicker="TechForum"
-      title="Партнёры"
-      subtitle={`${sorted.length} компаний поддерживают форум в этом году`}
-    >
-      {loading && sorted.length === 0 ? (
-        <div className="space-y-3">
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 space-y-3">
-              <div className="flex items-start gap-3">
-                <Skeleton className="rounded-2xl" width={40} height={40} />
-                <div className="flex-1 space-y-2">
-                  <Skeleton height={15} width="55%" />
-                  <Skeleton height={10} width="35%" />
-                </div>
-              </div>
-              <Skeleton height={28} />
-            </div>
-          ))}
-        </div>
-      ) : (
+    <div className="flex-1 min-h-full px-5 pt-8 pb-10 space-y-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
+
+      <header className="space-y-2">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold">TechForum 2026</p>
+        <h1 className="font-elite text-3xl leading-none text-white">Партнёры</h1>
+        <p className="text-[13px] text-white/40 leading-relaxed">
+          {PARTNERS.length} компаний поддерживают форум
+        </p>
+      </header>
+
       <div className="space-y-3">
-        {sorted.map((partner, idx) => (
-          <motion.a
-            key={partner.id}
-            href={partner.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              duration: 0.32,
-              ease: [0.32, 0.72, 0, 1],
-              delay: Math.min(idx * 0.04, 0.4),
-            }}
-            className="block rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-5 hover:border-[#4ec9c0]/55 active:scale-[0.99] transition-all"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3 flex-1 min-w-0">
-                <div className="h-10 w-10 rounded-2xl border border-[#4ec9c0]/28 bg-[#03161c]/40 flex items-center justify-center shrink-0">
-                  <Building2 className="w-5 h-5 text-[#4ec9c0]" />
+        {PARTNERS.map((partner) => {
+          const cfg = tierConfig[partner.tier] ?? tierConfig['Серебряный'];
+          const TierIcon = cfg.icon;
+
+          return (
+            <a
+              key={partner.id}
+              href={partner.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`block rounded-2xl ${cfg.border} ${cfg.bg} ${cfg.glow} p-5 active:scale-[0.98] transition-all`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                  <div className={`h-11 w-11 rounded-xl ${cfg.border} bg-white/[0.04] flex items-center justify-center shrink-0`}>
+                    <TierIcon className={`w-5 h-5 ${cfg.color}`} />
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <h2 className="text-[16px] font-bold text-white/95 truncate">{partner.name}</h2>
+                    <span className={`inline-block text-[10px] font-bold uppercase tracking-[0.15em] ${cfg.color}`}>
+                      {partner.tier}
+                    </span>
+                  </div>
                 </div>
-                <div className="space-y-1 min-w-0">
-                  <h2 className="text-[16px] font-semibold text-[#d8f0ee]">{partner.name}</h2>
-                  <p className="text-[11px] text-[#4ec9c0] uppercase tracking-widest">{partner.tier} партнёр</p>
-                </div>
+                <ExternalLink className="w-4 h-4 text-white/30 shrink-0 mt-1" />
               </div>
-              <ExternalLink className="w-4 h-4 text-[#7aa8a4] mt-1 shrink-0" />
-            </div>
 
-            <p className="mt-3 text-[13px] text-[#d8f0ee]/75 leading-relaxed">{partner.description}</p>
+              <p className="mt-3 text-[12px] text-white/50 leading-relaxed line-clamp-2">
+                {partner.description}
+              </p>
 
-            <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-[#4ec9c0]/15 px-3 py-1.5 text-[11px] text-[#7aa8a4]">
-              <Globe2 className="w-3.5 h-3.5" />
-              {cleanHost(partner.url)}
-            </div>
-          </motion.a>
-        ))}
+              <div className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-white/35">
+                <Globe2 className="w-3 h-3" />
+                {partner.url.replace('https://', '')}
+              </div>
+            </a>
+          );
+        })}
       </div>
-      )}
-    </PageShell>
+    </div>
   );
 }

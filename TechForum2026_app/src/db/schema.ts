@@ -58,9 +58,6 @@ export const users = pgTable(
     phone: text('phone'),
     role: text('role').notNull().default('Участник'),
     isPrivate: boolean('is_private').notNull().default(false),
-    // Round 7: privacy для push body. Если true → notification body =
-    // «Новое сообщение» вместо реального текста. Lock-screen leakage protection.
-    pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -70,47 +67,6 @@ export const users = pgTable(
 
 export type User = typeof users.$inferSelect;
 export type UserInsert = typeof users.$inferInsert;
-
-// ============================================================================
-// EVENTS — multi-event фундамент (Round 4)
-// ============================================================================
-// Раньше приложение было однособытийное (хардкод 'techforum-2026' в server.ts:
-// ticket-payload). Теперь events — отдельная таблица, и одно приложение может
-// обслуживать N событий (как Eventicious-эталон). Существующие таблицы
-// (sessions, speakers, partners, news, etc) пока БЕЗ event_id колонок —
-// реальная миграция к multi-event схеме делается позже, когда:
-//  1) появится второе событие в реальности (осенний форум 2026)
-//  2) будет готова админка для seed'а нового event'а
-// Пока этого нет — все queries неявно работают с default-событием.
-//
-// hmacSecret отдельный per-event — используется для подписи QR-билета
-// (см. server.ts ticket payload). Если протекает один — другой event
-// остаётся защищённым.
-//
-// settings jsonb — гибкий контейнер для feature-flags конкретного события
-// (показывать/скрывать модули, кастомные ссылки в Settings, etc).
-export const events = pgTable(
-  'events',
-  {
-    id: text('id').primaryKey(),
-    slug: text('slug').notNull().unique(),
-    name: text('name').notNull(),
-    location: text('location').notNull().default(''),
-    city: text('city').notNull().default(''),
-    timezone: text('timezone').notNull().default('Europe/Moscow'),
-    organizer: text('organizer').notNull().default(''),
-    organizerEmail: text('organizer_email'),
-    url: text('url'),
-    startsAt: timestamp('starts_at', { withTimezone: true }),
-    endsAt: timestamp('ends_at', { withTimezone: true }),
-    hmacSecret: text('hmac_secret').notNull().default(''),
-    isActive: boolean('is_active').notNull().default(true),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    slugIdx: index('events_slug_idx').on(t.slug),
-  }),
-);
 
 // ============================================================================
 // PROGRAM REFERENCE TABLES (треки / залы / дни / спикеры / сессии / партнёры)
@@ -199,31 +155,6 @@ export const partners = pgTable('partners', {
   description: text('description').notNull(),
 });
 
-// News (Лента) — раньше жил в src/data.ts. Round 3 переносит в БД, чтобы
-// контент мог обновляться без релиза APK. speakerId — опциональная ссылка
-// на автора (FK SET NULL: если спикер удалён, новость остаётся).
-// isCritical — красная точка-индикатор в UI. category — рубрика.
-export const news = pgTable(
-  'news',
-  {
-    id: text('id').primaryKey(),
-    type: text('type').notNull(),
-    title: text('title').notNull(),
-    content: text('content').notNull(),
-    body: text('body').notNull().default(''),
-    time: text('time').notNull(),
-    isCritical: boolean('is_critical').notNull().default(false),
-    category: text('category'),
-    speakerId: text('speaker_id').references(() => speakers.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    sortOrder: integer('sort_order').notNull().default(0),
-  },
-  (t) => ({
-    sortIdx: index('news_sort_idx').on(t.sortOrder),
-    speakerIdx: index('news_speaker_idx').on(t.speakerId),
-  }),
-);
-
 // ============================================================================
 // SOCIAL FEED
 // ============================================================================
@@ -297,9 +228,6 @@ export const registrations = pgTable(
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     sessionId: text('session_id').notNull().references(() => sessionsEvent.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    // Round 7: cron-флаг чтобы reminders за 15мин до начала не отправлялись
-    // дважды (cron бежит каждую минуту, окно 14-16мин).
-    reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.sessionId] }),
@@ -327,219 +255,5 @@ export const userInterests = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.interestId] }),
     userIdx: index('user_interests_user_idx').on(t.userId),
-  }),
-);
-
-// ============================================================================
-// DIRECT MESSAGES (DM в Chat «Личные»)
-// ============================================================================
-// Простая 1-к-1 переписка. Нет групп, нет threads, нет реакций. Удаление —
-// onDelete cascade (если автор/получатель удаляется, его DM физически
-// уходят). readAt — для индикатора непрочитанного.
-// mediaUrl/mediaType — опциональное вложение image|audio|video.
-// FK on delete SET NULL (P1 FIX): раньше cascade удалял всю переписку
-// А↔B когда B удаляет аккаунт, А терял свою историю. Теперь from/to
-// делается NULL, переписка остаётся, UI рисует «удалённый пользователь».
-export const directMessages = pgTable(
-  'direct_messages',
-  {
-    id: text('id').primaryKey(),
-    fromUserId: text('from_user_id').references(() => users.id, { onDelete: 'set null' }),
-    toUserId: text('to_user_id').references(() => users.id, { onDelete: 'set null' }),
-    text: text('text').notNull().default(''),
-    mediaUrl: text('media_url'),
-    mediaType: text('media_type'),
-    // Reply: ссылка на оригинал. ON DELETE SET NULL — если оригинал удалили,
-    // цитата сохраняется (UI рисует "[удалено]"). self-FK добавлен в SQL
-    // миграции 0006 (drizzle.kit не любит self-references на сгенерации).
-    replyToId: text('reply_to_id'),
-    // Forward: ссылка на оригинального автора. ON DELETE SET NULL.
-    forwardedFromUserId: text('forwarded_from_user_id').references(() => users.id, { onDelete: 'set null' }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    readAt: timestamp('read_at', { withTimezone: true }),
-  },
-  (t) => ({
-    fromIdx: index('dm_from_idx').on(t.fromUserId),
-    toIdx: index('dm_to_idx').on(t.toUserId),
-    createdAtIdx: index('dm_created_at_idx').on(t.createdAt),
-    replyToIdx: index('dm_reply_to_idx').on(t.replyToId),
-  }),
-);
-
-// ============================================================================
-// DM PINS (закреплённые сообщения в диалогах)
-// ============================================================================
-// Pin — per-user, per-dialog. То есть «я закрепил» — видно только мне.
-// Это компромисс между «закрепить только себе» (LocalStorage был именно
-// таким) и «закрепить обоим» (требует прав на чужой mailbox). Сейчас:
-// сохраняется на сервере → переживает переустановку, sync между устройствами
-// одного юзера. Один pinned per (user, partnerUserId).
-export const dmPins = pgTable(
-  'dm_pins',
-  {
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    // partnerUserId — собеседник в диалоге, контекст pin'а. Пара (userId,
-    // partnerUserId) однозначно идентифицирует диалог в нашей 1-к-1 модели.
-    partnerUserId: text('partner_user_id').notNull(),
-    messageId: text('message_id').notNull().references(() => directMessages.id, { onDelete: 'cascade' }),
-    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.userId, t.partnerUserId] }),
-    msgIdx: index('dm_pins_message_idx').on(t.messageId),
-  }),
-);
-
-// ============================================================================
-// NOTES (личные заметки в MyRecords → 3-я вкладка)
-// ============================================================================
-// Простой персональный текстовый блокнот. Один юзер = одна стопка заметок.
-// title не отдельный — берётся из первой непустой строки body (UI-конвенция).
-export const notes = pgTable(
-  'notes',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    body: text('body').notNull().default(''),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    userIdx: index('notes_user_idx').on(t.userId),
-    updatedAtIdx: index('notes_updated_at_idx').on(t.updatedAt),
-  }),
-);
-
-// ============================================================================
-// PUSH TOKENS (Round 5) — регистрация push-подписок устройств юзера
-// ============================================================================
-// Один юзер — много токенов (телефон + планшет + web). При logout удаляем
-// токен текущего устройства. При выдаче нового токена FCM/RuStore — upsert
-// по token (он уникален). platform: 'fcm' | 'rustore' | 'web' (web push API).
-// last_seen_at — для GC старых неиспользуемых токенов (>30 дней без update).
-export const pushTokens = pgTable(
-  'push_tokens',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    platform: text('platform').notNull(),
-    token: text('token').notNull().unique(),
-    deviceLabel: text('device_label'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    userIdx: index('push_tokens_user_idx').on(t.userId),
-    tokenIdx: index('push_tokens_token_idx').on(t.token),
-  }),
-);
-
-// ============================================================================
-// GIVEAWAYS (Round 5) — раньше были хардкод в src/pages/Giveaways.tsx +
-// localStorage для участия (Math.random() ticketNo — обман).
-// Теперь полноценные таблицы: список призов + entries (per-user).
-// ============================================================================
-export const giveaways = pgTable(
-  'giveaways',
-  {
-    id: text('id').primaryKey(),
-    category: text('category').notNull(),
-    item: text('item').notNull(),
-    /** Имя иконки из lucide-react (напр. "Laptop"). Frontend matches на компонент. */
-    iconKey: text('icon_key').notNull().default('Gift'),
-    /** Tailwind gradient classes "from-[#xxx] to-[#yyy]". */
-    gradient: text('gradient').notNull().default('from-[#4ec9c0]/40 to-[#4ec9c0]/10'),
-    description: text('description').notNull(),
-    condition: text('condition').notNull(),
-    /** Свободный текст "21 мая, 18:00" — UI отображает как есть. */
-    endTime: text('end_time').notNull(),
-    featured: boolean('featured').notNull().default(false),
-    isActive: boolean('is_active').notNull().default(true),
-    sortOrder: integer('sort_order').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    sortIdx: index('giveaways_sort_idx').on(t.sortOrder),
-  }),
-);
-
-// Per-user участия. PK (user, giveaway) гарантирует one-entry-per-user.
-// joined_at для тай-брейкера в случае «первые 100 регистраций».
-export const giveawayEntries = pgTable(
-  'giveaway_entries',
-  {
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    giveawayId: text('giveaway_id').notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
-    joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.userId, t.giveawayId] }),
-    giveawayIdx: index('giveaway_entries_giveaway_idx').on(t.giveawayId),
-  }),
-);
-
-// ============================================================================
-// FAQ (Round 6) — «Гид по мероприятию», категоризованные вопросы/ответы
-// ============================================================================
-// Простая статика: question, answer, category (для группировки в UI),
-// sort_order (внутри категории), is_active. Источник истины — БД, можно
-// править без релиза. Public read (без auth).
-export const faq = pgTable(
-  'faq',
-  {
-    id: text('id').primaryKey(),
-    question: text('question').notNull(),
-    answer: text('answer').notNull(),
-    category: text('category').notNull().default('Общее'),
-    isActive: boolean('is_active').notNull().default(true),
-    sortOrder: integer('sort_order').notNull().default(0),
-  },
-  (t) => ({
-    sortIdx: index('faq_sort_idx').on(t.sortOrder),
-    categoryIdx: index('faq_category_idx').on(t.category),
-  }),
-);
-
-// ============================================================================
-// CONTACT EXCHANGES (Round 6) — нетворкинг через QR-визитку
-// ============================================================================
-// Юзер A открывает «Мою визитку» (QR содержит {userId, sig}). Юзер B
-// сканирует. Сервер пишет запись: A↔B обменялись контактами в момент T.
-// Симметрично: записываем ОБЕ строки (A→B и B→A), чтобы у обоих в списке
-// контактов появилась запись (без сложных JOIN-ов на чтение).
-// Optional note — заметка от scanner'а («познакомились на докладе про K8s»).
-export const contactExchanges = pgTable(
-  'contact_exchanges',
-  {
-    ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    contactId: text('contact_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    note: text('note').notNull().default(''),
-    metAt: timestamp('met_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.ownerId, t.contactId] }),
-    contactIdx: index('contact_exchanges_contact_idx').on(t.contactId),
-  }),
-);
-
-// ============================================================================
-// PASSWORD RESET (forgot-password flow)
-// ============================================================================
-// Хранит short-lived reset-токены. token хешируется (SHA-256) — в БД лежит
-// только digest, raw token уходит в email/SMS пользователю один раз. После
-// успешной смены пароля или истечения TTL запись удаляется.
-export const passwordResetTokens = pgTable(
-  'password_reset_tokens',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    tokenHash: text('token_hash').notNull(),
-    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    attempts: integer('attempts').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    userIdx: index('password_reset_user_idx').on(t.userId),
-    tokenHashIdx: index('password_reset_token_hash_idx').on(t.tokenHash),
   }),
 );

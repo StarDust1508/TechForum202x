@@ -28,20 +28,37 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { TRACKS, HALLS, DAYS, getTrackById, type Session } from '../data';
-import { useSessions } from '@/src/lib/programData';
-import Skeleton from '@/src/components/ui/Skeleton';
-import { MapPin, Filter, AlertTriangle, X, Coffee, Mic, Hand } from 'lucide-react';
+import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
+import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import PageShell from '@/src/components/ui/PageShell';
+import BackButton from '@/src/components/BackButton';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
-// Day-tabs убраны — расписание показывает все сессии обоих дней одним
-// потоком, отсортированным по дню+времени. Фильтры по залу/треку остаются.
-// «Мои записи» / «Для меня» доступны через отдельные плитки Home.
+const MY_TAB_ID = 'my';
+const RECOMMENDED_TAB_ID = 'recommended';
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
+
+/**
+ * Score сессии для Recommended-таба.
+ * Считаем размер пересечения интересов всех её спикеров с интересами юзера.
+ * Если 0 пересечений — score 0; сортировка fallback-ит на дату+время.
+ */
+function recommendedScore(session: Session, myInterestSet: Set<string>): number {
+  if (myInterestSet.size === 0) return 0;
+  const speakerInterests = new Set<string>();
+  for (const sid of session.speakerIds) {
+    const sp = SPEAKERS.find(s => s.id === sid);
+    if (!sp) continue;
+    for (const ii of sp.interestIds) speakerInterests.add(ii);
+  }
+  let score = 0;
+  for (const ii of speakerInterests) {
+    if (myInterestSet.has(ii)) score += 1;
+  }
+  return score;
+}
 
 function timeToMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(n => parseInt(n, 10));
@@ -52,10 +69,10 @@ function timeToMinutes(hhmm: string): number {
  * Возвращает все сессии того же дня, которые пересекаются по времени с target,
  * и при этом уже в registeredIds (т.е. конфликтуют). Сама target исключается.
  */
-function findConflicts(allSessions: Session[], target: Session, registeredIds: string[]): Session[] {
+function findConflicts(target: Session, registeredIds: string[]): Session[] {
   const targetStart = timeToMinutes(target.startTime);
   const targetEnd = timeToMinutes(target.endTime);
-  return allSessions.filter(s => {
+  return SESSIONS.filter(s => {
     if (s.id === target.id) return false;
     if (s.dayId !== target.dayId) return false;
     if (!registeredIds.includes(s.id)) return false;
@@ -66,11 +83,30 @@ function findConflicts(allSessions: Session[], target: Session, registeredIds: s
 }
 
 export default function Schedule() {
-  const { data: SESSIONS, loading: sessionsLoading } = useSessions();
+  const [selectedDayId, setSelectedDayId] = useState<string>(DAYS[0]?.id ?? '');
   const [activeHallId, setActiveHallId] = useState<string>('all');
   const [activeTrackId, setActiveTrackId] = useState<string>('all');
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
+  const [myInterestIds, setMyInterestIds] = useState<string[]>([]);
   const [conflictTarget, setConflictTarget] = useState<{ session: Session; conflicts: Session[] } | null>(null);
+
+  // Загружаем интересы пользователя для ранжирования "Recommended".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.interestIds)) {
+          setMyInterestIds(data.interestIds);
+        }
+      } catch {
+        // network — молча оставляем []. Recommended вырождается в дата+время сорт.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Загружаем регистрации с сервера. Если 401/network-error — fallback к
   // legacy localStorage (миграция со старой версии приложения).
@@ -129,7 +165,7 @@ export default function Schedule() {
       setRegisteredAndPersist(session.id, false);
       return;
     }
-    const conflicts = findConflicts(SESSIONS, session, registeredIds);
+    const conflicts = findConflicts(session, registeredIds);
     if (conflicts.length > 0) {
       setConflictTarget({ session, conflicts });
       return;
@@ -143,39 +179,95 @@ export default function Schedule() {
     setConflictTarget(null);
   }
 
-  // Фильтр: только зал + трек. День — не фильтруем, показываем всё подряд,
-  // отсортированное по индексу дня и времени начала.
-  const filteredSessions = SESSIONS
-    .filter((s) => {
-      const isHallMatch = activeHallId === 'all' || s.hallId === activeHallId;
-      const isTrackMatch = activeTrackId === 'all' || s.trackId === activeTrackId;
-      return isHallMatch && isTrackMatch;
-    })
-    .sort((a, b) => {
-      const aIdx = DAYS.findIndex((d) => d.id === a.dayId);
-      const bIdx = DAYS.findIndex((d) => d.id === b.dayId);
-      if (aIdx !== bIdx) return aIdx - bIdx;
+  // BUG_FIX_CONTEXT: v1 использовал s.location.includes(activeHall) с Cyrillic vs
+  // Latin рассинхроном. Сейчас сравниваем строго по hallId.
+  const isMyTab = selectedDayId === MY_TAB_ID;
+  const isRecommendedTab = selectedDayId === RECOMMENDED_TAB_ID;
+  const myInterestSet = new Set<string>(myInterestIds);
+
+  let filteredSessions = SESSIONS.filter(s => {
+    const isDayMatch = isMyTab
+      ? registeredIds.includes(s.id)
+      : isRecommendedTab
+        ? true // на табе Recommended показываем все сессии (отсортированные по score)
+        : s.dayId === selectedDayId;
+    const isHallMatch = activeHallId === 'all' || s.hallId === activeHallId;
+    const isTrackMatch = activeTrackId === 'all' || s.trackId === activeTrackId;
+    return isDayMatch && isHallMatch && isTrackMatch;
+  });
+
+  if (isRecommendedTab) {
+    // Сортируем по убыванию score. При равенстве — по дате (dayId) + времени.
+    filteredSessions = [...filteredSessions].sort((a, b) => {
+      const scoreA = recommendedScore(a, myInterestSet);
+      const scoreB = recommendedScore(b, myInterestSet);
+      if (scoreA !== scoreB) return scoreB - scoreA;
+      if (a.dayId !== b.dayId) return a.dayId.localeCompare(b.dayId);
       return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
     });
+  }
 
   return (
-    <PageShell hideHeader>
-      <div className="space-y-3 mt-2">
-        {/* Hall filter pills — тот же шрифт/размер/контраст что и у track-pills.
-            Inactive bg/text заметно ярче чем раньше: на blueprint-фоне теперь
-            читается без всматривания. */}
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все залы' }, ...HALLS.map((h) => ({ id: h.id, name: h.name }))].map((h) => {
+    <div className="flex-1 pb-24 pt-6 px-5 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
+      <header className="space-y-6">
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold flex items-center gap-2">
+            <Cpu className="w-3.5 h-3.5" />
+            ПРОГРАММА ФОРУМА
+          </p>
+          <h1 className="font-elite text-3xl leading-none text-white">Расписание</h1>
+        </div>
+
+        {/* Day tabs.
+            BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
+            между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
+            Таб "Мои записи" остаётся справа. */}
+        <div className="flex bg-[#111827] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
+          {[
+            ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
+            { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
+            ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
+            { id: MY_TAB_ID, label: 'Мои записи' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setSelectedDayId(tab.id)}
+              className={cn(
+                'flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest leading-none transition-all',
+                selectedDayId === tab.id
+                  ? 'bg-accent text-surface shadow-xl shadow-accent/20'
+                  : 'text-muted hover:text-primary',
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* «Скачать всю мою программу в календарь» — показываем только в табе "Мои записи" */}
+        {selectedDayId === MY_TAB_ID && registeredIds.length > 0 && (
+          <a
+            href={resolveApiUrl('/sessions/calendar')}
+            download="techforum2026-my.ics"
+            className="flex items-center justify-center gap-2 bg-[#00ffff]/10 border border-[#00ffff]/30 text-[#00ffff] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+          >
+            <Download className="w-4 h-4" />
+            Все мои сессии в календарь
+          </a>
+        )}
+
+        {/* Hall filter pills */}
+        <div className="flex gap-3 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
+          {[{ id: 'all', name: 'Все залы' }, ...HALLS.map(h => ({ id: h.id, name: h.name }))].map((h) => {
             const active = activeHallId === h.id;
             return (
               <button
                 key={h.id}
                 onClick={() => setActiveHallId(h.id)}
                 className={cn(
-                  'px-4 py-2 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
-                  active
-                    ? 'bg-[#4ec9c0] border-[#4ec9c0] text-[#03161c] shadow-[0_0_18px_rgba(78,201,192,0.55)]'
-                    : 'bg-[#0a2f38]/70 text-[#d8f0ee] border-[#4ec9c0]/45 hover:border-[#4ec9c0]/70',
+                  'px-6 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none',
+                  active ? 'bg-primary border-primary text-surface' : 'bg-surface border-card-border text-muted/60',
                 )}
               >
                 {h.name}
@@ -186,15 +278,15 @@ export default function Schedule() {
 
         {/* Track filter pills */}
         <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все треки', color: '#4ec9c0' }, ...TRACKS.map((t) => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
+          {[{ id: 'all', name: 'Все треки', color: '#00ffff' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
             const active = activeTrackId === t.id;
             return (
               <button
                 key={t.id}
                 onClick={() => setActiveTrackId(t.id)}
                 className={cn(
-                  'px-4 py-2 rounded-2xl text-[10px] font-semibold whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
-                  active ? 'text-[#03161c]' : 'bg-[#0a2f38]/70 text-[#d8f0ee] border-[#4ec9c0]/45 hover:border-[#4ec9c0]/70',
+                  'px-4 py-2 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
+                  active ? 'text-surface' : 'bg-surface text-muted/70 border-card-border',
                 )}
                 style={active ? { backgroundColor: t.color, borderColor: t.color, boxShadow: `0 0 18px ${t.color}55` } : undefined}
               >
@@ -203,51 +295,20 @@ export default function Schedule() {
             );
           })}
         </div>
-      </div>
+      </header>
 
-      <div className="space-y-5 mt-6">
+      <div className="space-y-5">
         <div>
-          {sessionsLoading && filteredSessions.length === 0 && (
-            <div className="space-y-4">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="rounded-3xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 p-6 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Skeleton height={11} width="35%" />
-                    <Skeleton height={26} width={80} />
-                  </div>
-                  <Skeleton height={20} width="80%" />
-                  <Skeleton height={12} width="60%" />
-                  <Skeleton height={36} />
-                </div>
-              ))}
-            </div>
-          )}
-          {filteredSessions.map((session, idx) => {
+          {filteredSessions.map((session) => {
             const track = getTrackById(session.trackId);
-            const trackColor = track?.color ?? '#4ec9c0';
+            const trackColor = track?.color ?? '#00ffff';
             const isRegistered = registeredIds.includes(session.id);
             const isCommonFormat = session.format === 'break' || session.format === 'opening' || session.format === 'closing';
-            const CommonIcon = session.format === 'break' ? Coffee
-              : session.format === 'opening' ? Mic
-              : session.format === 'closing' ? Hand
-              : null;
 
             return (
-              <motion.div
+              <div
                 key={session.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.32,
-                  ease: [0.32, 0.72, 0, 1],
-                  delay: Math.min(idx * 0.035, 0.4),
-                }}
-                className={cn(
-                  'mb-5 backdrop-blur-xl p-6 rounded-3xl space-y-5 group relative overflow-hidden transition-all',
-                  isCommonFormat
-                    ? 'bg-[#0a2f38]/55 border border-[#4ec9c0]/30 shadow-[0_4px_18px_rgba(0,0,0,0.25)]'
-                    : 'bg-[#0a2f38]/65 border border-[#4ec9c0]/40 shadow-[0_8px_28px_rgba(0,0,0,0.35)] hover:border-[#4ec9c0]/65',
-                )}
+                className="mb-5 bg-[#111827]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden circuit-border"
               >
                 <div
                   className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
@@ -257,92 +318,91 @@ export default function Schedule() {
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2 text-sm font-bold text-accent">
                     <div className="w-1.5 h-1.5 bg-accent rounded-full" />
-                    <span className="font-mono tracking-tighter text-[#d8f0ee]/80">
+                    <span className="font-mono tracking-tighter text-primary/80">
                       {session.startTime} — {session.endTime}
                     </span>
                   </div>
                   {session.status === 'Live' && (
-                    <span className="bg-red-500/10 text-red-500 text-[10px] font-semibold px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
+                    <span className="bg-red-500/10 text-red-500 text-[10px] font-black px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
                       В ЭФИРЕ
                     </span>
                   )}
                 </div>
 
-                <div className="flex items-start gap-3">
-                  {isCommonFormat && CommonIcon && (
-                    <div className="w-11 h-11 rounded-2xl bg-[#4ec9c0]/15 border border-[#4ec9c0]/40 flex items-center justify-center text-[#4ec9c0] shrink-0">
-                      <CommonIcon className="w-5 h-5" strokeWidth={1.6} />
-                    </div>
-                  )}
-                  <h3 className="font-display-cyrl text-xl font-semibold leading-tight text-[#d8f0ee] flex-1 min-w-0">
-                    {session.title}
-                  </h3>
-                </div>
-
-                {/* Description — для общих форматов (break/opening/closing) показываем
-                    обязательно, чтобы плашка имела содержание. Для обычных сессий
-                    тоже показываем (короткое описание темы доклада). */}
-                {session.description && (
-                  <p className={cn(
-                    'text-[13px] leading-relaxed',
-                    isCommonFormat ? 'text-[#d8f0ee]/80' : 'text-[#d8f0ee]/65',
-                  )}>
-                    {session.description}
-                  </p>
-                )}
+                <h3 className="text-xl font-black leading-tight tracking-tight text-white">
+                  {session.title}
+                </h3>
 
                 {session.speakerIds.length > 0 && (
                   <div className="flex flex-wrap gap-5 pt-1">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-[#03161c] border border-[#4ec9c0]/28 flex items-center justify-center text-accent font-semibold text-[11px] shadow-sm">
+                      <div className="w-10 h-10 rounded-2xl bg-surface border border-card-border flex items-center justify-center text-accent font-black text-[11px] shadow-sm">
                         {session.speakerName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                       </div>
                       <div className="flex flex-col">
-                        <span className="text-xs font-bold text-[#d8f0ee] tracking-tight">{session.speakerName}</span>
-                        <span className="text-[10px] font-bold text-[#7aa8a4] uppercase tracking-widest">
+                        <span className="text-xs font-bold text-primary tracking-tight">{session.speakerName}</span>
+                        <span className="text-[10px] font-bold text-muted uppercase tracking-widest">
                           {session.format === 'workshop' ? 'Воркшоп' : session.format === 'panel' ? 'Панель' : session.format === 'keynote' ? 'Keynote' : 'Доклад'}
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 text-[#7aa8a4] text-xs font-medium bg-[#03161c]/40 px-3 py-1.5 rounded-xl border border-[#4ec9c0]/22">
+                    <div className="flex items-center gap-2 text-muted text-xs font-medium bg-surface/40 px-3 py-1.5 rounded-xl border border-card-border/50">
                       <MapPin className="w-3 h-3 text-accent" />
                       <span className="tracking-tight">{session.location}</span>
                     </div>
                   </div>
                 )}
 
-                <div className="pt-2 flex justify-between items-center bg-[#03161c]/30 -mx-6 -mb-6 px-6 py-4 border-t border-[#4ec9c0]/22 gap-3">
+                <div className="pt-2 flex justify-between items-center bg-surface/30 -mx-6 -mb-6 px-6 py-4 border-t border-card-border/50 gap-3">
                   <span
-                    className="text-[10px] font-semibold uppercase tracking-widest pl-2 border-l-2 truncate max-w-[55%]"
+                    className="text-[10px] font-black uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
                     style={{ borderColor: trackColor, color: trackColor }}
                   >
                     {session.track}
                   </span>
-                  {!isCommonFormat && (
-                    <button
-                      onClick={() => handleRegisterClick(session)}
-                      className={cn(
-                        'text-[10px] font-semibold uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
-                        isRegistered
-                          ? 'bg-card border border-accent/40 text-accent'
-                          : 'bg-accent text-[#03161c] shadow-accent/10 hover:brightness-110',
-                      )}
-                    >
-                      {isRegistered ? 'Уже иду' : 'Пойду'}
-                    </button>
-                  )}
+                  <div className="flex gap-2 items-center">
+                    {!isCommonFormat && (
+                      <a
+                        href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
+                        download={`techforum2026-${session.id}.ics`}
+                        title="Добавить в календарь"
+                        className="text-[10px] font-black uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-card-border text-muted/70 hover:text-accent hover:border-accent/30 transition-all"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {!isCommonFormat && (
+                      <button
+                        onClick={() => handleRegisterClick(session)}
+                        className={cn(
+                          'text-[10px] font-black uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
+                          isRegistered
+                            ? 'bg-card border border-accent/40 text-accent'
+                            : 'bg-accent text-surface shadow-accent/10 hover:brightness-110',
+                        )}
+                      >
+                        {isRegistered ? 'Уже иду' : 'Пойду'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>
 
         {filteredSessions.length === 0 && (
           <div className="py-20 text-center space-y-4">
-            <div className="w-16 h-16 bg-[#0a2f38]/55 border border-[#4ec9c0]/28 rounded-3xl flex items-center justify-center mx-auto text-[#7aa8a4]/60">
-              <Filter className="w-8 h-8" strokeWidth={1.4} />
+            <div className="w-16 h-16 bg-card border border-card-border rounded-3xl flex items-center justify-center mx-auto text-muted/30">
+              {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
             </div>
-            <p className="text-[#7aa8a4] font-medium">Нет докладов по выбранным фильтрам</p>
+            <p className="text-muted font-medium">
+              {selectedDayId === MY_TAB_ID
+                ? 'Вы ещё не записались ни на одну сессию'
+                : selectedDayId === RECOMMENDED_TAB_ID
+                  ? 'Нет рекомендаций — попробуй сменить фильтры или выбрать больше интересов'
+                  : 'Нет докладов по выбранным фильтрам'}
+            </p>
           </div>
         )}
       </div>
@@ -363,24 +423,24 @@ export default function Schedule() {
               exit={{ y: 40, opacity: 0 }}
               transition={{ type: 'spring', damping: 24, stiffness: 280 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-[#0a2f38] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
+              className="w-full max-w-sm bg-[#111827] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
                     <AlertTriangle className="w-5 h-5 text-amber-400" />
                   </div>
-                  <h2 className="text-base font-semibold text-[#d8f0ee] tracking-tight">Конфликт времени</h2>
+                  <h2 className="text-base font-black text-white tracking-tight">Конфликт времени</h2>
                 </div>
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="w-8 h-8 rounded-xl bg-card border border-[#4ec9c0]/28 flex items-center justify-center text-[#7aa8a4] hover:text-[#d8f0ee]"
+                  className="w-8 h-8 rounded-xl bg-card border border-card-border flex items-center justify-center text-muted hover:text-primary"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <p className="text-[13px] text-[#d8f0ee]/75 leading-relaxed">
+              <p className="text-[13px] text-white/75 leading-relaxed">
                 «{conflictTarget.session.title}» ({conflictTarget.session.startTime}–{conflictTarget.session.endTime}) пересекается со временем уже выбранных сессий:
               </p>
 
@@ -395,7 +455,7 @@ export default function Schedule() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="flex-1 py-3 rounded-2xl bg-card border border-[#4ec9c0]/28 text-[12px] font-semibold text-[#d8f0ee]/75 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-2xl bg-card border border-card-border text-[12px] font-semibold text-white/75 active:scale-[0.98]"
                 >
                   Отмена
                 </button>
@@ -410,6 +470,6 @@ export default function Schedule() {
           </motion.div>
         )}
       </AnimatePresence>
-    </PageShell>
+    </div>
   );
 }

@@ -1,37 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'motion/react';
+// BUG_FIX_CONTEXT: Откатил lazy/Suspense — каждый chunk подгружался с
+// задержкой через Suspense fallback, юзер видел ре-рендер шрифта и
+// «медленно грузит» при каждом переходе. APK assets всё равно локальные,
+// экономия на code-split минимальна. Eager-импорты дают мгновенную
+// навигацию между разделами.
+import Auth from './pages/Auth';
+import Onboarding from './pages/Onboarding';
 import Home from './pages/Home';
 import Feed from './pages/Feed';
 import Schedule from './pages/Schedule';
 import Speakers from './pages/Speakers';
-import SpeakerDetail from './pages/SpeakerDetail';
 import Map from './pages/Map';
 import Chat from './pages/Chat';
 import Profile from './pages/Profile';
-import UserProfile from './pages/UserProfile';
 import Ticket from './pages/Ticket';
 import Giveaways from './pages/Giveaways';
-import Auth from './pages/Auth';
-import Onboarding from './pages/Onboarding';
 import Partners from './pages/Partners';
 import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
 import MyRecords from './pages/MyRecords';
 import NewsDetail from './pages/NewsDetail';
-import Settings from './pages/Settings';
-import Faq from './pages/Faq';
-import Attendees from './pages/Attendees';
-import MyCard from './pages/MyCard';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
 import { resolveApiUrl } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
 import { prefetchPublicData } from './lib/prefetch';
-import { attachPushListeners } from './lib/push';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
-import Splash from './components/Splash';
 
 
 // BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
@@ -86,10 +83,13 @@ function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Native StatusBar — тёмный blueprint-фон, светлые иконки.
-  // Native SplashScreen — скрываем сразу после первого React-рендера,
-  // чтобы не было двойного splash (native + web). Native picture одинаков
-  // с web Splash.tsx (та же splash-bg.jpg) → переход бесшовный.
+  // BUG_FIX_CONTEXT: Samsung S25 / OnePlus 9R показывали системный status-bar
+  // с дефолтным светлым иконками поверх тёмного фона приложения — иконки
+  // были невидимы. Также при overlay-режиме возникала наложка контента под
+  // строкой состояния. Конфигурируем native StatusBar через Capacitor:
+  // непрозрачный, цвет #04020f (как фон app), стиль Dark (светлые иконки).
+  // Feature-detect через window.Capacitor — на web (vite dev) импорт плагина
+  // не должен падать, поэтому загружаем динамически и тихо игнорируем ошибки.
   useEffect(() => {
     const Capacitor: any = (window as any).Capacitor;
     if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
@@ -99,61 +99,23 @@ function AppContent() {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
         StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-        StatusBar.setBackgroundColor({ color: '#03161c' }).catch(() => {});
+        StatusBar.setBackgroundColor({ color: '#0a0e17' }).catch(() => {});
         StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-      } catch { /* web env */ }
-      try {
-        const { SplashScreen } = await import('@capacitor/splash-screen');
-        // Ждём 2× requestAnimationFrame, чтобы Web Splash гарантированно
-        // отрисовался поверх native (тот же hero JPG → cross-fade невидим).
-        // Раньше был setTimeout(80) — на медленных устройствах между native
-        // hide и Web Splash mount был чёрный gap.
-        const hide = () => SplashScreen.hide({ fadeOutDuration: 200 }).catch(() => {});
-        requestAnimationFrame(() => requestAnimationFrame(hide));
-      } catch { /* web env */ }
+      } catch {
+        /* noop — плагин недоступен или web-окружение */
+      }
     })();
   }, []);
 
-  // Round 7: deep-link на push'ы. Когда юзер тапает по push-уведомлению,
-  // Capacitor отдаёт нам data из notification → навигируем к нужному экрану.
-  // Поддерживаемые типы: dm (data.from = userId) → /chat/:userId;
-  // session (data.sessionId) → /schedule.
-  const navigate = useNavigate();
-  useEffect(() => {
-    const Capacitor: any = (window as any).Capacitor;
-    if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
-      return;
-    }
-    void attachPushListeners(
-      undefined,
-      (data) => {
-        const type = String(data.type ?? '');
-        if (type === 'dm' && typeof data.from === 'string') {
-          navigate(`/chat/${data.from}`);
-        } else if (type === 'session') {
-          navigate('/schedule');
-        }
-      },
-    );
-  }, [navigate]);
-
   useEffect(() => {
     let isMounted = true;
-    // Splash минимально 1.4с при холодном старте; warm-restart (юзер свернул
-    // и открыл в течение 30 минут) — без задержки, чтобы не было ощущения
-    // тормоза. Метку времени держим в sessionStorage (живёт пока tab-контекст
-    // не пересоздан, что для Capacitor WebView ≈ life of activity).
+    // BUG_FIX_CONTEXT: По требованию заказчика — при холодном старте APK юзер
+    // должен встретить blueprint TechForum2026 на ~1 секунду, а не лого/белизну.
+    // Делаем это через минимальный 1000ms блок Loader-экрана, который рендерит
+    // тот же conference-bg.jpg что и Auth-панель. Параллельно идёт сетевой
+    // /auth/me — если ответ пришёл раньше 1с, всё равно держим экран до 1с.
     const startAt = Date.now();
-    let lastBootAt = 0;
-    try { lastBootAt = parseInt(sessionStorage.getItem('techforum_last_boot') || '0', 10) || 0; } catch { /* noop */ }
-    const isWarmRestart = lastBootAt > 0 && (Date.now() - lastBootAt) < 30 * 60 * 1000;
-    try { sessionStorage.setItem('techforum_last_boot', String(Date.now())); } catch { /* noop */ }
-    // Round 8: native Capacitor SplashScreen с drawable splash.png показывает
-    // картинку ~1.5с (см. capacitor.config.ts launchShowDuration). Web-splash
-    // теперь просто пустой blueprint (см. Splash.tsx) — должен исчезнуть
-    // сразу как auth-check завершился. MIN=200мс на cold чтобы исключить
-    // визуальный flicker если auth ответил мгновенно.
-    const MIN_SPLASH_MS = isWarmRestart ? 0 : 200;
+    const MIN_SPLASH_MS = 1000;
 
     // BUG_FIX_CONTEXT: П6 — рандомный сброс на онбординг. Onboarding раньше
     // делал PUT /me/interests fire-and-forget, и если запрос падал, выбор
@@ -186,13 +148,7 @@ function AppContent() {
           if (isMounted) {
             setUser((prev: any) => prev ? { ...prev, interestsCount: interestIds.length } : prev);
           }
-        } else if (res.status === 400) {
-          // Бэк отверг данные (unknown_interest_ids, либо min(3) после
-          // изменения схемы): pending содержит мусор, не зацикливаем
-          // повторные cold-start попытки. Удаляем буфер.
-          try { localStorage.removeItem('techforum_pending_interests'); } catch { /* noop */ }
         }
-        // 401/5xx — оставляем pending до следующего cold-start.
       } catch { /* offline — попробуем на следующем cold-start */ }
     };
 
@@ -258,105 +214,74 @@ function AppContent() {
     };
   }, []);
 
+  if (loading) {
+    // BUG_FIX_CONTEXT: Backdrop ушёл в body::before — loading screen теперь
+    // просто прозрачный контейнер для минимального 1с ожидания. body::before
+    // (CSS) красится мгновенно при загрузке стилей, никакого FOUC.
+    return (
+      <div className="relative" style={{ minHeight: '100dvh' }} />
+    );
+  }
+
   return (
-    // SCROLL FIX 5/5 — РАДИКАЛЬНЫЙ.
-    //
-    // Раньше было: outer overflow-hidden flex-col → main overflow-hidden flex-col
-    //              → scroll-div flex-1 overflow-y-auto → contents.
-    // Этот flex-chain в WebView Android вёл себя нестабильно: иногда touch уходил
-    // в nested context, иногда flex-shrink резал содержимое до viewport-height,
-    // иногда implicit overflow на одном из wrappers создавал nested scroll.
-    //
-    // Теперь scroll НА BODY. Это самый стандартный и надёжный паттерн для
-    // мобильного web/Capacitor:
-    //   - body имеет естественный scroll (overflow:auto в html/body из CSS)
-    //   - выше body нет flex-chain — туда не лезет shrink-поведение
-    //   - touch-action управляется на body через index.css
-    //
-    // Outer-div теперь просто wrapper без всяких overflow / flex-col.
-    // Padding безопасный area inset top/bottom — на самом контенте, не на wrapper.
-    // AppBackground оборачивает ВСЁ — blueprint-bg.svg всегда виден сзади
-    // (`position: fixed` внутри AppBackground). Splash рисует свой hero
-    // поверх через absolute inset-0; при exit-fade splash blueprint остаётся
-    // на месте, app/auth fade-in ПОВЕРХ ТОГО ЖЕ blueprint. Это и есть
-    // бесшовный переход native-splash → web-splash → app — без замены фона.
-    <AppBackground className="bg-[#03161c]">
+    // BUG_FIX_CONTEXT: На мобильных (Samsung S25 / OnePlus 9R и т.п.) под main
+    // оставалась чёрная полоса — main был h-[100dvh] (минус navbar) внутри
+    // outer min-h-screen (100vh с navbar). На mobile теперь main растягивается
+    // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
+    // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
+    // с центрированной "телефонной" рамкой 420×840.
+    <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <OfflineBanner />
-      <main
-        className="w-full relative z-10"
-        style={{
-          paddingTop: 'env(safe-area-inset-top, 0)',
-          paddingBottom: 'env(safe-area-inset-bottom, 0)',
-        }}
-      >
-        {/* Root AnimatePresence — единый fade 0.22с между splash/auth/onboarding/app. */}
-        <AnimatePresence mode="wait">
-          {loading ? (
-            <motion.div key="splash" exit={{ opacity: 0 }} transition={{ duration: 0.32, ease: [0.32, 0.72, 0, 1] }}>
-              <Splash />
-            </motion.div>
-          ) : !user ? (
-            <motion.div key="auth" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}>
+      <main className="w-full sm:max-w-[420px] sm:h-[840px] shadow-[0_0_90px_rgba(0,255,255,0.2)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
+        <div className="flex-1 overflow-y-auto scrollbar-hide relative">
+          <div className="min-h-full">
+            {!user ? (
+              // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
               <Auth onSuccess={setUser} />
-            </motion.div>
-          ) : !user.interestsCount ? (
-            <motion.div key="onboarding" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}>
+            ) : !user.interestsCount ? (
+              // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
+              // ИЛИ undefined (legacy юзеры из старых билдов без поля). Onboarding
+              // вызывает onDone(count) ТОЛЬКО после успешного PUT /me/interests
+              // (источник истины — БД), мы получаем реальное число выбранных
+              // интересов и используем его — на cold-start /auth/me вернёт то же.
               <Onboarding onDone={(count: number) => setUser({ ...user, interestsCount: count })} />
-            </motion.div>
-          ) : (
-            <motion.div key="app" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.22 }}>
-              {/* Внутренний AnimatePresence по location.pathname — единая
-                  slide-fade анимация на каждой смене route. Раньше Routes
-                  сидел внутри одного motion.div и переходов между Home↔
-                  Schedule↔Speakers не было вовсе. */}
-              {/* Round 8: переходы между route'ами стали плавнее.
-                  - mode="popLayout" вместо "wait" — новая страница начинает
-                    fade-in одновременно с fade-out старой, нет 220мс паузы
-                    «чёрного кадра».
-                  - opacity-only с subtle scale (0.985→1) — без боковой
-                    slide-x, выглядит мягче. Boxes/lists не «прыгают» влево.
-                  - easeOut (cubic-bezier(0.22,1,0.36,1)) — natural decel.
-                  - duration 0.32с — осознанно медленнее, чтобы глаз поспевал. */}
-              <AnimatePresence mode="popLayout" initial={false}>
-                <motion.div
-                  key={location.pathname}
-                  initial={{ opacity: 0, scale: 0.985 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.015 }}
-                  transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-                  style={{ willChange: 'opacity, transform' }}
-                >
-                  <Routes location={location}>
-                    <Route path="/" element={<Home />} />
-                    <Route path="/feed" element={<Feed />} />
-                    <Route path="/news/:id" element={<NewsDetail />} />
-                    <Route path="/schedule" element={<Schedule />} />
-                    <Route path="/speakers" element={<Speakers />} />
-                    <Route path="/speakers/:id" element={<SpeakerDetail />} />
-                    <Route path="/map" element={<Map />} />
-                    <Route path="/chat" element={<Chat />} />
-                    <Route path="/chat/:userId" element={<Chat />} />
-                    <Route path="/users/:userId" element={<UserProfile />} />
-                    <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
-                    <Route path="/ticket" element={<Ticket />} />
-                    <Route path="/giveaways" element={<Giveaways />} />
-                    <Route path="/partners" element={<Partners />} />
-                    <Route path="/diagnostics" element={<Diagnostics />} />
-                    <Route path="/about" element={<About />} />
-                    <Route path="/my-records" element={<MyRecords />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="/faq" element={<Faq />} />
-                    <Route path="/attendees" element={<Attendees />} />
-                    <Route path="/my-card" element={<MyCard />} />
-                    <Route path="*" element={<Navigate to="/" />} />
-                  </Routes>
-                </motion.div>
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            ) : (
+              // Все остальные разделы — единый фон Home (требование заказчика).
+              <AppBackground>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={location.pathname}
+                    initial={{ opacity: 0, x: location.pathname === '/' ? 0 : 24 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
+                    transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                    className="min-h-full"
+                  >
+                    <Routes location={location}>
+                      <Route path="/" element={<Home />} />
+                      <Route path="/feed" element={<Feed />} />
+                      <Route path="/news/:id" element={<NewsDetail />} />
+                      <Route path="/schedule" element={<Schedule />} />
+                      <Route path="/speakers" element={<Speakers />} />
+                      <Route path="/map" element={<Map />} />
+                      <Route path="/chat" element={<Chat />} />
+                      <Route path="/profile" element={<Profile user={user} />} />
+                      <Route path="/ticket" element={<Ticket />} />
+                      <Route path="/giveaways" element={<Giveaways />} />
+                      <Route path="/partners" element={<Partners />} />
+                      <Route path="/diagnostics" element={<Diagnostics />} />
+                      <Route path="/about" element={<About />} />
+                      <Route path="/my-records" element={<MyRecords />} />
+                      <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                  </motion.div>
+                </AnimatePresence>
+              </AppBackground>
+            )}
+          </div>
+        </div>
       </main>
-    </AppBackground>
+    </div>
   );
 }
 

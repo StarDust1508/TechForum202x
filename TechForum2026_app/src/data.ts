@@ -96,15 +96,12 @@ export interface Speaker {
   topic?: string;
   /** ID основного трека спикера (для бейджа в карточке). */
   trackId: string;
+  /**
+   * IDs интересов из INTERESTS, которыми покрывается экспертиза спикера.
+   * Используется для ранжирования "Recommended" в Schedule (score =
+   * пересечение с интересами пользователя).
+   */
   interestIds: string[];
-  /** Развёрнутая биография для страницы /speakers/:id (3-6 абзацев). */
-  extendedBio?: string;
-  /** Список достижений / регалий — bullet points для detail-страницы. */
-  achievements?: string[];
-  /** Доклады/публикации/пет-проекты — для detail-страницы. */
-  talks?: string[];
-  /** Опыт в индустрии в годах — для detail-страницы. */
-  yearsExperience?: number;
 }
 
 export interface Interest {
@@ -192,13 +189,8 @@ export interface EventMeta {
 // SECTION: META
 // ============================================================================
 
-// SHARED-SOURCE: бренд-литералы (EVENT_BRAND, EVENT_YEAR) живут в src/lib/event.ts
-// — раз в полгода ребрендим, правится только тот файл. Здесь склеиваем через
-// импорт, чтобы fields data.ts автоматически были синхронизированы.
-import { EVENT_BRAND, EVENT_YEAR } from './lib/event';
-
 export const EVENT_META: EventMeta = {
-  name: `${EVENT_BRAND} ${EVENT_YEAR}`,
+  name: 'TechForum 2026',
   location: 'Технополис «Инновация»',
   city: 'Саратов',
   timezone: 'Europe/Saratov',
@@ -214,7 +206,7 @@ export const EVENT_META: EventMeta = {
 export const TRACKS: Track[] = [
   { id: 'ai',       name: 'AI / ML',                color: '#a855f7', shortLabel: 'AI'   },
   { id: 'backend',  name: 'Backend & Architecture', color: '#3b82f6', shortLabel: 'BE'   },
-  { id: 'frontend', name: 'Frontend & Mobile',      color: '#4ec9c0', shortLabel: 'FE'   },
+  { id: 'frontend', name: 'Frontend & Mobile',      color: '#00ffff', shortLabel: 'FE'   },
   { id: 'devops',   name: 'DevOps & Cloud',         color: '#f59e0b', shortLabel: 'OPS'  },
   { id: 'data',     name: 'Data Engineering',       color: '#10b981', shortLabel: 'DATA' },
   { id: 'product',  name: 'Product & Career',       color: '#ec4899', shortLabel: 'PROD' },
@@ -250,7 +242,7 @@ export const DAYS: Day[] = [
 export const INTERESTS: Interest[] = [
   { id: 'ai',          label: 'AI / ML',          color: '#a855f7' },
   { id: 'backend',     label: 'Backend',          color: '#3b82f6' },
-  { id: 'frontend',    label: 'Frontend',         color: '#4ec9c0' },
+  { id: 'frontend',    label: 'Frontend',         color: '#00ffff' },
   { id: 'mobile',      label: 'Mobile',           color: '#06b6d4' },
   { id: 'devops',      label: 'DevOps',           color: '#f59e0b' },
   { id: 'cloud',       label: 'Cloud',            color: '#0ea5e9' },
@@ -290,19 +282,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Архитектура высоконагруженных систем: уроки 15 лет Highload++',
     trackId: 'backend',
     interestIds: ['backend', 'devops', 'oss'],
-    yearsExperience: 25,
-    extendedBio: 'Олег Бунин — один из ключевых популяризаторов инженерной культуры в русскоязычном IT. С 2007 года ежегодно проводит Highload++ — крупнейшую в Восточной Европе конференцию по высоконагруженным системам, на которой за это время выступили 1000+ спикеров мирового уровня.\n\nДо запуска Онтико руководил инфраструктурой нескольких крупных интернет-проектов, включая Mail.ru. Активно участвует в формировании русского технического словаря: переводы и адаптация Highload-терминологии в инженерных командах.\n\nКонсультирует крупные продуктовые компании по построению надёжных backend-платформ и подбору инженерных команд. Регулярно публикует разборы реальных инцидентов и постмортемов с Highload-сцены.',
-    achievements: [
-      'Основатель и идеолог Highload++ (с 2007 года, 18+ ежегодных конференций)',
-      'Организатор RIT++, TechLead Conf, PHP Russia и других профессиональных IT-событий',
-      'Соавтор русскоязычного канона терминов в области высоконагруженных систем',
-      'Член программных комитетов международных IT-конференций',
-    ],
-    talks: [
-      'Архитектура Mail.ru: как держать миллиарды запросов в день',
-      '15 лет Highload++: что изменилось в backend-инженерии',
-      'Инженерная культура: как растить senior-команду',
-    ],
   },
   {
     id: 'sp_kraynov',
@@ -314,18 +293,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Генеративные модели в продуктах массового сегмента',
     trackId: 'ai',
     interestIds: ['ai', 'product'],
-    yearsExperience: 20,
-    extendedBio: 'Александр Крайнов — один из главных архитекторов AI-стратегии Яндекса. За последние годы под его руководством команда довела поисковые ML-системы до десятков миллионов запросов в секунду и запустила в продакшн собственное семейство генеративных моделей (YandexGPT).\n\nРаботает на стыке академической стороны ML и production-инженерии: ведёт регулярные технические разборы, выступает с программными докладами на конференциях ML/AI в России и за рубежом.\n\nАктивно участвует в проекте по интеграции генеративных моделей в массовые сервисы: Поиск, Алиса, Браузер, Маркет — миллионы пользователей в день.',
-    achievements: [
-      'Запуск YandexGPT и YandexART в продакшн с миллионной аудиторией',
-      'Архитектор поискового ranking-стека Яндекса',
-      'Spike CTR крупнейших продуктов Яндекса за счёт ML-оптимизаций',
-      'Регулярный приглашённый докладчик на DataFest, AI Journey, Яндекс ML',
-    ],
-    talks: [
-      'Как устроена Алиса: от LLM до VoiceAI на устройстве',
-      'Production-LLM на массовом сервисе: качество vs latency',
-    ],
   },
   {
     id: 'sp_bilenko',
@@ -337,18 +304,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Research-направления: куда движется индустрия AI',
     trackId: 'ai',
     interestIds: ['ai', 'data'],
-    yearsExperience: 22,
-    extendedBio: 'Михаил Биленко — PhD в области машинного обучения, до возвращения в Россию более десятилетия проработал в Microsoft Research, где руководил группами по поисковым системам и ML-инфраструктуре.\n\nСейчас возглавляет Yandex Research — научное подразделение Яндекса, занимающееся фундаментальными исследованиями в LLM, поисковых алгоритмах, мультимодальных моделях и компьютерном зрении.\n\nПубликации в топовых ML-конференциях (NeurIPS, ICML, KDD) с тысячами цитирований. Регулярно читает курсы и открытые лекции по индустриальному ML для русскоязычной аудитории.',
-    achievements: [
-      'PhD в Machine Learning, University of Texas at Austin',
-      '10+ лет в Microsoft Research, руководитель ML-группы',
-      'Соавтор десятков работ на NeurIPS, ICML, KDD, WWW',
-      'Руководитель Yandex Research — крупнейшего ML-research lab в РФ',
-    ],
-    talks: [
-      'От академического ML к продуктовому: преодоление research-engineering gap',
-      'Открытые проблемы в LLM-инфраструктуре Яндекса',
-    ],
   },
   {
     id: 'sp_sebrant',
@@ -360,18 +315,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Стратегия tech-продуктов: уроки Яндекса',
     trackId: 'product',
     interestIds: ['product', 'startup', 'career'],
-    yearsExperience: 35,
-    extendedBio: 'Андрей Себрант — кандидат физико-математических наук, один из старейших и наиболее цитируемых российских tech-евангелистов. В Яндексе работает с 2004 года, сейчас директор по стратегическому маркетингу.\n\nДо Яндекса прошёл путь от научного сотрудника до руководителя ряда интернет-проектов 90-х (Россия-Он-Лайн, Lycos Russia). Один из ключевых популяризаторов темы AI и цифровой трансформации в русскоязычном бизнес-сегменте.\n\nВедёт регулярные публичные выступления, гость десятков подкастов, автор Telegram-канала и колонок на тему индустриальных трендов. Преподаёт в Школе менеджеров Яндекса и Сколково.',
-    achievements: [
-      'К.ф.-м.н., более 35 лет в IT-индустрии',
-      'Один из создателей рунета 90-х (Lycos Russia, Россия-Он-Лайн)',
-      'Преподаватель Школы менеджеров Яндекса и Сколково',
-      'Один из самых цитируемых русскоязычных tech-спикеров',
-    ],
-    talks: [
-      'Что меняется в стратегии tech-продуктов после AI-революции',
-      'Куда движется русскоязычное IT в 2026',
-    ],
   },
   {
     id: 'sp_shipilev',
@@ -383,18 +326,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'JIT-компиляция и performance JVM в 2026',
     trackId: 'backend',
     interestIds: ['backend', 'hardware', 'oss'],
-    yearsExperience: 18,
-    extendedBio: 'Алексей Шипилев — один из самых известных в мире инженеров по производительности JVM. Длительное время работал в Sun/Oracle и Red Hat, был одним из ключевых разработчиков OpenJDK и Shenandoah GC.\n\nАвтор JMH (Java Microbenchmark Harness) — стандартного де-факто инструмента для микро-бенчмарков на JVM, используется в десятках тысяч open-source и коммерческих проектов.\n\nРегулярно публикует разборы JIT-компиляции, JMM (Java Memory Model), GC-алгоритмов на shipilev.net и в виде многочасовых технических докладов на JPoint, JokerConf, Devoxx и Joker.',
-    achievements: [
-      'Создатель JMH (Java Microbenchmark Harness)',
-      'Co-author Shenandoah GC в OpenJDK',
-      'Регулярный invited speaker на JPoint, Devoxx, Joker, JFokus',
-      'Автор канонических разборов Java Memory Model для русскоязычного сообщества',
-    ],
-    talks: [
-      'Java Memory Model в эпоху многопроцессорных ARM-серверов',
-      'Performance regressions: как устраивать и как искать',
-    ],
   },
   {
     id: 'sp_soshnikov',
@@ -406,18 +337,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'AI Copilot-инструменты в инженерных командах',
     trackId: 'ai',
     interestIds: ['ai', 'edtech', 'career'],
-    yearsExperience: 24,
-    extendedBio: 'Дмитрий Сошников — преподаватель ВШЭ и МАИ, более 15 лет работал в Microsoft на позициях технического евангелиста и AI Lead в регионе CEE. Эксперт по облачным AI-платформам Azure, Cognitive Services и интеграции их в продуктовый стек.\n\nАвтор открытого курса «AI for Beginners» (на GitHub Microsoft, 30k+ stars), переведён на десятки языков, используется в университетских программах по всему миру.\n\nРегулярно ведёт онлайн-стримы по PromptOps, AI-Copilot инструментам и автоматизации инженерных задач через LLM.',
-    achievements: [
-      'Автор open-source курса AI for Beginners (Microsoft, 30k+ stars)',
-      '15+ лет в Microsoft на позиции AI Lead в регионе CEE',
-      'Преподаватель ВШЭ и МАИ, регулярный приглашённый лектор',
-      'Создатель российской AI-Copilot интеграции для внутренних команд',
-    ],
-    talks: [
-      'AI Copilot в команде: как ускорить разработку без потери качества',
-      'PromptOps: новая практика управления LLM-промптами в production',
-    ],
   },
   {
     id: 'sp_petrov',
@@ -429,18 +348,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'DevRel в технических командах',
     trackId: 'product',
     interestIds: ['career', 'product', 'oss'],
-    yearsExperience: 22,
-    extendedBio: 'Григорий Петров — один из «отцов» русскоязычного DevRel, основатель и многолетний организатор Moscow Python — крупнейшего русскоязычного Python-сообщества и митапа.\n\nПрошёл путь от разработчика до VP of Engineering и DevRel-консультанта в нескольких международных tech-компаниях. Специалист по построению инженерных культур, технических собеседований и публичных коммуникаций инженерных команд.\n\nАвтор сотен публичных докладов и подкастов, регулярный гость и organizer крупнейших русскоязычных IT-конференций (PiterPy, MoscowPython, RIT++). Постоянно пишет о специфике DevRel в России и тонкостях найма senior-инженеров.',
-    achievements: [
-      'Основатель и идеолог Moscow Python (с 2010-х)',
-      'DevRel-консультант для десятков продуктовых команд',
-      'Программный директор PiterPy, со-organizer MoscowPython Conf',
-      'Один из самых активных русскоязычных podcast-гостей в IT',
-    ],
-    talks: [
-      'DevRel: что это такое и как делать его в российской индустрии',
-      'Технические собеседования: как нанимать без боли',
-    ],
   },
   {
     id: 'sp_prokopov',
@@ -452,18 +359,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Инструменты разработчика: что меняется к 2026',
     trackId: 'frontend',
     interestIds: ['frontend', 'oss', 'design'],
-    yearsExperience: 17,
-    extendedBio: 'Никита Прокопов — независимый разработчик и блогер, автор tonsky.me — одного из самых читаемых русскоязычных tech-блогов с глубокой аналитикой инструментов разработчика.\n\nАктивный contributor open-source, разработчик нескольких инструментов для Clojure-сообщества (DataScript — embedded ClojureScript-БД с десятками тысяч установок, ClojureScript Compiler optimizations). Сотрудничал с Cognitect и JetBrains.\n\nЗнаменит критическими и проводокационными постами о современных инструментах разработки: производительность IDE, реальные latency современных приложений, хабр-индустрия. Ведёт публичные эксперименты по производительности на уровне миллисекунд.',
-    achievements: [
-      'Создатель DataScript (Clojure / ClojureScript embedded DB)',
-      'Автор Tonsky.me — один из самых цитируемых русскоязычных tech-блогов',
-      'Contributor нескольких ключевых инструментов Clojure-экосистемы',
-      'Автор публичных performance-исследований для desktop / web',
-    ],
-    talks: [
-      'Latency современных приложений: где мы потеряли отзывчивость',
-      'Local-first apps: возвращение собственных данных пользователю',
-    ],
   },
   {
     id: 'sp_sitnik',
@@ -475,18 +370,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Современный фронтенд-tooling: PostCSS, Lightning CSS и далее',
     trackId: 'frontend',
     interestIds: ['frontend', 'oss', 'design'],
-    yearsExperience: 16,
-    extendedBio: 'Андрей Ситник — один из самых известных русских разработчиков в мире open-source фронтенда. Автор PostCSS и Autoprefixer — инструментов, которые установлены на десятках миллионов npm-проектов и являются стандартом индустрии.\n\nС 2014 года работает в Evil Martians, где помимо open-source разрабатывает client-side инструменты для крупных продуктовых компаний. Его проекты — Logux (real-time framework), Size Limit (bundle-size budget), Browserslist — используются во многих топ-100 сайтов мира.\n\nРегулярно выступает на международных конференциях (CSSConf EU, JSConf, ChainReact). Активно продвигает экологическую устойчивость web-разработки и low-bandwidth подход.',
-    achievements: [
-      'Создатель PostCSS — установлен на 30M+ npm-проектов',
-      'Создатель Autoprefixer, Browserslist, Size Limit, Logux',
-      'Speaker CSSConf EU, JSConf, ChainReact, JSDays и других',
-      'Один из самых высокозвёздных русскоязычных npm-мейнтейнеров',
-    ],
-    talks: [
-      'Будущее CSS-tooling после Lightning CSS и нативного nesting',
-      'Real-time клиент-серверная синхронизация без сложной инфраструктуры',
-    ],
   },
   {
     id: 'sp_burtsev',
@@ -498,18 +381,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Open-source диалоговые системы и фундаментальные исследования AI',
     trackId: 'ai',
     interestIds: ['ai', 'oss', 'edtech'],
-    yearsExperience: 19,
-    extendedBio: 'Михаил Бурцев — кандидат физико-математических наук, один из ведущих российских исследователей в области диалоговых систем и архитектур для long-context LLM.\n\nСоздал и развивал DeepPavlov — открытый фреймворк для NLP/диалоговых ассистентов, лежащий в основе многих коммерческих чат-ботов в РФ и СНГ.\n\nСейчас в AIRI ведёт направление фундаментальных исследований больших языковых моделей: long-context architectures, memory-augmented networks, reasoning в LLM. Публикации на NeurIPS, ICLR, ACL.',
-    achievements: [
-      'Создатель открытой NLP-платформы DeepPavlov',
-      'К.ф.-м.н., руководитель research-направления в AIRI',
-      'Публикации на NeurIPS, ICLR, ACL, EMNLP',
-      'Лидер ряда крупных open-source инициатив в русскоязычном NLP',
-    ],
-    talks: [
-      'Long-context LLM: архитектурные решения 2025-2026 годов',
-      'DeepPavlov: 7 лет развития открытого NLP-фреймворка',
-    ],
   },
   {
     id: 'sp_oseledets',
@@ -521,18 +392,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Тензорные методы в современном ML',
     trackId: 'ai',
     interestIds: ['ai', 'data', 'edtech'],
-    yearsExperience: 20,
-    extendedBio: 'Иван Оселедец — доктор физико-математических наук, профессор Сколтеха, директор AIRI. Один из ведущих в мире специалистов по тензорным методам и численной линейной алгебре, применяемым к глубоким нейронным сетям.\n\nАвтор более 200 научных публикаций, из которых десятки в топовых журналах SIAM, NeurIPS, ICML, JCP. h-index 40+. Лидер группы по разработке методов сжатия и ускорения нейронных сетей через тензорные декомпозиции.\n\nЛауреат Государственной премии Президента РФ для молодых учёных в области математики, премии EARLY-RUSSIA. Регулярно читает приглашённые лекции в крупнейших мировых ML-центрах.',
-    achievements: [
-      'Д.ф.-м.н., профессор Сколтеха, директор AIRI',
-      '200+ научных публикаций, h-index 40+',
-      'Лауреат Государственной премии Президента РФ',
-      'Один из ведущих мировых специалистов по tensor methods в ML',
-    ],
-    talks: [
-      'Tensor decompositions для сжатия больших языковых моделей',
-      'Численная линейная алгебра как недооценённое преимущество в ML',
-    ],
   },
   {
     id: 'sp_vetrov',
@@ -544,18 +403,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Байесовский подход в современных нейросетях',
     trackId: 'ai',
     interestIds: ['ai', 'data', 'edtech'],
-    yearsExperience: 21,
-    extendedBio: 'Дмитрий Ветров — доктор физико-математических наук, профессор. Лидер русскоязычной школы байесовского машинного обучения. Длительное время руководил факультетом компьютерных наук в ВШЭ, сейчас Constructor University в Бремене.\n\nПодготовил поколение ML-исследователей: десятки его студентов сейчас работают в Yandex Research, Sber AI, в крупных международных tech-компаниях. Регулярно читает курсы по probabilistic modeling и variational inference.\n\nПубликации в NeurIPS, ICML, ICLR, AAAI с тысячами цитирований. Известен рассказами о теоретических основах глубокого обучения, понятным языком для широкой аудитории.',
-    achievements: [
-      'Д.ф.-м.н., профессор Constructor University, ранее ВШЭ',
-      'Воспитал поколение русскоязычных ML-исследователей',
-      'Публикации на NeurIPS, ICML, ICLR с тысячами цитирований',
-      'Один из создателей программы DataMining/ML на ФКН ВШЭ',
-    ],
-    talks: [
-      'Байесовский подход к неопределённости в современных LLM',
-      'Probabilistic modeling: что забыто и что переоткрыто',
-    ],
   },
   {
     id: 'sp_illarionov',
@@ -567,18 +414,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'WebRTC и инфраструктура VK Calls',
     trackId: 'backend',
     interestIds: ['backend', 'mobile', 'cloud'],
-    yearsExperience: 18,
-    extendedBio: 'Олег Илларионов — один из ранних разработчиков ВКонтакте (присоединился к команде в 2007), один из ключевых архитекторов мобильных и веб-клиентов соцсети.\n\nСейчас CTO VK Calls — продукта для видеосвязи в экосистеме VK. Под его руководством команда разработала собственный WebRTC-стек, способный обслуживать совещания на 100+ участников и трансляции на десятки тысяч.\n\nСпециалист по построению низколатентных коммуникационных систем, реал-тайм инфраструктуре и масштабируемых WebRTC-решениях. Регулярно делится опытом масштабирования VK Calls от MVP до миллионных аудиторий.',
-    achievements: [
-      'Один из ранних разработчиков ВКонтакте (с 2007)',
-      'Архитектор мобильного и веб-клиентов VK',
-      'CTO VK Calls — production-WebRTC на сотни тысяч участников',
-      'Один из крупнейших экспертов СНГ по real-time коммуникациям',
-    ],
-    talks: [
-      'WebRTC в production: 100+ участников в одном звонке',
-      'Архитектура VK Calls: от MVP до массового продукта',
-    ],
   },
   {
     id: 'sp_kalinin',
@@ -590,18 +425,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Распределённые системы: эволюция платформы Авито',
     trackId: 'data',
     interestIds: ['data', 'backend', 'cloud'],
-    yearsExperience: 15,
-    extendedBio: 'Александр Калинин — архитектор платформы Авито, одного из крупнейших классифайдов в мире (топ-3 по аудитории среди классифайд-сервисов). Под его руководством команда мигрирует монолитные сервисы Авито на распределённую микросервисную архитектуру.\n\nСпециалист по distributed systems, event-driven архитектуре, Kubernetes-миграциям и observability крупных продуктовых платформ. Делится практическими разборами реальных миграций сервисов с миллиардами событий в день.\n\nРегулярный спикер Highload++, DotNext, Saint HighLoad++. Автор технических постов на Хабре от имени команды Авито.',
-    achievements: [
-      'Архитектор платформы Авито (~150M активных объявлений)',
-      'Лидер крупнейшей в РФ микросервисной миграции',
-      'Регулярный спикер Highload++, Saint HighLoad++, DotNext',
-      'Co-author технических постов Авито на Хабре',
-    ],
-    talks: [
-      'Event-driven архитектура Авито: уроки миллиардов событий в день',
-      'Kubernetes на 1000+ нод: что мы переоткрыли',
-    ],
   },
   {
     id: 'sp_ivanov',
@@ -613,18 +436,6 @@ export const SPEAKERS: Speaker[] = [
     topic: 'Платформенный подход и developer experience',
     trackId: 'devops',
     interestIds: ['devops', 'cloud', 'fintech'],
-    yearsExperience: 14,
-    extendedBio: 'Денис Иванов руководит платформенными командами в Т-Банке (Тинькофф) — одной из самых технологичных финтех-компаний России с 1500+ инженеров.\n\nСпециалист по построению internal developer platforms, developer experience (DX) метрикам, self-service инструментам и golden paths для разработки. Внутри Т-Банка вывел платформу на уровень industry standard: Backstage-based портал, CI/CD-як-сервис, K8s-абстракции для команд.\n\nЭкспозиция в крупных финтех-конференциях, регулярно делится практиками платформенной инженерии в банковском секторе. Соавтор главы по DX-метрикам в международной публикации Platform Engineering.',
-    achievements: [
-      'Лидер internal developer platform в Т-Банке (1500+ инженеров)',
-      'Build-out Backstage-based developer portal с 100% adoption',
-      'Speaker DevOpsConf, TechLead Conf, Saint HighLoad++',
-      'Соавтор главы по DX-метрикам в международной публикации',
-    ],
-    talks: [
-      'Golden paths: как масштабировать инженерные практики в банке',
-      'DX-метрики: что измерять и как улучшать developer experience',
-    ],
   },
 ];
 
@@ -676,7 +487,7 @@ export const SESSIONS: Session[] = [
   buildSession({
     id: 's_d1_open',
     title: 'Открытие TechForum 2026',
-    description: 'Старт двух дней форума. Организаторы расскажут о треках, спикерах и партнёрах, дадут краткий обзор всех 32 сессий и презентуют главный приз форума. Все участники собираются в Главном зале.',
+    description: 'Вступительное слово организаторов и обзор программы двух дней.',
     startTime: '10:00', endTime: '10:30',
     format: 'opening', hallId: 'main', dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -720,8 +531,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d1_lunch',
-    title: 'Обед и нетворкинг',
-    description: 'Час на обед в зоне фойе: горячее меню, бизнес-ланчи, кофе-бар. Параллельно работают стенды партнёров — отличная возможность пообщаться со спикерами утренней секции и инженерами из крупнейших российских компаний.',
+    title: 'Обед',
+    description: 'Кофе, обед и нетворкинг в фойе.',
     startTime: '12:30', endTime: '13:30',
     format: 'break', hallId: null, dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -811,7 +622,7 @@ export const SESSIONS: Session[] = [
   buildSession({
     id: 's_d1_close',
     title: 'Networking первого дня',
-    description: 'Неформальная часть программы: лёгкие закуски, диджей-сет, открытые столы со спикерами по интересам — AI/ML, Backend, Frontend, DevOps. Идеальное время познакомиться с теми, чьи доклады понравились днём.',
+    description: 'Афтепати в фойе. Лёгкие закуски, музыка, общение.',
     startTime: '17:45', endTime: '19:30',
     format: 'closing', hallId: null, dayId: 'd1',
     trackId: null, speakerIds: [],
@@ -884,8 +695,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d2_lunch',
-    title: 'Обед и закрытое AMA',
-    description: 'Час на обед + параллельно проходит закрытое Ask-Me-Anything: спикеры из утренней секции открыто отвечают на вопросы за бизнес-ланчем. Стол по записи на стенде регистрации (10 мест).',
+    title: 'Обед',
+    description: 'Кофе, обед и нетворкинг.',
     startTime: '12:45', endTime: '13:45',
     format: 'break', hallId: null, dayId: 'd2',
     trackId: null, speakerIds: [],
@@ -956,8 +767,8 @@ export const SESSIONS: Session[] = [
   }),
   buildSession({
     id: 's_d2_close',
-    title: 'Закрытие форума и розыгрыши',
-    description: 'Финальное слово организаторов, итоги двух дней. В 19:00 на главной сцене подведение итогов всех 10 розыгрышей форума: ноутбука, смартфона, поездки на международную конференцию и других призов от партнёров. Общая фотография участников и нетворкинг.',
+    title: 'Закрытие форума и Networking',
+    description: 'Финальное слово организаторов, общая фотография, нетворкинг.',
     startTime: '16:30', endTime: '18:00',
     format: 'closing', hallId: null, dayId: 'd2',
     trackId: null, speakerIds: [],

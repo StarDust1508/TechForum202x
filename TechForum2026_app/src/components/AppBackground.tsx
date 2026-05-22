@@ -1,40 +1,47 @@
+// FILE: src/components/AppBackground.tsx
+// VERSION: 2.0.0
+// START_MODULE_CONTRACT:
+// PURPOSE: Единый brand-фон blueprint TechForum 2026 для всех разделов
+//          (включая Auth). Размытое blueprint-изображение + градиентные слои.
+// SCOPE: Только UI-обёртка, без логики.
+// INPUT: children — JSX контента раздела.
+// OUTPUT: JSX с фоном на весь viewport (minHeight: 100dvh) и контентом сверху.
+// KEYWORDS: DOMAIN(6): UIChrome; CONCEPT(7): SharedBackground; TECH(5): React, Tailwind
+// LINKS: USED_BY(10): все pages — Home, Feed, Schedule и т.д.
+// END_MODULE_CONTRACT
+//
+// START_CHANGE_SUMMARY:
+// LAST_CHANGE: [v2.0.0 — Раньше use-кейс «фон Auth» и «фон разделов» были
+//                       разными картинками (conference-bg.jpg vs
+//                       home-menu-reference.jpg). По требованию заказчика
+//                       фон един во всём приложении: blueprint conference-bg.jpg.
+//                       На разделах он показан под более плотным dark-overlay
+//                       и с большим масштабом, чтобы карточки разделов были
+//                       читаемыми, но рисунок чертежа узнавался.]
+// PREV_CHANGE_SUMMARY: [v1.0.0 — Унификация фона по всем разделам.]
+// END_CHANGE_SUMMARY
+
 import type { ReactNode, CSSProperties } from 'react';
 
 interface AppBackgroundProps {
   children: ReactNode;
+  /** Доп. классы для root (например, padding-overrides). */
   className?: string;
+  /** inline style override (например padding-top для шапки). */
   style?: CSSProperties;
 }
 
 export default function AppBackground({ children, className = '', style }: AppBackgroundProps) {
-  // SCROLL FIX (4-я итерация — наконец нашёл):
-  //
-  // Раньше outer-div имел `overflow-x-hidden` + `minHeight: 100dvh`.
-  // По спеке CSS, когда у элемента указан `overflow-x: hidden` без явного
-  // `overflow-y`, браузер ВЫЧИСЛЯЕТ `overflow-y: auto` (одной axis нельзя
-  // быть hidden если другая visible — implicit auto). Это значит:
-  // AppBackground становился ВТОРЫМ scroll-контейнером внутри App.tsx
-  // scroll-контейнера. Touch-events ловил вложенный AppBackground (он
-  // 100dvh по minHeight, контент в него умещался → нечего скроллить),
-  // App.tsx scroll-container никогда не получал свайп.
-  //
-  // Решение: убрать `overflow-x-hidden` и `minHeight: 100dvh`. Фон
-  // покрывается через `position: fixed` дочерним div'ом — он живёт в
-  // viewport независимо от высоты outer-обёртки.
+  // BUG_FIX_CONTEXT: blueprint-фон вынесен на body::before/::after в index.css
+  // (fixed inset-0, z-index: -1) — он покрывает viewport ВСЕГДА: на любой
+  // странице, при overscroll, при keyboard show. AppBackground оставлен как
+  // прозрачная обёртка-маркер для совместимости импортов страниц.
   return (
     <div
-      className={`relative bg-[#03161c] ${className}`}
-      style={style}
+      className={`relative ${className}`}
+      style={{ minHeight: '100dvh', ...style }}
     >
-      <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
-        <img
-          src="/blueprint-bg.svg"
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(78,201,192,0.10),transparent_55%)]" />
-      </div>
-      <div className="relative z-10">
+      <div className="relative z-10 flex flex-col" style={{ minHeight: '100dvh' }}>
         {children}
       </div>
     </div>

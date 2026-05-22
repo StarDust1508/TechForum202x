@@ -28,10 +28,10 @@ import { db, closeDb } from './index';
 import {
   tracks, halls, days, speakers,
   sessionsEvent, sessionSpeakers,
-  partners, users, interests, news, giveaways, faq,
+  partners, users, interests,
 } from './schema';
 import {
-  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS, NEWS,
+  TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, INTERESTS,
 } from '../data';
 
 function hashPassword(password: string, salt?: string): string {
@@ -176,117 +176,6 @@ async function seedReferenceTables(): Promise<void> {
   }
   console.log(`[seed] partners: upserted ${PARTNERS.length}`);
   // END_BLOCK_PARTNERS
-
-  // START_BLOCK_NEWS: новости (Лента). sortOrder = индекс в массиве,
-  // потому что хронологический порядок данных задан вручную (свежие сверху).
-  for (let i = 0; i < NEWS.length; i += 1) {
-    const n = NEWS[i]!;
-    const values = {
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      content: n.content,
-      body: n.body ?? '',
-      time: n.time,
-      isCritical: n.isCritical,
-      category: n.category ?? null,
-      speakerId: n.speakerId ?? null,
-      sortOrder: i,
-    };
-    await db.insert(news).values(values).onConflictDoUpdate({
-      target: news.id,
-      set: {
-        type: values.type,
-        title: values.title,
-        content: values.content,
-        body: values.body,
-        time: values.time,
-        isCritical: values.isCritical,
-        category: values.category,
-        speakerId: values.speakerId,
-        sortOrder: values.sortOrder,
-      },
-    });
-  }
-  console.log(`[seed] news: upserted ${NEWS.length}`);
-  // END_BLOCK_NEWS
-
-  // START_BLOCK_GIVEAWAYS: призы партнёров. Round 5 переносит из
-  // src/pages/Giveaways.tsx (захардкоженный массив + Icon: LucideIcon-ссылки)
-  // в БД. iconKey — строковое имя из lucide-react, фронт мапит на компонент.
-  const GIVEAWAYS_SEED = [
-    { id: 'g_main',       category: 'Главный приз', item: 'Игровой ноутбук от партнёра',  iconKey: 'Laptop',     gradient: 'from-[#4ec9c0]/40 to-[#4ec9c0]/10', description: 'Топовый ноутбук с дискретной видеокартой — для разработки, рендера и игр на максимуме.', condition: 'Зарегистрироваться на форум до 20 мая 18:00, посетить минимум 3 сессии (отметка через QR-сканер у входа в зал).', endTime: '21 мая, 18:00', featured: true },
-    { id: 'g_phone',      category: 'Smartphone',   item: 'Флагманский смартфон',          iconKey: 'Smartphone', gradient: 'from-purple-500/35 to-fuchsia-500/15', description: 'Современный флагман с Pro-камерой и AI-ассистентом на устройстве.', condition: 'Опубликовать пост о форуме в любой соцсети с хэштегом #TechForum2026 и отметить @techforum.', endTime: '21 мая, 17:00', featured: false },
-    { id: 'g_headphones', category: 'Audio',        item: 'Беспроводные наушники',         iconKey: 'Headphones', gradient: 'from-indigo-500/35 to-blue-500/15',    description: 'Премиальные over-ear наушники с активным шумоподавлением и Hi-Res звуком.', condition: 'Задать самый интересный вопрос любому из спикеров — лучший выбирает сам спикер на сцене.', endTime: '21 мая, 16:00', featured: false },
-    { id: 'g_watch',      category: 'Wearables',    item: 'Smart-часы Sport Edition',      iconKey: 'Watch',      gradient: 'from-emerald-500/35 to-teal-500/15',   description: 'Часы с продвинутым health-tracking, GPS и автономностью до 7 дней.', condition: 'Пройти 6000+ шагов в течение дня форума (трек через любой fitness-app, скриншот на стенде).', endTime: '21 мая, 15:30', featured: false },
-    { id: 'g_camera',     category: 'Photo',        item: 'Беззеркальная камера',          iconKey: 'Camera',     gradient: 'from-rose-500/35 to-pink-500/15',      description: 'Mirrorless-камера с матрицей APS-C и универсальным kit-объективом.', condition: 'Снять лучшее фото форума, опубликовать с хэштегом #TFCapture2026. Жюри отбирает 3-х финалистов.', endTime: '21 мая, 14:00', featured: false },
-    { id: 'g_trip',       category: 'Experience',   item: 'Поездка на международную конференцию', iconKey: 'Plane', gradient: 'from-sky-500/35 to-cyan-500/15',     description: 'Билеты + проживание на одну из крупных IT-конференций (KubeCon / WebSummit / DevDays на выбор).', condition: 'Победитель хакатона форума (трек 20 мая, 14:00–18:00). Открытая регистрация для всех участников.', endTime: '20 мая, 19:00', featured: false },
-    { id: 'g_courses',    category: 'Education',    item: 'Годовая подписка на онлайн-курсы', iconKey: 'BookOpen',  gradient: 'from-amber-500/35 to-orange-500/15',   description: 'Полный доступ ко всем материалам образовательной платформы партнёра на 12 месяцев.', condition: 'Заполнить feedback-форму после форума (присылается на email 22 мая) с развёрнутыми ответами.', endTime: '22 мая, 23:59', featured: false },
-    { id: 'g_podcast',    category: 'Media',        item: 'Гость в IT-подкасте',           iconKey: 'Mic2',       gradient: 'from-violet-500/35 to-purple-500/15',  description: 'Запись эпизода на одном из ведущих IT-подкастов в качестве гостя — расскажите о своём опыте.', condition: 'Лучший питч на сцене Open Mic (21 мая, 12:00) — у каждого участника 90 секунд.', endTime: '21 мая, 13:00', featured: false },
-    { id: 'g_merch',      category: 'Merch',        item: 'Премиум-набор мерча',           iconKey: 'Backpack',   gradient: 'from-lime-500/35 to-green-500/15',     description: 'Рюкзак Premium + лимитированная футболка форума + термокружка + наклейки.', condition: 'Посетить стенды всех 4 генеральных партнёров и собрать QR-печати в приложении (раздел «Партнёры»).', endTime: '21 мая, 17:30', featured: false },
-    { id: 'g_coffee',     category: 'Networking',   item: 'Кофе со спикером',              iconKey: 'Coffee',     gradient: 'from-yellow-600/35 to-amber-700/15',   description: 'Часовая встреча тет-а-тет с любым спикером форума по выбору победителя.', condition: 'Случайный выбор среди тех, кто отметил минимум 5 сессий в личном расписании в разделе «Программа».', endTime: '21 мая, 18:30', featured: false },
-  ];
-  for (let i = 0; i < GIVEAWAYS_SEED.length; i += 1) {
-    const g = GIVEAWAYS_SEED[i]!;
-    const values = { ...g, sortOrder: i, isActive: true };
-    await db.insert(giveaways).values(values).onConflictDoUpdate({
-      target: giveaways.id,
-      set: {
-        category: values.category,
-        item: values.item,
-        iconKey: values.iconKey,
-        gradient: values.gradient,
-        description: values.description,
-        condition: values.condition,
-        endTime: values.endTime,
-        featured: values.featured,
-        sortOrder: values.sortOrder,
-        isActive: values.isActive,
-      },
-    });
-  }
-  console.log(`[seed] giveaways: upserted ${GIVEAWAYS_SEED.length}`);
-  // END_BLOCK_GIVEAWAYS
-
-  // START_BLOCK_FAQ: «Гид по мероприятию» — категоризованные вопросы.
-  const FAQ_SEED = [
-    { id: 'faq_arrival',  category: 'Логистика',     question: 'Когда лучше приехать?',
-      answer: 'Регистрация работает с 08:30 у главного входа. Чтобы успеть на церемонию открытия в 10:00, приходите минимум за 30 минут — собрать бейдж и стартовый пакет.' },
-    { id: 'faq_parking',  category: 'Логистика',     question: 'Есть ли парковка?',
-      answer: 'Бесплатная парковка для 200 машин у входа Б. На 1-й день рекомендуем приехать на метро или такси — ожидаются заторы. Координаты: см. раздел «Схема».' },
-    { id: 'faq_dress',    category: 'Логистика',     question: 'Какой дресс-код?',
-      answer: 'Smart casual. Для после-форумных вечеринок — на ваше усмотрение. Главное — удобная обувь: за день вы пройдёте 5–10 км между залами.' },
-    { id: 'faq_qr',       category: 'Приложение',    question: 'Зачем QR-билет?',
-      answer: 'Сканируется на входе в зал — фиксирует ваше посещение сессий (нужно для розыгрышей). Также QR-визитка в разделе «Моя карточка» — для нетворкинга, обмена контактами с другими участниками за 2 секунды.' },
-    { id: 'faq_chat',     category: 'Приложение',    question: 'Как написать спикеру?',
-      answer: 'Откройте «Спикеры», тапните по нужному, на странице спикера нажмите «Написать». Спикеры стараются отвечать в перерывах между сессиями.' },
-    { id: 'faq_photo',    category: 'Приложение',    question: 'Где фото с форума?',
-      answer: 'Официальные фото публикуются в «Ленте» спустя 1–2 часа после ивента. Юзер-контент с хэштегом #TechForum2026 организаторы реблогят.' },
-    { id: 'faq_reschedule', category: 'Программа',  question: 'Что если перенесли сессию?',
-      answer: 'В разделе «Программа» статус сессии меняется на «Перенесено» с новым временем. Если вы записаны — придёт push (если включены уведомления).' },
-    { id: 'faq_record',   category: 'Программа',     question: 'Будут ли записи?',
-      answer: 'Keynote и треки 1–3 пишутся в видео, появятся на YouTube-канале форума через 7–10 дней. Воркшопы — без записи (NDA участников).' },
-    { id: 'faq_lounge',   category: 'Площадка',      question: 'Где встретиться с коллегой?',
-      answer: 'Лаунж-зона на 1 этаже — открытая зона с креслами и столами для ноутбуков. Кофе бесплатный.' },
-    { id: 'faq_contact',  category: 'Связь',         question: 'Как связаться с организаторами?',
-      answer: 'Стойка «Поддержка» на 1 этаже работает весь день. Срочные вопросы — support@techforum.ru или раздел «Поддержка» в приложении (Настройки → Поддержка).' },
-  ];
-  for (let i = 0; i < FAQ_SEED.length; i += 1) {
-    const f = FAQ_SEED[i]!;
-    const values = { ...f, sortOrder: i, isActive: true };
-    await db.insert(faq).values(values).onConflictDoUpdate({
-      target: faq.id,
-      set: {
-        question: values.question,
-        answer: values.answer,
-        category: values.category,
-        sortOrder: values.sortOrder,
-        isActive: values.isActive,
-      },
-    });
-  }
-  console.log(`[seed] faq: upserted ${FAQ_SEED.length}`);
-  // END_BLOCK_FAQ
 }
 
 async function seedDevUser(): Promise<void> {

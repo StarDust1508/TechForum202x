@@ -1,7 +1,9 @@
-import { X as XIcon } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface BackButtonProps {
+  /** If true, position absolutely in the top-left of its parent (above safe-area). */
+  floating?: boolean;
   /** Override target — defaults to navigate(-1). */
   to?: string;
   /** Optional aria-label override. */
@@ -9,23 +11,14 @@ interface BackButtonProps {
 }
 
 /**
- * «Закрыть» кнопка в правом-верхнем углу — статичная, не скроллится.
- *
- * Был: ArrowLeft слева, position: fixed top-left. Жалоба юзера:
- *   1) на длинных страницах при scroll вниз кнопка иногда исчезала
- *      (на самом деле причина была в parent-overflow контейнерах,
- *      не в самом BackButton; но симптом наблюдался)
- *   2) логичнее в правом-верхнем (как у Eventicious-эталона) — там же
- *      рядом cog настроек на Home → визуально правый-верхний угол =
- *      «выход / меню».
- *
- * Round 8: переехала на right-4 + крестик X, position fixed относительно
- * viewport (z-50 чтобы перекрывала всё включая bottom-sheet'ы).
- *
- * Tap → navigate(-1). На Android система back-button делает то же
- * через popstate (в App.tsx hook'нуто).
+ * Reusable back arrow.
+ * - Tap → navigate(-1) (or to a specific route).
+ * - On Android, the system "back" button also triggers history.back() (handled
+ *   automatically by React Router via popstate). The BackButton is the visual
+ *   in-app counterpart so the user always has both options.
+ * - Sits ABOVE the safe-area-inset-top so it never overlaps the status bar.
  */
-export default function BackButton({ to, label = 'Назад' }: BackButtonProps) {
+export default function BackButton({ floating = true, to, label = 'Назад' }: BackButtonProps) {
   const navigate = useNavigate();
 
   const handleClick = () => {
@@ -33,6 +26,7 @@ export default function BackButton({ to, label = 'Назад' }: BackButtonProps
       navigate(to);
       return;
     }
+    // Prefer history.back() so the system "back" gesture and this button behave identically.
     if (typeof window !== 'undefined' && window.history.length > 1) {
       navigate(-1);
     } else {
@@ -40,15 +34,19 @@ export default function BackButton({ to, label = 'Назад' }: BackButtonProps
     }
   };
 
+  const positionClass = floating
+    ? 'absolute left-4 z-30'
+    : 'relative';
+
   return (
     <button
       type="button"
       onClick={handleClick}
       aria-label={label}
-      className="fixed right-4 z-50 h-10 w-10 flex items-center justify-center rounded-full border border-[#4ec9c0]/35 bg-[#03161c]/75 backdrop-blur-md text-[#4ec9c0] hover:text-[#d8f0ee] hover:border-[#4ec9c0]/60 hover:bg-[#0a2f38]/85 active:scale-90 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
-      style={{ top: 'calc(env(safe-area-inset-top, 0px) + 12px)' }}
+      className={`${positionClass} h-10 w-10 flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-md text-white/85 hover:text-white hover:bg-white/[0.12] active:scale-90 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]`}
+      style={floating ? { top: 'calc(env(safe-area-inset-top, 0px) + 12px)' } : undefined}
     >
-      <XIcon className="h-4 w-4" strokeWidth={2.2} />
+      <ArrowLeft className="h-5 w-5" />
     </button>
   );
 }

@@ -1,146 +1,39 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Lock, Fingerprint, X as XIcon } from 'lucide-react';
+import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon } from 'lucide-react';
+import { cn } from '@/src/lib/utils';
 import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@/src/lib/localAuth';
 import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
-import AppBackground from '@/src/components/AppBackground';
-import BrandTitle from '@/src/components/ui/BrandTitle';
-import EventBadge from '@/src/components/ui/EventBadge';
-import Input from '@/src/components/ui/Input';
-import Button from '@/src/components/ui/Button';
-import Checkbox from '@/src/components/ui/Checkbox';
-import { useToast } from '@/src/components/Toast';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
 }
 
-type Mode = 'login' | 'register';
-
 export default function Auth({ onSuccess }: AuthProps) {
-  const [mode, setModeRaw] = useState<Mode>('login');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // BACKEND_DIAG: видимая в UI диагностика для cleartext-debug. Удалить вместе
-  // с TEST/probe-плашками сверху, как только подтвердится стабильность сети.
-  const [debugInfo, setDebugInfo] = useState('');
-  const [probing, setProbing] = useState(false);
-  const [probeResult, setProbeResult] = useState('');
-  const [form, setForm] = useState({ email: '', password: '', passwordConfirm: '' });
-  const [consent, setConsent] = useState(false);
-  const toast = useToast();
+  // BUG_FIX_CONTEXT: focus-стейт для тонкой анимации backdrop'а — при фокусе
+  // на input приглушаем blueprint и слегка увеличиваем масштаб, чтобы
+  // создать ощущение "фокус на форме". Не блокирует interactivity.
+  const [focused, setFocused] = useState(false);
 
+  const [form, setForm] = useState({ email: '', phone: '', password: '', name: '' });
+  // BUG_FIX_CONTEXT: По требованию 152-ФЗ при регистрации нужно явное
+  // согласие на обработку ПД. На login-моде чекбокс не нужен.
+  const [consent, setConsent] = useState(false);
+
+  // BUG_FIX_CONTEXT: Биометрия — после успешного login/register предлагаем
+  // включить, если (1) сенсор доступен, (2) биометрия ещё не включена.
+  // Реальное предложение — отдельный мини-экран после onSuccess (см. ниже),
+  // здесь только кэшируем availability.
   const [bioAvailable, setBioAvailable] = useState(false);
   const [showBioOffer, setShowBioOffer] = useState(false);
   const [pendingUser, setPendingUser] = useState<unknown | null>(null);
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
-
-  // Forgot-password 2-step flow.
-  // Шаг 1: ввести email, бэк создаёт reset-token и (пока stub) пишет в server log.
-  // Шаг 2: ввести token, который выдадут организаторы вручную, + новый пароль.
-  // Когда подключим SMTP — токен будет приходить на email автоматически.
-  type ForgotStep = null | 'start' | 'verify';
-  const [forgotStep, setForgotStep] = useState<ForgotStep>(null);
-  const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotToken, setForgotToken] = useState('');
-  const [forgotNewPwd, setForgotNewPwd] = useState('');
-  const [forgotBusy, setForgotBusy] = useState(false);
-
-  const handleForgotStart = async () => {
-    if (!forgotEmail.trim()) {
-      toast.show('Введите email');
-      return;
-    }
-    setForgotBusy(true);
-    try {
-      const r = await fetch(resolveApiUrl('/auth/forgot-password/start'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail.trim() }),
-      });
-      if (r.ok) {
-        toast.show('Запрос отправлен. Свяжитесь с организаторами для получения кода восстановления.', 4200);
-        setForgotStep('verify');
-      } else if (r.status === 429) {
-        toast.show('Слишком много попыток. Попробуйте позже.');
-      } else {
-        toast.show('Ошибка запроса');
-      }
-    } catch {
-      toast.show('Нет соединения с сервером');
-    } finally {
-      setForgotBusy(false);
-    }
-  };
-
-  const handleForgotVerify = async () => {
-    if (forgotToken.trim().length < 8) { toast.show('Введите код полностью'); return; }
-    if (forgotNewPwd.length < 8) { toast.show('Пароль должен быть не менее 8 символов'); return; }
-    setForgotBusy(true);
-    try {
-      const r = await fetch(resolveApiUrl('/auth/forgot-password/verify'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: forgotToken.trim(), newPassword: forgotNewPwd }),
-      });
-      const data = await r.json().catch(() => null);
-      if (r.ok) {
-        toast.show('Пароль изменён. Теперь войдите с новым паролем.', 3500);
-        setForgotStep(null);
-        setForgotToken(''); setForgotNewPwd('');
-        setForm({ ...form, email: forgotEmail, password: forgotNewPwd });
-      } else if (data?.error === 'invalid_token') {
-        toast.show('Неверный код');
-      } else if (data?.error === 'token_expired') {
-        toast.show('Код истёк, начните заново');
-        setForgotStep('start');
-      } else if (data?.error === 'too_many_attempts') {
-        toast.show('Превышено число попыток');
-        setForgotStep(null);
-      } else {
-        toast.show('Не удалось сменить пароль');
-      }
-    } catch {
-      toast.show('Нет соединения с сервером');
-    } finally {
-      setForgotBusy(false);
-    }
-  };
-
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
-  const passwordConfirmRef = useRef<HTMLInputElement>(null);
-
-  // Переключение режима пишет history-entry, чтобы системный back/swipe-back
-  // на Android возвращал юзера с регистрации на логин, а не закрывал app.
-  const setMode = useCallback((next: Mode) => {
-    setModeRaw((prev) => {
-      if (prev === next) return prev;
-      if (next === 'register') {
-        try { window.history.pushState({ authMode: 'register' }, ''); } catch { /* noop */ }
-      } else if (prev === 'register') {
-        try { if (window.history.state?.authMode === 'register') window.history.back(); } catch { /* noop */ }
-      }
-      setError('');
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const onPop = () => { setModeRaw('login'); setError(''); };
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, []);
-
-  // Автофокус первого поля при монтировании / переключении режима.
-  useEffect(() => {
-    const t = setTimeout(() => emailRef.current?.focus(), 320);
-    return () => clearTimeout(t);
-  }, [mode]);
 
   useEffect(() => {
     let mounted = true;
@@ -153,38 +46,31 @@ export default function Auth({ onSuccess }: AuthProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setDebugInfo('');
-    if (mode === 'register' && form.password !== form.passwordConfirm) {
-      setError('Пароли не совпадают');
-      return;
-    }
     setLoading(true);
+    setError('');
 
     const endpointPath = mode === 'login' ? '/auth/login' : '/auth/register';
     const endpoint = resolveApiUrl(endpointPath);
+    const identifier = method === 'email' ? form.email : form.phone;
 
-    let httpStatus: number | null = null;
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          email: form.email,
-          password: form.password,
-          name: form.email.split('@')[0],
-        }),
+        body: JSON.stringify({ email: identifier, password: form.password, name: form.name }),
       });
-      httpStatus = res.status;
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
       const data = ct.includes('application/json') ? await res.json() : null;
       if (!ct.includes('application/json')) throw new Error('backend_invalid_response');
-      if (!res.ok) throw new Error(data?.error || `http_${res.status}`);
+      if (!res.ok) throw new Error(data?.error || 'Ошибка входа');
       if (!data || typeof data !== 'object') throw new Error('backend_invalid_response');
-      if (bioAvailable && !isBiometricEnabled()) {
+      // BUG_FIX_CONTEXT: Если биометрия доступна и ещё не включена —
+      // НЕ переходим в App мгновенно. Показываем оффер. После выбора
+      // (включить / "не сейчас") — onSuccess.
+      if (bioAvailable && !isBiometricEnabled() && method === 'email') {
         setPendingUser(data);
-        setPendingCreds({ email: form.email, password: form.password });
+        setPendingCreds({ email: identifier, password: form.password });
         setShowBioOffer(true);
         setLoading(false);
         return;
@@ -193,17 +79,22 @@ export default function Auth({ onSuccess }: AuthProps) {
     } catch (err: any) {
       const rawMessage = String(err?.message || '');
       const isNetworkError = /failed to fetch|networkerror|fetch|backend_invalid_response|unexpected token|load failed|cors|typeerror/i.test(rawMessage);
-      const debugLine = `${endpoint} → ${httpStatus ?? 'no-response'} | ${rawMessage.slice(0, 120)}`;
       if (!isLocalAuthFallbackEnabled()) {
-        setError(isNetworkError ? 'Нет соединения с сервером. Проверьте интернет.' : (rawMessage || 'Ошибка входа'));
-        setDebugInfo(debugLine);
+        // BUG_FIX_CONTEXT: Раньше сообщение было общее «Нет соединения», но
+        // у нас 5 разных причин (VPN, mixed-content, CORS, DNS, backend down).
+        // Дописываем технический rawMessage в скобках — юзер видит «Нет
+        // соединения [Failed to fetch]» и я по скрину могу определить точную
+        // причину, не возвращаясь к нему за logs.
+        setError(isNetworkError
+          ? `Нет соединения с сервером. [${rawMessage.slice(0, 80)}] Проверьте интернет / выключите VPN.`
+          : (rawMessage || 'Ошибка входа'));
         setLoading(false);
         return;
       }
       try {
         const user = mode === 'register'
-          ? await registerLocalUser({ name: form.email.split('@')[0], identifier: form.email, password: form.password, method: 'email' })
-          : await loginLocalUser({ identifier: form.email, password: form.password });
+          ? await registerLocalUser({ name: form.name, identifier, password: form.password, method })
+          : await loginLocalUser({ identifier, password: form.password });
         onSuccess(user);
       } catch (fb: any) {
         const msg = String(fb?.message || '');
@@ -215,305 +106,223 @@ export default function Auth({ onSuccess }: AuthProps) {
           : isNetworkError ? 'Нет соединения. Попробуйте ещё раз через минуту.'
           : (msg || 'Не удалось выполнить вход');
         setError(friendly);
-        setDebugInfo(`${debugLine} | local: ${msg.slice(0, 80)}`);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const runConnectivityProbe = async () => {
-    setProbing(true);
-    setProbeResult('');
-    const base = resolveApiUrl('/health');
-    try {
-      const t0 = Date.now();
-      const res = await fetch(base, { method: 'GET' });
-      const dt = Date.now() - t0;
-      const txt = await res.text();
-      setProbeResult(`OK ${res.status} (${dt}ms): ${txt.slice(0, 100)}`);
-    } catch (err: any) {
-      setProbeResult(`FAIL: ${String(err?.message || err).slice(0, 160)} | URL: ${base}`);
-    } finally {
-      setProbing(false);
-    }
-  };
+  // Унифицированные стили формы.
+  // BUG_FIX_CONTEXT: По требованию заказчика — шрифты крупнее и читаемее.
+  // Минимальный размер input на мобильном — 17px (iOS не зумит при focus
+  // только при ≥16px, но 17px даёт больший визуальный вес для брендового
+  // GOST-серифа). Все ярлыки и табы — 16px font-semibold через GOST Type A.
+  const labelClass = 'text-[16px] font-semibold tracking-[0.01em] text-white/80 font-blueprint';
+  const inputClass = 'w-full bg-white/[0.05] border border-white/12 rounded-2xl py-4 pl-12 pr-4 text-[17px] font-medium text-white placeholder:text-white/30 focus:border-[#00ffff]/60 focus:bg-white/[0.08] outline-none transition-all font-blueprint';
+  const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-white/45';
 
-  const sectionTagline = mode === 'login'
-    ? 'ТЕХНОЛОГИИ СОЗДАЮТ БУДУЩЕЕ.\nБУДУЩЕЕ СОЗДАЁТ ВОЗМОЖНОСТИ.'
-    : 'ИННОВАЦИИ.\nТЕХНОЛОГИИ.\nБУДУЩЕЕ.';
+  // BUG_FIX_CONTEXT: focus-handlers навешиваются на каждый input через
+  // spread {...inputFocusProps}. Toggle CSS-класса на body чтобы body::before
+  // (глобальный blueprint) получил приглушение при focus — единый эффект
+  // для любых форм в приложении.
+  const inputFocusProps = {
+    onFocus: () => { setFocused(true); document.body.classList.add('bp-focused'); },
+    onBlur: () => { setFocused(false); document.body.classList.remove('bp-focused'); },
+  };
+  // Cleanup на unmount чтобы класс не остался если юзер перешёл на другой экран
+  // во время фокуса.
+  useEffect(() => {
+    return () => { document.body.classList.remove('bp-focused'); };
+  }, []);
 
   return (
-    <AppBackground>
-      {/*
-        Раньше внешний div был flex flex-1 + spacer — при появлении клавиатуры
-        он пересчитывался и пампил контент. Сейчас фикс-высота 100lvh + слоты
-        фиксированной высоты под title и форму, tagline absolute.
-      */}
-      {/* Без minHeight: 100lvh — позволяем странице расти по контенту, чтобы
-          родительский scroll-контейнер (App.tsx) корректно прокручивал на
-          маленьких экранах. Раньше при появлении клавиатуры контент
-          переворачивался и tagline уезжал за границу. */}
+    // BUG_FIX_CONTEXT: Свой backdrop из Auth убран — теперь полагается на
+    // глобальный body::before (см. index.css). Один источник blueprint для
+    // всех экранов, никаких расхождений между Auth/Home/etc. focus-эффект
+    // переехал на CSS-класс `auth-focused-on-body` который body получает
+    // когда любой input в фокусе — body::before меняет blur/opacity.
+    <div
+      className="relative"
+      style={{ minHeight: '100lvh' }}
+    >
       <div
-        className="relative px-6"
+        className="relative z-10 flex flex-col justify-center px-7"
         style={{
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 20px)',
-          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+          minHeight: '100dvh',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+          paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
         }}
       >
-        {/* DIAG-плашки скрыты в production — видны только в dev (npm run dev). */}
-        {import.meta.env.DEV && (
-          <>
-            <div className="absolute top-2 right-2 z-50 select-text font-mono text-[10px] text-[#7aa8a4] bg-[#03161c]/80 px-2 py-1 rounded border border-[#4ec9c0]/20">
-              build nsc-debug-fix · diag
-            </div>
-            <div className="absolute top-2 left-2 z-50 flex flex-col gap-1 max-w-[60vw]">
-              <button
-                type="button"
-                onClick={runConnectivityProbe}
-                disabled={probing}
-                className="text-[10px] font-mono px-2 py-1 rounded border border-[#4ec9c0]/40 text-[#d8f0ee] bg-[#03161c]/80 active:bg-[#4ec9c0]/15 disabled:opacity-50"
-              >
-                {probing ? '…' : 'TEST /health'}
-              </button>
-              {probeResult && (
-                <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/90 break-all bg-[#03161c]/85 px-2 py-1 rounded border border-[#4ec9c0]/20 select-text">
-                  {probeResult}
-                </p>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* На Auth год не анимируем: каждый key-change компонента триггерил
-            blur-reveal по цифрам — юзер воспринимает это как "шрифт меняется
-            на ходу". compact чтобы не съедать половину экрана. */}
-        <BrandTitle animateYear={false} compact />
-
-        <div className="mt-3 flex justify-center">
-          <EventBadge />
+        {/* TechForum 2026 — выделенный заголовок (единый бренд во всём приложении).
+            BUG_FIX_CONTEXT: По требованию заказчика подзаголовок
+            "Конференция технологий · 15–16 мая" удалён. Дата перенесена в data.ts
+            (DAYS) — она едина во всём приложении. */}
+        <div className="text-center mb-8">
+          <h1 className="font-blueprint text-[46px] leading-[0.95] font-bold tracking-[0.06em] text-[#b0ffff] drop-shadow-[0_8px_28px_rgba(0,255,255,0.55)]">
+            TechForum
+            <span className="block mt-1">2026</span>
+          </h1>
         </div>
 
-        {/* Заголовок — без motion-анимаций. Раньше slide+blur при key-change
-            юзер воспринимал как «шрифт меняется на ходу». */}
-        <h2 className="mt-6 mb-4 font-ui text-[28px] font-semibold text-[#d8f0ee] tracking-wide">
-          {mode === 'login' ? 'Войти' : 'Регистрация'}
-        </h2>
+        {/* Тонкий переключатель login / register с плавной motion-индикацией.
+            BUG_FIX_CONTEXT: Раньше был layout + одновременный inline style.left —
+            двойная анимация дёргала бегунок. Теперь чисто motion.animate{left}. */}
+        <div className="relative flex bg-white/[0.04] border border-white/10 p-1 rounded-2xl mb-6">
+          <motion.span
+            initial={false}
+            animate={{ left: mode === 'login' ? 4 : 'calc(50% + 0px)' }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.6 }}
+            className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-[#00ffff]/15 border border-[#00ffff]/40"
+          />
+          {(['login','register'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => { setMode(m); setError(''); }}
+              className={cn(
+                'relative flex-1 py-3 text-[16px] font-semibold rounded-xl transition-colors z-10 font-blueprint',
+                mode === m ? 'text-[#b0ffff]' : 'text-white/55'
+              )}
+            >
+              {m === 'login' ? 'Войти' : 'Регистрация'}
+            </button>
+          ))}
+        </div>
 
-        {/* Форма — без AnimatePresence. Третье поле (passwordConfirm) просто
-            рендерится условно. minHeight гарантирует что CTA не прыгает. */}
-        <div className="relative" style={{ minHeight: 248 }}>
-          <form onSubmit={handleSubmit} className="space-y-3.5">
-            <div className="space-y-3.5">
-                <Input
-                  ref={emailRef}
-                  icon={Mail}
-                  type="email"
-                  placeholder="@mail или телефон"
-                  required
-                  autoComplete="email"
-                  inputMode="email"
-                  value={form.email}
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); passwordRef.current?.focus(); } }}
-                />
-                <Input
-                  ref={passwordRef}
-                  icon={Lock}
-                  type="password"
-                  placeholder={mode === 'register' ? 'Придумайте пароль' : 'Пароль'}
-                  required
-                  autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                  toggleablePassword
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      if (mode === 'register') { e.preventDefault(); passwordConfirmRef.current?.focus(); }
-                    }
-                  }}
-                />
-                {mode === 'register' && (
-                  <Input
-                    ref={passwordConfirmRef}
-                    icon={Lock}
-                    type="password"
-                    placeholder="Подтвердите пароль"
-                    required
-                    autoComplete="new-password"
-                    toggleablePassword
-                    value={form.passwordConfirm}
-                    onChange={(e) => setForm({ ...form, passwordConfirm: e.target.value })}
-                  />
-                )}
-              </div>
+        {/* Email / телефон — мини-таб */}
+        <div className="flex bg-white/[0.04] border border-white/10 p-1 rounded-2xl mb-6">
+          {(['email','phone'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMethod(m)}
+              className={cn(
+                'flex-1 py-2.5 text-[16px] font-semibold rounded-xl transition-all font-blueprint',
+                method === m ? 'bg-white/[0.06] text-[#b0ffff]' : 'text-white/55'
+              )}
+            >
+              {m === 'email' ? 'Email' : 'Телефон'}
+            </button>
+          ))}
+        </div>
 
-            {mode === 'login' && (
-              <div className="text-right">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForgotEmail(form.email);
-                    setForgotStep('start');
-                  }}
-                  className="text-[14px] text-[#7aa8a4] hover:text-[#d8f0ee] font-ui"
-                >
-                  Забыли пароль?
-                </button>
-              </div>
-            )}
-
+        {/* Форма с плавным переходом login ↔ register.
+            BUG_FIX_CONTEXT: РАНЬШЕ всю форму оборачивали в AnimatePresence с
+            key={mode} — Email и Пароль перерендеривались при каждом
+            переключении и дублировались на время exit-фазы (визуальный
+            "мусор", двойные поля). Юзер описал это как "панель летает".
+            ТЕПЕРЬ Email и Пароль постоянны в DOM, анимируется ТОЛЬКО
+            поле «Имя» через AnimatePresence + height/opacity. motion.form
+            layout сам сглаживает изменение высоты, submit не прыгает. */}
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+        >
+          <AnimatePresence initial={false}>
             {mode === 'register' && (
-              <div className="pt-1">
-                <Checkbox checked={consent} onChange={setConsent} id="consent">
-                  Я согласен с политикой конфиденциальности
-                </Checkbox>
-              </div>
+              <motion.div
+                key="name-field"
+                initial={{ opacity: 0, height: 0, y: -8 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={{ opacity: 0, height: 0, y: -8 }}
+                transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
+                className="space-y-1.5 overflow-hidden"
+              >
+                <label className={labelClass}>Имя</label>
+                <div className="relative">
+                  <UserIcon className={iconClass} />
+                  <input
+                    type="text"
+                    required={mode === 'register'}
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    className={inputClass}
+                    {...inputFocusProps}
+                  />
+                </div>
+              </motion.div>
             )}
+          </AnimatePresence>
 
-            <AnimatePresence>
-              {error && (
-                <motion.p
-                  key={error}
-                  initial={{ opacity: 0, y: -6, x: 0 }}
-                  animate={{ opacity: 1, y: 0, x: [0, -6, 6, -4, 4, 0] }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.42, ease: [0.32, 0.72, 0, 1] }}
-                  className="text-[14px] font-semibold text-rose-300 text-center font-ui"
-                >
-                  {error}
-                </motion.p>
-              )}
-            </AnimatePresence>
-
-            {import.meta.env.DEV && debugInfo && (
-              <p className="text-[10px] leading-tight font-mono text-[#d8f0ee]/80 break-all bg-[#03161c]/70 border border-[#4ec9c0]/20 rounded p-2 select-text">
-                {debugInfo}
-              </p>
-            )}
-
-            <div className="pt-3">
-              <Button type="submit" loading={loading} disabled={mode === 'register' && !consent}>
-                {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-              </Button>
+          <div className="space-y-1.5">
+            <label className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
+            <div className="relative">
+              {method === 'email' ? <Mail className={iconClass} /> : <Phone className={iconClass} />}
+              <input
+                type={method === 'email' ? 'email' : 'tel'}
+                required
+                value={method === 'email' ? form.email : form.phone}
+                onChange={(e) => setForm({ ...form, [method]: e.target.value })}
+                className={inputClass}
+              />
             </div>
-          </form>
-        </div>
+          </div>
 
-        <div className="mt-6 text-center">
+          <div className="space-y-1.5">
+            <label className={labelClass}>Пароль</label>
+            <div className="relative">
+              <Lock className={iconClass} />
+              <input
+                type="password"
+                required
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {error && (
+              <motion.p
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="text-[15px] font-semibold text-rose-300 text-center font-blueprint"
+              >
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
+          {mode === 'register' && (
+            <label className="flex items-start gap-3 pt-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-1 w-[18px] h-[18px] accent-[#00ffff] rounded"
+              />
+              <span className="text-[14px] leading-snug text-white/70 font-blueprint">
+                Я согласен на обработку персональных данных в соответствии с 152-ФЗ.
+              </span>
+            </label>
+          )}
+
           <button
-            type="button"
-            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-            className="text-[13px] text-[#7aa8a4] hover:text-[#d8f0ee] font-ui tracking-wider uppercase"
+            type="submit"
+            disabled={loading || (mode === 'register' && !consent)}
+            className="w-full bg-gradient-to-r from-[#00ffff] to-[#ff3399] text-[#0a0e17] py-4 rounded-2xl text-[17px] font-bold tracking-[0.02em] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(0,255,255,0.25)] mt-6 font-blueprint"
           >
-            {mode === 'login' ? 'Нет аккаунта? Создать' : 'Уже есть аккаунт? Войти'}
+            {loading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                <span>{mode === 'login' ? 'Войти' : 'Создать аккаунт'}</span>
+                <ArrowRight className="w-[18px] h-[18px]" />
+              </>
+            )}
           </button>
-        </div>
-
-        {/* Tagline в обычном flow (не absolute) — чтобы не перекрывал форму
-            на маленьких экранах и корректно прокручивался вместе со всем. */}
-        <p className="mt-10 mx-auto max-w-[260px] text-center font-ui text-[11px] uppercase tracking-[0.18em] text-[#4ec9c0]/55 leading-relaxed whitespace-pre-line">
-          {sectionTagline}
-        </p>
+        </form>
+        {/* BUG_FIX_CONTEXT: По требованию заказчика удалена нижняя ссылка
+            "Нет аккаунта? Зарегистрироваться / Уже есть аккаунт? Войти".
+            Переключение режима остаётся через таб-бегунок выше. */}
       </div>
 
-      {/* Forgot-password modal — 2 шага. Бэк: POST /auth/forgot-password/start
-          → создаёт токен (TTL 30мин); /verify {token, newPassword} меняет пароль.
-          Пока SMTP не подключён, токен видят только организаторы в server log. */}
-      <AnimatePresence>
-        {forgotStep && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-6 bg-[#03161c]/85 backdrop-blur-md"
-            onClick={() => { if (!forgotBusy) setForgotStep(null); }}
-          >
-            <motion.div
-              initial={{ y: 24, opacity: 0, scale: 0.96 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 24, opacity: 0, scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              onClick={(e) => e.stopPropagation()}
-              className="relative w-full max-w-[380px] rounded-3xl border border-[#4ec9c0]/30 bg-[#052830]/95 p-6 shadow-[0_24px_60px_rgba(78,201,192,0.18)]"
-            >
-              <button
-                type="button"
-                onClick={() => setForgotStep(null)}
-                disabled={forgotBusy}
-                className="absolute top-4 right-4 w-9 h-9 rounded-full border border-[#4ec9c0]/30 flex items-center justify-center text-[#7aa8a4] hover:text-[#d8f0ee] disabled:opacity-50"
-                aria-label="Закрыть"
-              >
-                <XIcon className="w-4 h-4" />
-              </button>
-
-              {forgotStep === 'start' ? (
-                <>
-                  <h3 className="font-ui text-[20px] text-[#d8f0ee] mb-2">Восстановление пароля</h3>
-                  <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
-                    Введи email, на который регистрировался. Получишь код через организаторов — пока интеграция SMS/email в работе.
-                  </p>
-                  <Input
-                    icon={Mail}
-                    type="email"
-                    inputMode="email"
-                    placeholder="email@example.com"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    autoComplete="email"
-                    autoFocus
-                  />
-                  <div className="pt-4">
-                    <Button onClick={handleForgotStart} loading={forgotBusy}>Запросить код</Button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep('verify')}
-                    className="w-full mt-3 text-[12px] text-[#7aa8a4] hover:text-[#d8f0ee]"
-                  >
-                    У меня уже есть код →
-                  </button>
-                </>
-              ) : (
-                <>
-                  <h3 className="font-ui text-[20px] text-[#d8f0ee] mb-2">Введи код</h3>
-                  <p className="text-[13px] text-[#7aa8a4] mb-5 leading-relaxed">
-                    Код выдают организаторы по запросу. Срок действия — 30 минут.
-                  </p>
-                  <div className="space-y-3">
-                    <Input
-                      icon={Lock}
-                      type="text"
-                      placeholder="Код восстановления"
-                      value={forgotToken}
-                      onChange={(e) => setForgotToken(e.target.value)}
-                      autoFocus
-                    />
-                    <Input
-                      icon={Lock}
-                      type="password"
-                      placeholder="Новый пароль (минимум 6)"
-                      value={forgotNewPwd}
-                      onChange={(e) => setForgotNewPwd(e.target.value)}
-                      toggleablePassword
-                    />
-                  </div>
-                  <div className="pt-4">
-                    <Button onClick={handleForgotVerify} loading={forgotBusy}>Сменить пароль</Button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep('start')}
-                    className="w-full mt-3 text-[12px] text-[#7aa8a4] hover:text-[#d8f0ee]"
-                  >
-                    ← Запросить новый код
-                  </button>
-                </>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      {/* Биометрический оффер. Появляется ПОВЕРХ Auth поверх blueprint-фона
+          сразу после успешного login/register, если: (a) сенсор есть,
+          (b) биометрия ещё не включена, (c) метод входа email (при phone
+          credentials/password в этой версии не валидируются на сервере). */}
       <AnimatePresence>
         {showBioOffer && (
           <motion.div
@@ -521,14 +330,14 @@ export default function Auth({ onSuccess }: AuthProps) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.22 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-[#03161c]/85 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-[#0a0e17]/85 backdrop-blur-md"
           >
             <motion.div
               initial={{ y: 24, opacity: 0, scale: 0.96 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 24, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="relative w-full max-w-[380px] rounded-3xl border border-[#4ec9c0]/30 bg-[#052830]/95 p-7 shadow-[0_24px_60px_rgba(78,201,192,0.18)]"
+              className="w-full max-w-[380px] bg-[#0d1520] border border-white/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(0,255,255,0.18)]"
             >
               <button
                 type="button"
@@ -538,43 +347,54 @@ export default function Auth({ onSuccess }: AuthProps) {
                   if (pendingUser) onSuccess(pendingUser);
                 }}
                 aria-label="Закрыть"
-                className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full text-[#7aa8a4] hover:text-[#d8f0ee] hover:bg-[#0a2f38]/0.06 transition-colors"
+                className="absolute right-5 top-5 w-9 h-9 flex items-center justify-center rounded-full text-white/55 hover:text-white/85 hover:bg-white/[0.06] transition-colors"
               >
-                <XIcon className="h-[18px] w-[18px]" />
+                <XIcon className="w-[18px] h-[18px]" />
               </button>
 
               <div className="flex flex-col items-center text-center pt-2">
-                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-[#4ec9c0]/40 bg-[#0a2f38]/70 shadow-[0_8px_28px_rgba(78,201,192,0.25)]">
-                  <Fingerprint className="h-8 w-8 text-[#4ec9c0]" strokeWidth={1.5} />
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#00ffff]/20 to-[#00cccc]/10 border border-[#00ffff]/40 flex items-center justify-center mb-5 shadow-[0_8px_28px_rgba(0,255,255,0.25)]">
+                  <Fingerprint className="w-8 h-8 text-[#00ffff]" />
                 </div>
-                <h2 className="font-ui text-[24px] font-semibold text-[#d8f0ee] mb-2 leading-tight">
+                <h2 className="font-blueprint text-[26px] leading-tight font-bold text-[#b0ffff] mb-2">
                   Включить вход<br />по биометрии?
                 </h2>
-                <p className="mb-6 text-[15px] leading-relaxed text-[#7aa8a4] font-ui">
+                <p className="text-[15px] leading-relaxed text-white/65 font-blueprint mb-6">
                   Открывайте TechForum за секунду без ввода пароля — Face ID, отпечаток или PIN телефона.
                 </p>
 
-                <Button
+                <button
                   type="button"
-                  loading={bioBusy}
+                  disabled={bioBusy}
                   onClick={async () => {
                     if (!pendingCreds || !pendingUser) return;
                     setBioBusy(true);
+                    setError('');
                     try {
                       await enableBiometric(pendingCreds.email, pendingCreds.password);
                       setShowBioOffer(false);
                       onSuccess(pendingUser);
-                    } catch {
+                    } catch (e: unknown) {
+                      // Юзер отменил BiometricPrompt или ОС вернула ошибку.
+                      // Не блокируем вход — закрываем оффер и просто пускаем
+                      // в App. Можно будет включить позже из Профиля.
                       setShowBioOffer(false);
                       onSuccess(pendingUser);
                     } finally {
                       setBioBusy(false);
                     }
                   }}
+                  className="w-full bg-gradient-to-r from-[#00ffff] to-[#ff3399] text-[#0a0e17] py-4 rounded-2xl text-[17px] font-bold tracking-[0.02em] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(0,255,255,0.25)] font-blueprint"
                 >
-                  <Fingerprint className="h-[18px] w-[18px]" strokeWidth={1.6} />
-                  <span>Включить</span>
-                </Button>
+                  {bioBusy ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <Fingerprint className="w-[18px] h-[18px]" />
+                      <span>Включить</span>
+                    </>
+                  )}
+                </button>
                 <button
                   type="button"
                   disabled={bioBusy}
@@ -582,7 +402,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                     setShowBioOffer(false);
                     if (pendingUser) onSuccess(pendingUser);
                   }}
-                  className="mt-3 w-full py-3 text-[14px] font-semibold uppercase tracking-wider text-[#7aa8a4] hover:text-[#d8f0ee] transition-colors font-ui"
+                  className="mt-3 w-full text-[15px] font-semibold text-white/55 hover:text-white/85 transition-colors py-3 font-blueprint"
                 >
                   Не сейчас
                 </button>
@@ -591,6 +411,6 @@ export default function Auth({ onSuccess }: AuthProps) {
           </motion.div>
         )}
       </AnimatePresence>
-    </AppBackground>
+    </div>
   );
 }

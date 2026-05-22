@@ -61,7 +61,7 @@ export default function OfflineBanner() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -60, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          className="fixed left-0 right-0 z-[100] bg-rose-500/95 backdrop-blur-md text-[#d8f0ee] shadow-[0_8px_28px_rgba(244,63,94,0.35)]"
+          className="fixed left-0 right-0 z-[100] bg-rose-500/95 backdrop-blur-md text-white shadow-[0_8px_28px_rgba(244,63,94,0.35)]"
           style={{
             top: 0,
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 10px)',
