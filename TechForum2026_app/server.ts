@@ -294,26 +294,26 @@ async function startServer(): Promise<void> {
         'Content-Security-Policy',
         [
           "default-src 'self'",
-          "img-src 'self' data: blob: https://api.dicebear.com http://72.56.9.90:3100 https://72.56.9.90:3100",
+          "img-src 'self' data: blob: https://api.dicebear.com http://72.56.38.62:3100 https://72.56.38.62:3100",
           "script-src 'self' 'unsafe-inline'",
           "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
           "font-src 'self' data: https://fonts.gstatic.com",
-          "connect-src 'self' http://72.56.9.90:3100 https://72.56.9.90:3100 ws://72.56.9.90:3100 wss://72.56.9.90:3100 capacitor://localhost",
+          "connect-src 'self' http://72.56.38.62:3100 https://72.56.38.62:3100 ws://72.56.38.62:3100 wss://72.56.38.62:3100 capacitor://localhost",
           "frame-ancestors 'none'",
           "base-uri 'self'",
           "form-action 'self'",
         ].join('; ')
       );
       // BUG_FIX_CONTEXT: HSTS отключён пока backend на cleartext IP.
-      // С HSTS WebView-кеш заставляет upgrade http://72.56.9.90:3100 →
-      // https://72.56.9.90:3100, которого нет → "ERR_CONNECTION_REFUSED".
+      // С HSTS WebView-кеш заставляет upgrade http://72.56.38.62:3100 →
+      // https://72.56.38.62:3100, которого нет → "ERR_CONNECTION_REFUSED".
       // Юзер видит "нет сети". Включим обратно когда будет domain + cert.
       // res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
     next();
   });
   // BUG_FIX_CONTEXT: Пока у нас нет domain + Let's Encrypt сертификата, APK
-  // ходит к backend по cleartext (http://72.56.9.90:3100). Cookie c secure=true
+  // ходит к backend по cleartext (http://72.56.38.62:3100). Cookie c secure=true
   // в этом сценарии не сохраняется → юзер не может залогиниться. Env-toggle
   // COOKIE_SECURE=false разрешает cookie без HTTPS. Когда поднимем HTTPS, в
   // .env.production выставим COOKIE_SECURE=true (или удалим — дефолт isProduction).

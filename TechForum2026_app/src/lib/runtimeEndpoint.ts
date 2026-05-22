@@ -50,7 +50,7 @@ export function resolveApiUrl(path: string): string {
  * используя origin из API base URL. Если URL уже абсолютный (http/https/data) — возвращает как есть.
  *
  * BUG_FIX_CONTEXT: Avatar возвращается с бэкенда как '/uploads/<file>'. Когда фронт
- * собран с VITE_API_BASE_URL=http://72.56.9.90:3100/api/v1 и работает в Capacitor APK,
+ * собран с VITE_API_BASE_URL=http://72.56.38.62:3100/api/v1 и работает в Capacitor APK,
  * относительный путь резолвится в `capacitor://localhost/uploads/...` и не находит файл.
  * Хелпер берёт origin (scheme+host+port) из API base и склеивает.
  */

@@ -10,7 +10,7 @@
 //    делят одно соединение, экономим открытые WS handle'ы)
 //  - exponential backoff на reconnect (1s → 2 → 4 → 8 → 16, max 30s)
 //  - heartbeat (server pings каждые 30с, клиент закрывает на silence > 60c)
-//  - native Capacitor URL → ws://72.56.9.90/api/v1/ws/dm
+//  - native Capacitor URL → ws://72.56.38.62/api/v1/ws/dm
 
 import { useEffect, useRef } from 'react';
 import { resolveApiUrl } from './runtimeEndpoint';
@@ -31,7 +31,7 @@ let reconnectTimer: number | null = null;
 let connecting = false;
 
 function buildWsUrl(): string {
-  // resolveApiUrl возвращает что-то типа http://72.56.9.90/api/v1/<path>.
+  // resolveApiUrl возвращает что-то типа http://72.56.38.62/api/v1/<path>.
   // Преобразуем http→ws, https→wss.
   const httpUrl = resolveApiUrl('/ws/dm');
   return httpUrl.replace(/^http(s?):/, 'ws$1:');

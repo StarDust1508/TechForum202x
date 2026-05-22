@@ -9,8 +9,10 @@ const config: CapacitorConfig = {
     androidScheme: 'http',
     cleartext: true,
     allowNavigation: [
-      '72.56.9.90',
-      '*.72.56.9.90',
+      '72.56.38.62',
+      '*.72.56.38.62',
+      'pravotech.pro',
+      '*.pravotech.pro',
     ],
   },
   android: {
