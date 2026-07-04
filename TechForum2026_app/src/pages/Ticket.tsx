@@ -134,7 +134,7 @@ export default function Ticket() {
             <div className="flex items-center justify-center gap-4 pt-2">
               <div className="inline-flex items-center gap-1.5 text-[10px] text-white/40 font-semibold">
                 <CalendarDays className="w-3 h-3 text-[#00ffff]/50" />
-                20–21 мая 2026
+                25–26 сентября 2026
               </div>
               <div className="w-1 h-1 rounded-full bg-white/15" />
               <div className="inline-flex items-center gap-1.5 text-[10px] text-white/40 font-semibold">

@@ -109,13 +109,13 @@ export default function Home() {
           <Link
             to="/about"
             className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-[13px] font-semibold uppercase tracking-[0.22em] text-white/75 backdrop-blur-sm hover:border-accent/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
-            aria-label="О форуме: 20–21 мая 2026, Саратов"
+            aria-label="О форуме: 25–26 сентября 2026, Москва"
           >
             <CalendarDays className="h-4 w-4 text-accent" />
-            <span>20–21 мая</span>
+            <span>25–26 сентября</span>
             <span className="h-1 w-1 rounded-full bg-white/30" />
             <MapPin className="h-4 w-4 text-accent" />
-            <span>Саратов</span>
+            <span>Москва</span>
           </Link>
         </header>
 

@@ -38,7 +38,7 @@ const GIVEAWAYS: Giveaway[] = [
     gradient: 'from-[#ff3399]/15 via-[#a855f7]/10 to-[#ff3399]/5',
     glowColor: 'rgba(255,51,153,0.25)',
     description: 'Кристально чистый звук и адаптивное шумоподавление. Цвет "Космический серый".',
-    endTime: '21 мая, 12:00',
+    endTime: '26 сентября, 12:00',
     participants: 856,
   },
   {
@@ -49,7 +49,7 @@ const GIVEAWAYS: Giveaway[] = [
     gradient: 'from-[#a855f7]/15 via-[#00ffff]/10 to-[#a855f7]/5',
     glowColor: 'rgba(168,85,247,0.25)',
     description: 'Самые прочные и функциональные часы для экстремальных условий.',
-    endTime: '21 мая, 15:00',
+    endTime: '26 сентября, 15:00',
     participants: 432,
   },
 ];

@@ -40,7 +40,7 @@ export default function About() {
           <div className="flex flex-wrap gap-3 pt-1">
             <div className="inline-flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2">
               <CalendarDays className="w-3.5 h-3.5 text-[#00ffff]" />
-              <span className="text-[12px] font-semibold text-white/75">20–21 мая 2026</span>
+              <span className="text-[12px] font-semibold text-white/75">25–26 сентября 2026</span>
             </div>
             <div className="inline-flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2">
               <MapPin className="w-3.5 h-3.5 text-[#ff3399]" />

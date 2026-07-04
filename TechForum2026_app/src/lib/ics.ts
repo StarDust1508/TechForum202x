@@ -86,14 +86,14 @@ export function buildIcsCalendar(
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(meta.name)}`,
     `X-WR-TIMEZONE:${meta.timezone}`,
-    // Минимальный VTIMEZONE для Europe/Saratov (UTC+4, без DST с 2014)
+    // Минимальный VTIMEZONE для Europe/Moscow (UTC+3, без DST с 2014)
     'BEGIN:VTIMEZONE',
     `TZID:${meta.timezone}`,
     'BEGIN:STANDARD',
     'DTSTART:20140101T000000',
-    'TZOFFSETFROM:+0400',
-    'TZOFFSETTO:+0400',
-    'TZNAME:MSK+1',
+    'TZOFFSETFROM:+0300',
+    'TZOFFSETTO:+0300',
+    'TZNAME:MSK',
     'END:STANDARD',
     'END:VTIMEZONE',
   ];
