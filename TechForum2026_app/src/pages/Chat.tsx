@@ -68,6 +68,7 @@ export default function Chat() {
   const [isRecording, setIsRecording] = useState<'audio' | 'video' | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const [mediaPreview, setMediaPreview] = useState<{ type: 'image' | 'video' | 'audio', url: string } | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -117,8 +118,9 @@ export default function Chat() {
           <img
             src={media.url}
             alt="Shared media"
-            className="max-w-full h-auto object-cover max-h-80"
+            className="max-w-full h-auto object-cover max-h-80 cursor-pointer active:opacity-80 transition-opacity"
             referrerPolicy="no-referrer"
+            onClick={() => setLightboxUrl(media.url)}
           />
         </div>
       );
@@ -878,6 +880,37 @@ export default function Chat() {
           )}
         </div>
       )}
+
+      {/* Лайтбокс: просмотр фото на весь экран (13.7) */}
+      <AnimatePresence>
+        {lightboxUrl && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setLightboxUrl(null)}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+            style={{ paddingTop: 'env(safe-area-inset-top, 0)' }}
+          >
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute top-5 right-5 p-2 bg-white/10 rounded-full text-white"
+              aria-label="Закрыть"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <motion.img
+              key={lightboxUrl}
+              initial={{ scale: 0.92 }}
+              animate={{ scale: 1 }}
+              src={lightboxUrl}
+              alt=""
+              className="max-w-full max-h-full object-contain rounded-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
