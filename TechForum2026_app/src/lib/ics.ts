@@ -48,7 +48,7 @@ function escapeIcsText(value: string): string {
 }
 
 /**
- * Конвертирует "20 мая" + "10:30" + ISO date "2026-05-20" в "20260520T103000".
+ * Конвертирует "25 сентября" + "10:30" + ISO date "2026-09-25" в "20260925T103000".
  * Часовой пояс выносится в TZID секции; DTSTART сам без TZ-suffix.
  */
 export function formatIcsDateTime(isoDate: string, timeHHmm: string): string {
@@ -81,7 +81,7 @@ export function buildIcsCalendar(
   const head = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//TechForum 2026//Event App//RU',
+    'PRODID:-//ТехнологИИ Права 2026//Event App//RU',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(meta.name)}`,

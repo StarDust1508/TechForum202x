@@ -1,4 +1,5 @@
-import { Info, CalendarDays, MapPin, Users, Mic, Globe2, Shield, Zap, ExternalLink } from 'lucide-react';
+import { Info, CalendarDays, MapPin, Users, Mic, Globe2, Zap, ExternalLink } from 'lucide-react';
+import { motion } from 'motion/react';
 import BackButton from '@/src/components/BackButton';
 import { EVENT_META, SPEAKERS, PARTNERS, SESSIONS, TRACKS } from '../data';
 
@@ -11,67 +12,83 @@ export default function About() {
   ];
 
   return (
-    <div className="flex-1 min-h-full px-5 pt-8 pb-10 space-y-7" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-
-      <header className="space-y-2">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold">Информация</p>
-        <h1 className="font-elite text-3xl leading-none text-white">О форуме</h1>
+    <div className="flex-1 min-h-full px-5 space-y-7" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
+      <header className="flex items-center gap-3">
+        <BackButton />
+        <h1
+          className="font-display text-[28px] leading-none font-bold"
+          style={{
+            background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >О форуме</h1>
       </header>
 
       {/* Hero card */}
-      <section className="relative rounded-2xl border border-[#00ffff]/15 bg-[#00ffff]/[0.04] p-6 overflow-hidden">
+      <motion.section
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+        className="relative rounded-2xl border border-primary/15 bg-primary/[0.04] p-6 overflow-hidden"
+      >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_20%,rgba(0,255,255,0.08),transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_80%,rgba(255,51,153,0.05),transparent_50%)]" />
 
         <div className="relative z-10 space-y-4">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#00ffff]/10 border border-[#00ffff]/20 flex items-center justify-center shrink-0">
-              <Info className="w-6 h-6 text-[#00ffff]" />
+            <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Info className="w-6 h-6 text-primary" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-[17px] font-bold text-white/95 leading-tight">TechForum 2026</h2>
-              <p className="text-[13px] text-white/55 leading-relaxed">
+              <h2 className="text-[17px] font-bold text-foreground/95 leading-tight">ТехнологИИ Права 2026</h2>
+              <p className="text-[13px] text-foreground/55 leading-relaxed">
                 Ежегодная технологическая конференция для разработчиков, инженеров, исследователей AI и IT-лидеров.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-3 pt-1">
-            <div className="inline-flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2">
-              <CalendarDays className="w-3.5 h-3.5 text-[#00ffff]" />
-              <span className="text-[12px] font-semibold text-white/75">20–21 мая 2026</span>
+            <div className="inline-flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
+              <CalendarDays className="w-3.5 h-3.5 text-primary" />
+              <span className="text-[12px] font-semibold text-foreground/75">25–26 сентября 2026</span>
             </div>
-            <div className="inline-flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2">
+            <div className="inline-flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
               <MapPin className="w-3.5 h-3.5 text-[#ff3399]" />
-              <span className="text-[12px] font-semibold text-white/75">{EVENT_META.location}, {EVENT_META.city}</span>
+              <span className="text-[12px] font-semibold text-foreground/75">{EVENT_META.location}, {EVENT_META.city}</span>
             </div>
-            <div className="inline-flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2">
+            <div className="inline-flex items-center gap-2 bg-card border border-border rounded-xl px-3 py-2">
               <Users className="w-3.5 h-3.5 text-[#a855f7]" />
-              <span className="text-[12px] font-semibold text-white/75">600+ участников</span>
+              <span className="text-[12px] font-semibold text-foreground/75">600+ участников</span>
             </div>
           </div>
         </div>
-      </section>
+      </motion.section>
 
       {/* Stats grid */}
       <section className="grid grid-cols-2 gap-3">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3">
+        {stats.map((s, idx) => (
+          <motion.div
+            key={s.label}
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35, delay: 0.1 + idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
+            className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 space-y-3"
+          >
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${s.accent}10`, border: `1px solid ${s.accent}25` }}>
               <s.icon className="w-5 h-5" style={{ color: s.accent }} />
             </div>
             <div>
-              <p className="text-[22px] font-bold text-white/90 font-mono">{s.value}</p>
-              <p className="text-[10px] text-white/40 uppercase tracking-[0.15em] font-bold">{s.label}</p>
+              <p className="text-[22px] font-bold text-foreground/90 font-mono">{s.value}</p>
+              <p className="text-[10px] text-foreground/40 uppercase tracking-[0.15em] font-bold">{s.label}</p>
             </div>
-          </div>
+          </motion.div>
         ))}
       </section>
 
       {/* Tracks */}
       <section className="space-y-3">
-        <h3 className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-bold">Направления</h3>
+        <h3 className="text-[11px] uppercase tracking-[0.2em] text-foreground/40 font-bold">Направления</h3>
         <div className="flex flex-wrap gap-2">
           {TRACKS.map((t) => (
             <span
@@ -85,40 +102,35 @@ export default function About() {
         </div>
       </section>
 
-      {/* Tech stack */}
-      <section className="space-y-3">
-        <h3 className="text-[11px] uppercase tracking-[0.2em] text-white/40 font-bold">Приложение</h3>
-        <div className="space-y-2.5">
-          {[
-            { icon: Zap, label: 'Платформа', value: 'React 19 + Capacitor Android', accent: '#00ffff' },
-            { icon: Shield, label: 'Авторизация', value: 'Session cookie + bcrypt', accent: '#ff3399' },
-            { icon: Globe2, label: 'Бэкенд', value: 'Express + PostgreSQL + Drizzle ORM', accent: '#a855f7' },
-          ].map((item) => (
-            <div key={item.label} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${item.accent}10`, border: `1px solid ${item.accent}20` }}>
-                <item.icon className="w-4 h-4" style={{ color: item.accent }} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[12px] font-bold text-white/85 truncate">{item.label}</p>
-                <p className="text-[11px] text-white/40 truncate">{item.value}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Contact */}
-      <section className="bg-[#ff3399]/[0.04] border border-[#ff3399]/15 rounded-2xl p-5 flex items-start gap-4">
-        <div className="w-10 h-10 bg-[#ff3399]/10 border border-[#ff3399]/20 rounded-xl flex items-center justify-center shrink-0">
-          <ExternalLink className="w-5 h-5 text-[#ff3399]" />
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+        className="relative rounded-2xl border border-[#ff3399]/25 bg-[#ff3399]/[0.06] p-5 overflow-hidden"
+        style={{
+          boxShadow: '0 0 20px rgba(255,51,153,0.08), 0 0 40px rgba(255,51,153,0.04), inset 0 1px 0 rgba(255,51,153,0.1)',
+        }}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,51,153,0.1),transparent_70%)]" />
+        <div className="relative z-10 flex items-start gap-4">
+          <div className="w-10 h-10 bg-[#ff3399]/15 border border-[#ff3399]/25 rounded-xl flex items-center justify-center shrink-0">
+            <ExternalLink className="w-5 h-5 text-[#ff3399]" />
+          </div>
+          <div className="space-y-2">
+            <h4 className="font-bold text-foreground/95 text-[14px]">Контакты</h4>
+            <div className="space-y-1.5">
+              <a href="mailto:pravotechhub@mail.ru" className="text-[13px] text-[#ff3399] font-semibold hover:underline block">
+                pravotechhub@mail.ru
+              </a>
+              <p className="text-[12px] text-foreground/50 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-foreground/40" />
+                Москва, Россия
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="space-y-1">
-          <h4 className="font-bold text-white/90 text-[13px]">Контакты</h4>
-          <p className="text-[11px] text-white/50 leading-relaxed">
-            ООО «Bubble Group» · info@techforum.ru
-          </p>
-        </div>
-      </section>
+      </motion.section>
     </div>
   );
 }

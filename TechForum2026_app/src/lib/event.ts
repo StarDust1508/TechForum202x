@@ -3,6 +3,6 @@
 // и автоматически синхронизируется во всём UI.
 
 export const EVENT_YEAR = '2026';
-export const EVENT_DATE = '20–21 МАЯ';
-export const EVENT_CITY = 'САРАТОВ';
-export const EVENT_BRAND = 'TechForum';
+export const EVENT_DATE = '25–26 СЕНТЯБРЯ';
+export const EVENT_CITY = 'МОСКВА';
+export const EVENT_BRAND = 'ТехнологИИ Права';

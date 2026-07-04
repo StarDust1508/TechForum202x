@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.psy_lololo.conferenceapp',
-  appName: 'TechForum 2026',
+  appName: 'ТехнологИИ Права',
   webDir: 'dist',
   server: {
     // androidScheme: 'http' пока бэкенд по cleartext IP. См. ARCHITECTURE.md §8.
@@ -44,7 +44,7 @@ const config: CapacitorConfig = {
       launchShowDuration: 1500,
       launchAutoHide: false,
       launchFadeOutDuration: 200,
-      backgroundColor: '#03161c',
+      backgroundColor: '#0f1118',
       androidScaleType: 'CENTER_CROP',
       showSpinner: false,
       splashFullScreen: true,

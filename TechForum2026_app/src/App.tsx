@@ -22,8 +22,14 @@ import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
 import MyRecords from './pages/MyRecords';
 import NewsDetail from './pages/NewsDetail';
+import Faq from './pages/Faq';
+import Settings from './pages/Settings';
+import SpeakerDetail from './pages/SpeakerDetail';
+import UserProfile from './pages/UserProfile';
+import MyCard from './pages/MyCard';
+import Attendees from './pages/Attendees';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
-import { resolveApiUrl } from './lib/runtimeEndpoint';
+import { resolveApiUrl, authFetch } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
 import { prefetchPublicData } from './lib/prefetch';
 import { ToastProvider, useToast } from './components/Toast';
@@ -99,7 +105,7 @@ function AppContent() {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
         StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-        StatusBar.setBackgroundColor({ color: '#0a0e17' }).catch(() => {});
+        StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
         StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
       } catch {
         /* noop — плагин недоступен или web-окружение */
@@ -137,7 +143,7 @@ function AppContent() {
         return;
       }
       try {
-        const res = await fetch(resolveApiUrl('/me/interests'), {
+        const res = await authFetch(resolveApiUrl('/me/interests'), {
           method: 'PUT',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -160,7 +166,7 @@ function AppContent() {
         prefetchPublicData();
 
         const meUrl = resolveApiUrl('/auth/me');
-        const res = await fetch(meUrl, { credentials: 'include' });
+        const res = await authFetch(meUrl);
         if (res.ok) {
           const data = await res.json();
           if (isMounted) setUser(data);
@@ -204,7 +210,15 @@ function AppContent() {
       } finally {
         const elapsed = Date.now() - startAt;
         const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
-        setTimeout(() => { if (isMounted) setLoading(false); }, wait);
+        setTimeout(() => {
+          if (isMounted) setLoading(false);
+          const Cap: any = (window as any).Capacitor;
+          if (Cap?.isNativePlatform?.()) {
+            import('@capacitor/splash-screen').then(({ SplashScreen }) => {
+              SplashScreen.hide().catch(() => {});
+            }).catch(() => {});
+          }
+        }, wait);
       }
     };
 
@@ -219,7 +233,22 @@ function AppContent() {
     // просто прозрачный контейнер для минимального 1с ожидания. body::before
     // (CSS) красится мгновенно при загрузке стилей, никакого FOUC.
     return (
-      <div className="relative" style={{ minHeight: '100dvh' }} />
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: '100dvh', backgroundColor: '#0f1118' }}>
+        <div
+          className="absolute bg-cover bg-no-repeat"
+          style={{
+            inset: '-50px',
+            backgroundImage: 'url(/hero-bg.jpg)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center 30%',
+          }}
+        />
+        <div className="absolute bg-gradient-to-t from-[#0f1118] via-[#0f1118]/70 to-[#0f1118]/40" style={{ inset: '-50px' }} />
+        <div className="relative z-10 flex flex-col items-center gap-4 animate-pulse">
+          <img src="/icon-192.png" alt="ТехнологИИ Права" className="w-20 h-20 rounded-2xl shadow-neon-magenta" />
+          <h1 className="font-display text-2xl font-bold text-primary tracking-wider">ТехнологИИ Права</h1>
+        </div>
+      </div>
     );
   }
 
@@ -232,7 +261,7 @@ function AppContent() {
     // с центрированной "телефонной" рамкой 420×840.
     <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <OfflineBanner />
-      <main className="w-full sm:max-w-[420px] sm:h-[840px] shadow-[0_0_90px_rgba(0,255,255,0.2)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
+      <main className="w-full sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
         <div className="flex-1 overflow-y-auto scrollbar-hide relative">
           <div className="min-h-full">
             {!user ? (
@@ -265,13 +294,19 @@ function AppContent() {
                       <Route path="/speakers" element={<Speakers />} />
                       <Route path="/map" element={<Map />} />
                       <Route path="/chat" element={<Chat />} />
-                      <Route path="/profile" element={<Profile user={user} />} />
+                      <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
                       <Route path="/ticket" element={<Ticket />} />
                       <Route path="/giveaways" element={<Giveaways />} />
                       <Route path="/partners" element={<Partners />} />
                       <Route path="/diagnostics" element={<Diagnostics />} />
                       <Route path="/about" element={<About />} />
                       <Route path="/my-records" element={<MyRecords />} />
+                      <Route path="/faq" element={<Faq />} />
+                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/speakers/:id" element={<SpeakerDetail />} />
+                      <Route path="/users/:id" element={<UserProfile />} />
+                      <Route path="/my-card" element={<MyCard />} />
+                      <Route path="/attendees" element={<Attendees />} />
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </motion.div>

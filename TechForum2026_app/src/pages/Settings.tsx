@@ -19,11 +19,11 @@ import {
 import PageShell from '@/src/components/ui/PageShell';
 import { hapticSelection } from '@/src/lib/haptics';
 import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 
 type Section = 'notifications' | 'terms' | 'privacy' | 'about';
 
-const TERMS_TEXT = `Используя приложение TechForum 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
+const TERMS_TEXT = `Используя приложение ТехнологИИ Права 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
 
 Приложение разработано для участников конференции и предоставляется для удобства навигации по программе, общения с другими участниками и получения уведомлений от организатора.
 
@@ -33,7 +33,7 @@ const TERMS_TEXT = `Используя приложение TechForum 2026, вы
 
 Все материалы (доклады, фото, видео) защищены авторским правом и не могут быть опубликованы вне приложения без разрешения авторов и организатора.
 
-Полную версию пользовательского соглашения см. на сайте techforum.ru.`;
+Полную версию пользовательского соглашения см. на сайте pravotech.pro.`;
 
 const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
 — ФИО, контактный email, телефон;
@@ -48,10 +48,10 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
 
 Вы можете в любой момент:
-— скачать копию своих данных (запрос через support@techforum.ru);
+— скачать копию своих данных (запрос через pravotechhub@mail.ru);
 — удалить аккаунт через профиль (необратимо).
 
-Полная политика конфиденциальности доступна на сайте techforum.ru/privacy.`;
+Полная политика конфиденциальности доступна на сайте pravotech.pro/privacy.`;
 
 const APP_VERSION = '1.0.0';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
@@ -74,7 +74,7 @@ function NotificationsPage() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
+        const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
         if (r.ok) {
           const me = await r.json();
           if (!cancelled) setPreviewHidden(!!me.pushPreviewHidden);
@@ -91,7 +91,7 @@ function NotificationsPage() {
     setPreviewHidden(next);
     void hapticSelection();
     try {
-      const r = await fetch(resolveApiUrl('/auth/me'), {
+      const r = await authFetch(resolveApiUrl('/auth/me'), {
         method: 'PATCH', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pushPreviewHidden: next }),
@@ -115,7 +115,7 @@ function NotificationsPage() {
         try { localStorage.setItem(NOTIF_LS_KEY, '1'); } catch { /* noop */ }
         setHint('Подписка зарегистрирована на этом устройстве.');
       } else {
-        setHint('Разрешение на уведомления не получено или сервис недоступен. Откройте Настройки → Приложения → TechForum 2026 → Уведомления и включите вручную.');
+        setHint('Разрешение на уведомления не получено или сервис недоступен. Откройте Настройки → Приложения → ТехнологИИ Права 2026 → Уведомления и включите вручную.');
       }
     } else {
       // OFF: unregister
@@ -132,41 +132,41 @@ function NotificationsPage() {
         type="button"
         onClick={toggle}
         disabled={busy}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-white/[0.06] px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
       >
         <div className="text-left">
-          <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
+          <p className="font-display text-[15px] font-semibold text-foreground">
             Push-уведомления
           </p>
-          <p className="text-[12px] text-[#7aa8a4] mt-0.5">
+          <p className="text-[12px] text-foreground/40 mt-0.5">
             Анонсы сессий, ответы на сообщения
           </p>
         </div>
         {busy ? (
-          <Loader2 className="w-5 h-5 animate-spin text-[#4ec9c0]" strokeWidth={1.8} />
+          <Loader2 className="w-5 h-5 animate-spin text-primary" strokeWidth={1.8} />
         ) : (
           <span
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
+              enabled ? 'bg-primary' : 'bg-white/[0.06] border border-primary/30'
             }`}
           >
             <motion.span
               layout
               transition={{ type: 'spring', stiffness: 380, damping: 26 }}
               className={`absolute top-0.5 w-5 h-5 rounded-full ${
-                enabled ? 'left-[22px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+                enabled ? 'left-[22px] bg-background' : 'left-0.5 bg-primary'
               }`}
             />
           </span>
         )}
       </button>
       {hint && (
-        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+        <p className="px-5 text-[11px] text-foreground/45 leading-relaxed">
           {hint}
         </p>
       )}
       {!hint && (
-        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+        <p className="px-5 text-[11px] text-foreground/45 leading-relaxed">
           Включите чтобы получать важные оповещения форума: начало сессии,
           новые сообщения, объявления оргкомитета. Отключение применяется
           мгновенно и не требует переустановки.
@@ -180,25 +180,25 @@ function NotificationsPage() {
           type="button"
           onClick={togglePreviewHidden}
           disabled={previewBusy}
-          className="mt-4 w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+          className="mt-4 w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
         >
           <div className="flex items-start gap-3 text-left flex-1 min-w-0">
-            <EyeOff className="w-4 h-4 mt-0.5 text-[#4ec9c0] shrink-0" strokeWidth={1.6} />
+            <EyeOff className="w-4 h-4 mt-0.5 text-primary shrink-0" strokeWidth={1.6} />
             <div>
-              <p className="font-display-cyrl text-[14px] font-semibold text-[#d8f0ee]">
+              <p className="font-display text-[14px] font-semibold text-foreground">
                 Скрывать предпросмотр
               </p>
-              <p className="text-[11px] text-[#7aa8a4] mt-0.5 leading-relaxed">
+              <p className="text-[11px] text-foreground/40 mt-0.5 leading-relaxed">
                 Текст сообщения не будет виден на заблокированном экране — только «Новое сообщение».
               </p>
             </div>
           </div>
           {previewBusy ? (
-            <Loader2 className="w-4 h-4 animate-spin text-[#4ec9c0] shrink-0" strokeWidth={1.8} />
+            <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" strokeWidth={1.8} />
           ) : (
             <span
               className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${
-                previewHidden ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
+                previewHidden ? 'bg-primary' : 'bg-white/[0.06] border border-primary/30'
               }`}
               style={{ height: 22, width: 40 }}
             >
@@ -206,7 +206,7 @@ function NotificationsPage() {
                 layout
                 transition={{ type: 'spring', stiffness: 380, damping: 26 }}
                 className={`absolute top-0.5 w-4 h-4 rounded-full ${
-                  previewHidden ? 'left-[20px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
+                  previewHidden ? 'left-[20px] bg-background' : 'left-0.5 bg-primary'
                 }`}
               />
             </span>
@@ -218,7 +218,36 @@ function NotificationsPage() {
 }
 
 export default function Settings() {
-  const [section, setSection] = useState<Section | null>(null);
+  const [section, setSectionRaw] = useState<Section | null>(null);
+
+  // Integrate with browser history so swipe-back closes the sub-section
+  // instead of navigating away from Settings entirely
+  const setSection = (next: Section | null) => {
+    if (next && !section) {
+      // Opening a sub-section: push a dummy history entry
+      window.history.pushState({ settingsSection: next }, '');
+    } else if (!next && section) {
+      // Closing via UI button — go back to pop the dummy entry we pushed
+      // (but only if the dummy entry is the current state)
+      if (window.history.state?.settingsSection) {
+        window.history.back();
+        // The popstate handler will set section=null
+        return;
+      }
+    }
+    setSectionRaw(next);
+  };
+
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      // If we're leaving a settings sub-section, just close it
+      if (section) {
+        setSectionRaw(null);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [section]);
 
   const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
     { key: 'notifications', icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' },
@@ -228,26 +257,29 @@ export default function Settings() {
   ];
 
   return (
-    <PageShell title="Настройки" kicker="Параметры">
+    <PageShell title="Настройки">
       <div className="space-y-2.5">
-        {items.map((it) => (
-          <button
+        {items.map((it, idx) => (
+          <motion.button
             key={it.key}
             type="button"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
             onClick={() => setSection(it.key)}
-            className="w-full flex items-center gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 hover:border-[#4ec9c0]/45 active:scale-[0.99] transition-all text-left"
+            className="w-full flex items-center gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 hover:border-primary/45 active:scale-[0.99] transition-all text-left"
           >
-            <div className="w-10 h-10 rounded-xl border border-[#4ec9c0]/35 bg-[#03161c]/55 flex items-center justify-center text-[#4ec9c0] shrink-0">
+            <div className="w-10 h-10 rounded-xl border border-primary/35 bg-background/55 flex items-center justify-center text-primary shrink-0">
               <it.icon className="w-4.5 h-4.5" strokeWidth={1.6} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
+              <p className="font-display text-[15px] font-semibold text-foreground">
                 {it.label}
               </p>
-              <p className="text-[12px] text-[#7aa8a4] mt-0.5 truncate">{it.sub}</p>
+              <p className="text-[12px] text-foreground/40 mt-0.5 truncate">{it.sub}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#4ec9c0]/55" strokeWidth={1.6} />
-          </button>
+            <ChevronRight className="w-4 h-4 text-primary/55" strokeWidth={1.6} />
+          </motion.button>
         ))}
       </div>
 
@@ -259,22 +291,22 @@ export default function Settings() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed inset-0 z-[80] bg-[#03161c] flex flex-col"
+            className="fixed inset-0 z-[80] bg-background flex flex-col"
             style={{
               paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
               paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
             }}
           >
-            <div className="flex items-center gap-3 px-5 pb-4 border-b border-[#4ec9c0]/22">
+            <div className="flex items-center gap-3 px-5 pb-4 border-b border-primary/22">
               <button
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Назад"
-                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/35 bg-[#0a2f38]/45 flex items-center justify-center text-[#4ec9c0] active:scale-90 transition-transform"
+                className="h-10 w-10 rounded-xl border border-primary/35 bg-white/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
               >
                 <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
               </button>
-              <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">
+              <h2 className="font-display text-[18px] font-semibold text-foreground">
                 {section === 'notifications' && 'Уведомления'}
                 {section === 'terms' && 'Условия использования'}
                 {section === 'privacy' && 'Согласие на обработку ПД'}
@@ -285,7 +317,7 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Закрыть"
-                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/22 flex items-center justify-center text-[#7aa8a4] active:scale-90 transition-transform"
+                className="h-10 w-10 rounded-xl border border-primary/22 flex items-center justify-center text-foreground/40 active:scale-90 transition-transform"
               >
                 <X className="w-4 h-4" strokeWidth={1.8} />
               </button>
@@ -294,30 +326,30 @@ export default function Settings() {
             <div className="flex-1 overflow-y-auto px-5 py-5">
               {section === 'notifications' && <NotificationsPage />}
               {section === 'terms' && (
-                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
+                <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
                   {TERMS_TEXT}
                 </p>
               )}
               {section === 'privacy' && (
-                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
+                <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
                   {PRIVACY_TEXT}
                 </p>
               )}
               {section === 'about' && (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/45 p-5 text-center">
-                    <p className="font-display text-[24px] font-semibold text-[#d8f0ee]">TechForum 2026</p>
-                    <p className="font-mono text-[11px] uppercase tracking-widest text-[#4ec9c0] mt-1">
+                  <div className="rounded-2xl border border-primary/30 bg-white/[0.06] p-5 text-center">
+                    <p className="font-display text-[24px] font-semibold text-foreground">ТехнологИИ Права 2026</p>
+                    <p className="font-mono text-[11px] uppercase tracking-widest text-primary mt-1">
                       Версия {APP_VERSION} · build {APP_BUILD}
                     </p>
                   </div>
-                  <p className="text-[13px] text-[#d8f0ee]/85 leading-relaxed">
-                    Приложение TechForum 2026 — официальный гид по программе форума,
+                  <p className="text-[13px] text-foreground/85 leading-relaxed">
+                    Приложение ТехнологИИ Права 2026 — официальный гид по программе форума,
                     инструмент нетворкинга и личный кабинет участника.
                   </p>
-                  <p className="text-[12px] text-[#7aa8a4] leading-relaxed">
-                    Поддержка: support@techforum.ru<br />
-                    Сайт: techforum.ru
+                  <p className="text-[12px] text-foreground/40 leading-relaxed">
+                    Поддержка: pravotechhub@mail.ru<br />
+                    Сайт: pravotech.pro
                   </p>
                 </div>
               )}

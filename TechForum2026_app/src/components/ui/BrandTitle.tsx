@@ -14,7 +14,7 @@ interface BrandTitleProps {
 }
 
 export default function BrandTitle({ className = '', style, animateYear = true, compact = false, inline = false }: BrandTitleProps) {
-  const sizeClamp = compact ? 'clamp(28px, 8vw, 38px)' : 'clamp(40px, 12.5vw, 60px)';
+  const sizeClamp = compact ? 'clamp(20px, 6vw, 28px)' : 'clamp(28px, 8.5vw, 44px)';
   const renderYear = animateYear
     ? EVENT_YEAR.split('').map((d, i) => (
         <motion.span
@@ -30,7 +30,7 @@ export default function BrandTitle({ className = '', style, animateYear = true, 
     : EVENT_YEAR;
   return (
     <h1
-      className={`font-display text-center text-[#d8f0ee] drop-shadow-[0_8px_28px_rgba(78,201,192,0.4)] ${className}`}
+      className={`font-display text-center text-primary drop-shadow-[0_8px_28px_rgba(0,255,255,0.4)] ${className}`}
       style={{
         fontSize: sizeClamp,
         lineHeight: 0.95,
