@@ -219,15 +219,11 @@ export default function Schedule() {
           <h1 className="font-elite text-3xl leading-none text-white">Расписание</h1>
         </div>
 
-        {/* Day tabs.
-            BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
-            между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
-            Таб "Мои записи" остаётся справа. */}
+        {/* Day tabs + «Мои записи».
+            Таб «Для меня» (Recommended) убран по требованию заказчика. */}
         <div className="flex bg-[#111827] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
           {[
-            ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
-            { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
-            ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
+            ...DAYS.map(d => ({ id: d.id, label: d.label })),
             { id: MY_TAB_ID, label: 'Мои записи' },
           ].map((tab) => (
             <button
