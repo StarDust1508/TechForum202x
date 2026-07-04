@@ -28,7 +28,8 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
+import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, EVENT_META, getTrackById, type Session } from '../data';
+import { buildIcsCalendar, formatIcsDateTime } from '@/src/lib/ics';
 import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
@@ -207,6 +208,34 @@ export default function Schedule() {
     });
   }
 
+  // 13.3 — скачать всю программу форума одним файлом .ics (клиентская генерация).
+  const downloadFullProgram = () => {
+    const events = SESSIONS.map((s) => {
+      const day = DAYS.find((d) => d.id === s.dayId);
+      if (!day) return null;
+      return {
+        uid: `${s.id}@techforum2026`,
+        dtstart: formatIcsDateTime(day.date, s.startTime),
+        dtend: formatIcsDateTime(day.date, s.endTime),
+        summary: s.title,
+        description: [s.track, s.speakerName].filter(Boolean).join(' · '),
+        location: s.hall || '',
+        organizer: { name: EVENT_META.name, email: 'info@pravotech.pro' },
+      };
+    }).filter((e): e is NonNullable<typeof e> => e !== null);
+
+    const ics = buildIcsCalendar(events, { name: `${EVENT_META.name} — программа`, timezone: EVENT_META.timezone });
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'techforum2026-program.ics';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
   return (
     <div className="flex-1 pb-24 pt-6 px-5 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
       <BackButton />
@@ -216,7 +245,17 @@ export default function Schedule() {
             <Cpu className="w-3.5 h-3.5" />
             ПРОГРАММА ФОРУМА
           </p>
-          <h1 className="font-elite text-3xl leading-none text-white">Расписание</h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="font-elite text-3xl leading-none text-white">Расписание</h1>
+            <button
+              onClick={downloadFullProgram}
+              aria-label="Скачать всю программу"
+              title="Скачать всю программу"
+              className="shrink-0 flex items-center justify-center w-11 h-11 rounded-2xl bg-[#00ffff]/10 border border-[#00ffff]/30 text-[#00ffff] active:scale-95 transition-transform"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Day tabs + «Мои записи».
