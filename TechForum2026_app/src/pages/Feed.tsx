@@ -16,38 +16,46 @@
 // PREV_CHANGE_SUMMARY: [v3.0.0 - Полный рерайт под "Новости от спикеров".]
 // END_CHANGE_SUMMARY
 
-import { Newspaper, Clock, ChevronRight } from 'lucide-react';
+import { Clock, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { NEWS, getSpeakerById } from '../data';
 import BackButton from '@/src/components/BackButton';
 
 export default function Feed() {
   return (
     <div
-      className="flex-1 px-5 pb-12 relative"
+      className="flex-1 px-5 relative"
       style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
       }}
     >
-      <BackButton />
-
-      <header className="space-y-2 mb-7 mt-2">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold flex items-center gap-2">
-          <Newspaper className="w-3.5 h-3.5" />
-          Новости форума
-        </p>
-        <h1 className="font-elite text-3xl leading-none text-white">Лента</h1>
+      <header className="flex items-center gap-3 mb-7">
+        <BackButton to="/" />
+        <h1
+          className="font-display text-[28px] leading-none font-bold"
+          style={{
+            background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >Лента</h1>
       </header>
 
       <ul className="space-y-3">
-        {NEWS.map((news) => {
+        {NEWS.map((news, idx) => {
           const speaker = news.speakerId ? getSpeakerById(news.speakerId) : undefined;
           return (
-            <li key={news.id}>
+            <motion.li
+              key={news.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: Math.min(idx * 0.04, 0.4), ease: [0.32, 0.72, 0, 1] }}
+            >
               <Link
                 to={`/news/${news.id}`}
-                className="block rounded-2xl border border-white/[0.06] bg-white/[0.02] hover:border-[#00ffff]/20 active:scale-[0.99] transition-all p-5"
+                className="block rounded-2xl border border-border bg-card hover:border-primary/20 active:scale-[0.99] transition-all p-5"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0 space-y-2.5">
@@ -55,44 +63,46 @@ export default function Feed() {
                       {news.isCritical && (
                         <span className="inline-block w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" />
                       )}
-                      <span
-                        className="text-[10px] uppercase tracking-[0.15em] font-bold"
-                        style={{ color: news.isCritical ? '#fca5a5' : '#00ffff' }}
-                      >
-                        {news.type}
-                      </span>
-                      {news.category && (
-                        <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/30">
+                      {!(news.isCritical && news.type === 'Важно') && (
+                        <span
+                          className="text-[10px] uppercase tracking-[0.15em] font-bold"
+                          style={{ color: news.isCritical ? '#fca5a5' : '#00ffff' }}
+                        >
+                          {news.type}
+                        </span>
+                      )}
+                      {news.category && news.category.toLowerCase() !== news.type.toLowerCase() && !news.category.toLowerCase().startsWith(news.type.toLowerCase()) && (
+                        <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-foreground/30">
                           · {news.category}
                         </span>
                       )}
                     </div>
 
-                    <h2 className="text-[15px] font-bold text-white/95 leading-snug">
+                    <h2 className="text-[15px] font-bold text-foreground/95 leading-snug">
                       {news.title}
                     </h2>
 
-                    <p className="text-[12px] text-white/50 leading-relaxed line-clamp-2">
+                    <p className="text-[12px] text-foreground/50 leading-relaxed line-clamp-2">
                       {news.content}
                     </p>
 
                     <div className="flex items-center gap-3 pt-0.5">
                       {speaker && (
-                        <span className="text-[11px] font-semibold text-white/45">
+                        <span className="text-[11px] font-semibold text-foreground/45">
                           {speaker.name}
                         </span>
                       )}
-                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] text-white/30 font-semibold">
+                      <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.12em] text-foreground/30 font-semibold">
                         <Clock className="w-3 h-3" />
                         {news.time}
                       </span>
                     </div>
                   </div>
 
-                  <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0 mt-2" />
+                  <ChevronRight className="w-4 h-4 text-foreground/20 flex-shrink-0 mt-2" />
                 </div>
               </Link>
-            </li>
+            </motion.li>
           );
         })}
       </ul>

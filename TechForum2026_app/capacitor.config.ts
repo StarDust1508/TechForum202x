@@ -5,19 +5,17 @@ const config: CapacitorConfig = {
   appName: 'ТехнологИИ Права',
   webDir: 'dist',
   server: {
-    // androidScheme: 'http' пока бэкенд по cleartext IP. См. ARCHITECTURE.md §8.
-    androidScheme: 'http',
-    cleartext: true,
+    // Бэкенд переведён на HTTPS: https://pravotech.pro/tfapi/v1 (nginx + Let's Encrypt).
+    // WebView-контент отдаётся по https://localhost → mixed-content к HTTPS-API нет.
+    androidScheme: 'https',
     allowNavigation: [
-      '72.56.38.62',
-      '*.72.56.38.62',
+      'tech-pravo.ru',
+      '*.tech-pravo.ru',
       'pravotech.pro',
       '*.pravotech.pro',
     ],
   },
-  android: {
-    allowMixedContent: true,
-  },
+  android: {},
   plugins: {
     // CRITICAL: CapacitorHttp перехватывает fetch/XHR в WebView и пускает их
     // через нативный OkHttp-стек. Это:

@@ -6,7 +6,7 @@ interface HudFrameProps {
   size?: { w: number; h: number };
   className?: string;
   style?: CSSProperties;
-  /** Цвет рамки и свечения. По умолчанию accent. */
+  /** Цвет рамки и свечения. По умолчанию primary. */
   tone?: string;
   /** Полупрозрачная заливка фона рамки. */
   fillOpacity?: number;
@@ -23,7 +23,7 @@ export default function HudFrame({
   size = { w: 112, h: 88 },
   className = '',
   style,
-  tone = '#4ec9c0',
+  tone = '#00ffff',
   fillOpacity = 0.55,
   glow = 10,
 }: HudFrameProps) {
@@ -41,7 +41,7 @@ export default function HudFrame({
       >
         <path
           d={`M${cut} 4 H${w - cut} L${w - 4} ${cut} V${h - cut} L${w - cut + 4} ${h - 4} H${cut * 1.6} L4 ${h - cut} V${cut * 1.2} Z`}
-          fill={`rgba(3,22,28,${fillOpacity})`}
+          fill={`rgba(10,14,23,${fillOpacity})`}
           stroke={tone}
           strokeWidth="1.4"
           strokeLinejoin="round"
@@ -56,8 +56,8 @@ export default function HudFrame({
         />
         <circle cx="2" cy={h * 0.55} r="1.6" fill={tone} />
         <circle cx={w - 2} cy={h * 0.45} r="1.6" fill={tone} />
-        <line x1={w * 0.4} y1="4" x2={w * 0.55} y2="4" stroke="#03161c" strokeWidth="2.5" />
-        <line x1={w * 0.45} y1={h - 4} x2={w * 0.6} y2={h - 4} stroke="#03161c" strokeWidth="2.5" />
+        <line x1={w * 0.4} y1="4" x2={w * 0.55} y2="4" stroke="#0f1118" strokeWidth="2.5" />
+        <line x1={w * 0.45} y1={h - 4} x2={w * 0.6} y2={h - 4} stroke="#0f1118" strokeWidth="2.5" />
         <line x1={w * 0.4} y1="4" x2={w * 0.55} y2="4" stroke={tone} strokeOpacity="0.65" strokeWidth="1.2" />
         <line x1={w * 0.45} y1={h - 4} x2={w * 0.6} y2={h - 4} stroke={tone} strokeOpacity="0.65" strokeWidth="1.2" />
       </svg>

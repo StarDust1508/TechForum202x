@@ -8,7 +8,7 @@
 // сохраняется в push_tokens. После настройки FCM credentials worker
 // сможет рассылать без правок клиента.
 
-import { resolveApiUrl } from './runtimeEndpoint';
+import { resolveApiUrl, authFetch } from './runtimeEndpoint';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
@@ -30,12 +30,29 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     return false;
   }
   try {
-    const { PushNotifications } = await import('@capacitor/push-notifications');
-    const perm = await PushNotifications.checkPermissions();
+    // Dynamic import — will throw if plugin not installed
+    const mod = await import('@capacitor/push-notifications').catch(() => null);
+    if (!mod?.PushNotifications) return false;
+    const { PushNotifications } = mod;
+
+    let perm;
+    try {
+      perm = await PushNotifications.checkPermissions();
+    } catch {
+      // Plugin installed but FCM not configured (no google-services.json)
+      console.warn('[Push] checkPermissions failed — FCM likely not configured');
+      return false;
+    }
+
     let granted = perm.receive === 'granted';
     if (!granted) {
-      const req = await PushNotifications.requestPermissions();
-      granted = req.receive === 'granted';
+      try {
+        const req = await PushNotifications.requestPermissions();
+        granted = req.receive === 'granted';
+      } catch {
+        console.warn('[Push] requestPermissions failed');
+        return false;
+      }
     }
     if (!granted) return false;
 
@@ -51,7 +68,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
           registered = true;
           window.clearTimeout(timeout);
           try {
-            const r = await fetch(resolveApiUrl('/me/push-token'), {
+            const r = await authFetch(resolveApiUrl('/me/push-token'), {
               method: 'POST',
               credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
@@ -73,10 +90,11 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
         }),
       );
       listenerHandles.push(
-        PushNotifications.addListener('registrationError', () => {
+        PushNotifications.addListener('registrationError', (err) => {
           if (registered) return;
           registered = true;
           window.clearTimeout(timeout);
+          console.warn('[Push] registrationError:', err);
           resolve(false);
         }),
       );
@@ -85,9 +103,12 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
         if (!registered) { registered = true; resolve(false); }
       }, 10_000);
 
-      void PushNotifications.register();
+      PushNotifications.register().catch(() => {
+        if (!registered) { registered = true; resolve(false); }
+      });
     });
-  } catch {
+  } catch (e) {
+    console.warn('[Push] registerPushNotifications error:', e);
     return false;
   }
 }
@@ -102,7 +123,7 @@ export async function unregisterPushNotifications(): Promise<void> {
   try { token = localStorage.getItem(TOKEN_LS_KEY); } catch { /* noop */ }
   if (!token) return;
   try {
-    await fetch(resolveApiUrl(`/me/push-token?token=${encodeURIComponent(token)}`), {
+    await authFetch(resolveApiUrl(`/me/push-token?token=${encodeURIComponent(token)}`), {
       method: 'DELETE',
       credentials: 'include',
     });
@@ -121,7 +142,9 @@ export async function attachPushListeners(
 ): Promise<void> {
   if (!isNative()) return;
   try {
-    const { PushNotifications } = await import('@capacitor/push-notifications');
+    const mod = await import('@capacitor/push-notifications').catch(() => null);
+    if (!mod?.PushNotifications) return;
+    const { PushNotifications } = mod;
     if (onForegroundMessage) {
       void PushNotifications.addListener('pushNotificationReceived', (n) => {
         onForegroundMessage({
@@ -136,5 +159,5 @@ export async function attachPushListeners(
         onActionPerformed((a.notification?.data ?? {}) as Record<string, unknown>);
       });
     }
-  } catch { /* plugin not installed yet */ }
+  } catch { /* plugin not installed or FCM not configured */ }
 }

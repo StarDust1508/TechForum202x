@@ -14,9 +14,9 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ScanLine, RefreshCw, Check, X, ContactRound, Camera } from 'lucide-react';
+import { ScanLine, RefreshCw, X, ContactRound, Camera } from 'lucide-react';
 import QRCode from 'qrcode';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, resolveAssetUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import PageShell from '@/src/components/ui/PageShell';
 import Skeleton from '@/src/components/ui/Skeleton';
 import AvatarImage from '@/src/components/ui/AvatarImage';
@@ -59,7 +59,7 @@ export default function MyCard() {
   const refreshCard = async () => {
     setLoadingCard(true);
     try {
-      const r = await fetch(resolveApiUrl('/me/business-card'), { credentials: 'include' });
+      const r = await authFetch(resolveApiUrl('/me/business-card'), { credentials: 'include' });
       if (!r.ok) return;
       const data: CardData = await r.json();
       setCard(data);
@@ -67,7 +67,7 @@ export default function MyCard() {
         type: 'svg',
         errorCorrectionLevel: 'M',
         margin: 1,
-        color: { dark: '#03161c', light: '#ffffff' },
+        color: { dark: '#0f1118', light: '#ffffff' },
         width: 360,
       });
       setQrSvg(svg);
@@ -79,7 +79,7 @@ export default function MyCard() {
   const refreshContacts = async () => {
     setLoadingContacts(true);
     try {
-      const r = await fetch(resolveApiUrl('/me/contacts'), { credentials: 'include' });
+      const r = await authFetch(resolveApiUrl('/me/contacts'), { credentials: 'include' });
       if (r.ok) {
         const data: ContactRow[] = await r.json();
         setContacts(data);
@@ -110,7 +110,7 @@ export default function MyCard() {
   const handleScannedPayload = async (qrPayload: string) => {
     stopScanning();
     try {
-      const r = await fetch(resolveApiUrl('/me/contacts/exchange'), {
+      const r = await authFetch(resolveApiUrl('/me/contacts/exchange'), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -195,7 +195,7 @@ export default function MyCard() {
   return (
     <PageShell kicker="Нетворкинг" title="Моя визитка" subtitle="Покажите QR — другой участник сканирует — у обоих появится контакт">
       {loadingCard ? (
-        <div className="rounded-3xl border border-[#4ec9c0]/30 bg-[#0a2f38]/45 p-6">
+        <div className="rounded-3xl border border-primary/30 bg-card p-6">
           <Skeleton height={360} />
         </div>
       ) : card ? (
@@ -203,15 +203,15 @@ export default function MyCard() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-          className="rounded-3xl border border-[#4ec9c0]/45 bg-gradient-to-b from-[#0a2f38]/65 to-[#03161c]/55 p-6 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.45)]"
+          className="rounded-3xl border border-primary/45 bg-gradient-to-b from-white/[0.06] to-white/[0.02] p-6 space-y-4 shadow-[0_18px_60px_rgba(0,0,0,0.45)]"
         >
           <div className="flex items-center gap-3">
-            <div className="relative w-14 h-14 rounded-full overflow-hidden flex items-center justify-center bg-[#03161c] border border-[#4ec9c0]/45 shrink-0">
-              <AvatarImage src={card.avatar} name={card.name} className="h-full w-full" letterClassName="text-xl" />
+            <div className="relative w-14 h-14 rounded-full overflow-hidden flex items-center justify-center bg-background border border-primary/45 shrink-0">
+              <AvatarImage src={card.avatar ? resolveAssetUrl(card.avatar) : null} name={card.name} className="h-full w-full" letterClassName="text-xl" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee] truncate leading-tight">{card.name}</p>
-              <p className="text-[12px] text-[#7aa8a4] truncate">{card.role || 'Участник'}</p>
+              <p className="font-display text-[18px] font-semibold text-foreground truncate leading-tight">{card.name}</p>
+              <p className="text-[12px] text-foreground/40 truncate">{card.role || 'Участник'}</p>
             </div>
           </div>
 
@@ -246,21 +246,21 @@ export default function MyCard() {
             )}
           </div>
 
-          <p className="text-[11px] text-[#7aa8a4]/85 leading-relaxed text-center">
+          <p className="text-[11px] text-foreground/45 leading-relaxed text-center">
             QR действует 24 часа. После истечения — обновите кнопкой ниже.
           </p>
 
           <button
             type="button"
             onClick={refreshCard}
-            className="w-full flex items-center justify-center gap-2 border border-[#4ec9c0]/35 bg-[#0a2f38]/55 hover:border-[#4ec9c0]/60 text-[#d8f0ee] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] transition-all font-display-cyrl"
+            className="w-full flex items-center justify-center gap-2 border border-primary/35 bg-white/[0.06] hover:border-primary/60 text-foreground py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] transition-all font-display"
           >
-            <RefreshCw className="w-4 h-4 text-[#4ec9c0]" strokeWidth={1.8} />
+            <RefreshCw className="w-4 h-4 text-primary" strokeWidth={1.8} />
             Обновить QR
           </button>
         </motion.div>
       ) : (
-        <div className="rounded-3xl border border-rose-500/40 bg-[#0a2f38]/45 p-6 text-center text-[#d8f0ee]/85">
+        <div className="rounded-3xl border border-rose-500/40 bg-card p-6 text-center text-foreground/85">
           Не удалось получить визитку. Попробуйте позже.
         </div>
       )}
@@ -268,7 +268,7 @@ export default function MyCard() {
       <button
         type="button"
         onClick={startScanning}
-        className="mt-5 w-full flex items-center justify-center gap-2 bg-[#4ec9c0] text-[#03161c] py-4 rounded-2xl text-[13px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] hover:brightness-110 transition-all font-display-cyrl shadow-[0_8px_24px_rgba(78,201,192,0.25)]"
+        className="mt-5 w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-4 rounded-2xl text-[13px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] hover:brightness-110 transition-all font-display shadow-[0_8px_24px_rgba(255,51,153,0.25)]"
       >
         <ScanLine className="w-5 h-5" strokeWidth={2} />
         Сканировать чужой QR
@@ -276,15 +276,15 @@ export default function MyCard() {
 
       {/* Список обмененных контактов */}
       <section className="mt-7 space-y-3">
-        <h3 className="font-display-cyrl text-[11px] uppercase tracking-[0.28em] font-semibold text-[#4ec9c0]/85 px-1 flex items-center gap-2">
+        <h3 className="font-display text-[11px] uppercase tracking-[0.28em] font-semibold text-primary/85 px-1 flex items-center gap-2">
           <ContactRound className="w-3.5 h-3.5" strokeWidth={1.8} />
           Мои контакты
-          {contacts.length > 0 && <span className="font-mono text-[10px] text-[#4ec9c0]/85">· {contacts.length}</span>}
+          {contacts.length > 0 && <span className="font-mono text-[10px] text-primary/85">· {contacts.length}</span>}
         </h3>
         {loadingContacts ? (
           <div className="space-y-2">
             {[0, 1].map((i) => (
-              <div key={i} className="flex items-center gap-3 bg-[#0a2f38]/40 border border-[#4ec9c0]/22 p-3 rounded-2xl">
+              <div key={i} className="flex items-center gap-3 bg-card border border-primary/22 p-3 rounded-2xl">
                 <Skeleton className="rounded-full" width={40} height={40} />
                 <div className="flex-1 space-y-1.5">
                   <Skeleton height={11} width="50%" />
@@ -294,8 +294,8 @@ export default function MyCard() {
             ))}
           </div>
         ) : contacts.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-[#4ec9c0]/25 bg-[#0a2f38]/30 p-6 text-center">
-            <p className="text-[12px] text-[#7aa8a4] leading-relaxed">
+          <div className="rounded-2xl border border-dashed border-primary/25 bg-white/[0.03] p-6 text-center">
+            <p className="text-[12px] text-foreground/40 leading-relaxed">
               Пока пусто. Сканируйте QR-визитки других участников — список начнёт расти.
             </p>
           </div>
@@ -304,19 +304,19 @@ export default function MyCard() {
             {contacts.map((c) => (
               <div
                 key={c.contactId}
-                className="flex items-center gap-3 bg-[#0a2f38]/40 border border-[#4ec9c0]/22 p-3 rounded-2xl"
+                className="flex items-center gap-3 bg-card border border-primary/22 p-3 rounded-2xl"
               >
-                <div className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[#03161c] border border-[#4ec9c0]/35 shrink-0">
-                  <AvatarImage src={c.user?.avatar ?? null} name={c.user?.name ?? '?'} className="h-full w-full" letterClassName="text-sm" />
+                <div className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-background border border-primary/35 shrink-0">
+                  <AvatarImage src={c.user?.avatar ? resolveAssetUrl(c.user.avatar) : null} name={c.user?.name ?? '?'} className="h-full w-full" letterClassName="text-sm" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-display-cyrl text-[13px] font-semibold text-[#d8f0ee] truncate">
+                  <p className="font-display text-[13px] font-semibold text-foreground truncate">
                     {c.user?.name ?? 'Удалённый участник'}
                   </p>
-                  <p className="text-[11px] text-[#7aa8a4] truncate">{c.user?.role ?? ''}</p>
-                  {c.note && <p className="text-[10px] text-[#4ec9c0]/85 truncate mt-0.5">«{c.note}»</p>}
+                  <p className="text-[11px] text-foreground/40 truncate">{c.user?.role ?? ''}</p>
+                  {c.note && <p className="text-[10px] text-primary/85 truncate mt-0.5">«{c.note}»</p>}
                 </div>
-                <span className="font-mono text-[9px] text-[#7aa8a4]/85 uppercase tracking-widest shrink-0">
+                <span className="font-mono text-[9px] text-foreground/45 uppercase tracking-widest shrink-0">
                   {new Date(c.metAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
                 </span>
               </div>
@@ -339,15 +339,15 @@ export default function MyCard() {
             }}
           >
             <div className="flex items-center justify-between px-5 py-3 bg-black/80 z-10">
-              <div className="flex items-center gap-2 text-[#d8f0ee]">
+              <div className="flex items-center gap-2 text-foreground">
                 <Camera className="w-4 h-4" strokeWidth={1.8} />
-                <span className="font-display-cyrl text-[14px] font-semibold">Наведите на QR</span>
+                <span className="font-display text-[14px] font-semibold">Наведите на QR</span>
               </div>
               <button
                 type="button"
                 onClick={stopScanning}
                 aria-label="Закрыть"
-                className="h-9 w-9 rounded-xl border border-white/30 flex items-center justify-center text-white"
+                className="h-9 w-9 rounded-xl border border-foreground/30 flex items-center justify-center text-foreground"
               >
                 <X className="w-4 h-4" strokeWidth={1.8} />
               </button>
@@ -362,7 +362,7 @@ export default function MyCard() {
               />
               {/* Frame guide */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-64 h-64 border-2 border-[#4ec9c0]/85 rounded-2xl shadow-[0_0_36px_rgba(78,201,192,0.5)]" />
+                <div className="w-64 h-64 border-2 border-primary/85 rounded-2xl shadow-[0_0_36px_rgba(255,51,153,0.5)]" />
               </div>
             </div>
             {scanError && (
@@ -379,8 +379,6 @@ export default function MyCard() {
           {scanError}
         </p>
       )}
-      {/* Используем Check для type-only — иначе TS ругается на unused imports */}
-      <span className="hidden"><Check /></span>
     </PageShell>
   );
 }

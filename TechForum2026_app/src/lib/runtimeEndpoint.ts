@@ -69,6 +69,29 @@ export function resolveAssetUrl(pathOrUrl: string | null | undefined): string {
   }
 }
 
+const TOKEN_KEY = 'techforum_session_token';
+
+export function saveSessionToken(token: string): void {
+  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* noop */ }
+}
+
+export function getSessionToken(): string {
+  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
+}
+
+export function clearSessionToken(): void {
+  try { localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ }
+}
+
+export function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  const token = getSessionToken();
+  const headers = new Headers(init?.headers);
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return fetch(url, { ...init, credentials: 'include', headers });
+}
+
 export function resolveWsUrl(path = '/ws'): string {
   const wsEnv = String(import.meta.env.VITE_WS_BASE_URL || '').trim();
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;

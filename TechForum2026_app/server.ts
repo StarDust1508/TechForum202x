@@ -87,9 +87,9 @@ function validateBody<T extends ZodTypeAny>(schema: T) {
     next();
   };
 }
-import { GoogleGenAI } from '@google/genai';
+// api.navy — OpenAI-compatible AI proxy (replaces Gemini)
 import { createServer as createViteServer } from 'vite';
-import { eq, desc, and, or, sql, inArray, lt } from 'drizzle-orm';
+import { eq, desc, asc, and, or, sql, inArray, lt, count } from 'drizzle-orm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -120,7 +120,7 @@ const {
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
   tracks, halls, days, speakers, partners, sessionSpeakers, news, events,
   pushTokens, giveaways, giveawayEntries,
-  faq, contactExchanges,
+  faq, contactExchanges, aiChatMessages,
 } = schemaModule;
 
 // Доменные данные программы (treki, halls, days, speakers, sessions, partners,
@@ -159,6 +159,10 @@ type PublicUser = {
   bio: string;
   phone: string | null;
   role: string;
+  company: string;
+  workplace: string;
+  education: string;
+  birthday: string;
   isPrivate: boolean;
   pushPreviewHidden: boolean;
 };
@@ -172,6 +176,10 @@ function toPublicUser(row: typeof users.$inferSelect): PublicUser {
     bio: row.bio,
     phone: row.phone,
     role: row.role,
+    company: row.company ?? '',
+    workplace: row.workplace ?? '',
+    education: row.education ?? '',
+    birthday: (row as any).birthday ?? '',
     isPrivate: row.isPrivate,
     pushPreviewHidden: row.pushPreviewHidden ?? false,
   };
@@ -359,6 +367,24 @@ async function startServer(): Promise<void> {
   });
   app.use(sessionMiddleware);
 
+  // Bearer-session fallback for CapacitorHttp (native OkHttp has no WebView cookies).
+  // If no session cookie present but Authorization: Bearer <sid> exists, load that session.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    if (req.session?.userId) { next(); return; }
+    const ah = req.header("authorization");
+    if (!ah || !ah.startsWith("Bearer ")) { next(); return; }
+    const sid = ah.slice(7).trim();
+    if (!sid) { next(); return; }
+    sessionStore.get(sid, (err: any, sess: any) => {
+      if (!err && sess && sess.userId) {
+        (req as any)._bearerUserId = sess.userId;
+        if (!req.session) (req as any).session = {};
+        req.session.userId = sess.userId;
+      }
+      next();
+    });
+  });
+
   // ========================================================================
   // WebSocket для DM (Round 4 АРХИТЕКТУРА) — declaration up top чтобы
   // endpoint handlers ниже могли вызывать dmBroadcast.
@@ -498,9 +524,9 @@ async function startServer(): Promise<void> {
     next();
   });
 
-  const geminiApiKey = String(process.env.GEMINI_API_KEY || '').trim();
-  const geminiModel = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash').trim();
-  const gemini = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+  const navyApiKey = String(process.env.NAVY_API_KEY || '').trim();
+  const navyModel = String(process.env.NAVY_MODEL || 'gpt-4.1').trim();
+  const navyBaseUrl = 'https://api.navy/v1';
   const authRateLimit = createRateLimiter(30, 60_000);
   const writeRateLimit = createRateLimiter(60, 60_000); // posts/comments/statuses
   const forgotRateLimit = createRateLimiter(5, 60_000);  // forgot-password старт
@@ -739,50 +765,161 @@ async function startServer(): Promise<void> {
     return eventContextCache;
   }
 
-  const SYSTEM_INSTRUCTION = `Ты — AI-ассистент конференции TechForum 2026. Отвечай по-русски, кратко (2-4 предложения) и по делу. Используй ТОЛЬКО факты из контекста программы ниже, не выдумывай сессий и спикеров. Если вопрос вне программы — говори "не нашёл этого в программе" и предлагай ближайшую релевантную сессию из контекста.`;
+  function buildSystemInstruction(): string {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Saratov' });
+    const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Saratov' });
+    return [
+      'Ты — AI-ассистент конференции TechForum 2026 от «Технологии Права».',
+      `Сегодня: ${dateStr}, текущее время: ${timeStr} (Europe/Saratov).`,
+      '',
+      '## Что ты умеешь:',
+      '1. **Навигация по программе** — подсказать какие сессии идут сейчас, скоро, или по конкретной теме/спикеру.',
+      '2. **Рекомендации** — подобрать сессии по интересам участника (AI, Legal Tech, кибербез, и т.д.).',
+      '3. **Информация о спикерах** — био, тема доклада, когда и где выступает.',
+      '4. **Практическая помощь** — залы, вместимость, расписание по дням, форматы сессий.',
+      '5. **Нетворкинг** — подсказать к кому подойти на основе тематики, предложить сессии для знакомств.',
+      '',
+      '## Правила:',
+      '- Отвечай по-русски, кратко (2-5 предложений), дружелюбно и по делу.',
+      '- Используй ТОЛЬКО факты из контекста программы ниже. Не выдумывай сессий и спикеров.',
+      '- Если вопрос вне программы — скажи что не нашёл и предложи ближайшую релевантную сессию.',
+      '- Используй эмодзи умеренно для дружелюбности.',
+      '- При перечислении сессий указывай: название, время, зал, спикера.',
+      '- Не путай даты: если тебя спросят какое сегодня число, используй дату из строки выше.',
+      '- Если форум ещё не начался — скажи сколько дней осталось.',
+      '- Если форум уже идёт — подсказывай что сейчас и что дальше по расписанию.',
+      '- Если аудио-сообщение прислали в виде текста (транскрипция) — отвечай на содержание, не комментируй формат.',
+    ].join('\n');
+  }
+
+  // GET /ai/history — последние 200 сообщений AI-чата текущего пользователя.
+  api.get('/ai/history', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req)!;
+    const rows = await db.select({
+      id: aiChatMessages.id,
+      role: aiChatMessages.role,
+      text: aiChatMessages.text,
+      createdAt: aiChatMessages.createdAt,
+    })
+      .from(aiChatMessages)
+      .where(eq(aiChatMessages.userId, userId))
+      .orderBy(asc(aiChatMessages.createdAt))
+      .limit(200);
+    res.json(rows);
+  });
 
   api.post('/ai/chat', aiRateLimit, requireAuth, validateBody(aiChatSchema), async (req, res) => {
     const { message, context: userContext } = req.body as import('./src/lib/validation.js').AiChatBody;
 
-    if (!gemini) {
+    if (!navyApiKey) {
       res.status(503).json({ error: 'ai_not_configured' });
       return;
     }
 
     const eventContext = buildEventContext();
-    const prompt = [
-      SYSTEM_INSTRUCTION,
+    const systemPrompt = [
+      buildSystemInstruction(),
       '',
       '=== КОНТЕКСТ ПРОГРАММЫ ===',
       eventContext,
       '=== КОНЕЦ КОНТЕКСТА ===',
-      userContext ? `\nДополнительный контекст пользователя:\n${userContext}` : '',
-      `\nВопрос пользователя: ${message}`,
     ].join('\n');
 
-    // SECURITY/RELIABILITY (P0): timeout 15s. Раньше fetch к Gemini без
-    // AbortController мог висеть часы и держать pg-pool connection — при
-    // массовом отказе Gemini сервер падал в pool exhaustion.
+    const messages = [
+      { role: 'system', content: systemPrompt },
+    ];
+    if (userContext) {
+      messages.push({ role: 'system', content: `Дополнительный контекст: ${userContext}` });
+    }
+    messages.push({ role: 'user', content: message });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+
     try {
-      const result = await Promise.race([
-        gemini.models.generateContent({
-          model: geminiModel,
-          contents: prompt,
+      const resp = await fetch(`${navyBaseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${navyApiKey}`,
+        },
+        body: JSON.stringify({
+          model: navyModel,
+          messages,
+          max_tokens: 1024,
+          temperature: 0.7,
         }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('ai_timeout')), 15_000),
-        ),
-      ]);
-      const text = typeof result.text === 'string' ? result.text.trim() : '';
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => '');
+        log.error('ai', 'navy api error', { status: resp.status, body: errBody });
+        res.status(502).json({ error: 'ai_unavailable' });
+        return;
+      }
+
+      const data = await resp.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const text = data.choices?.[0]?.message?.content?.trim() || '';
       if (!text) {
         res.status(502).json({ error: 'ai_empty_response' });
         return;
       }
+
+      // Persist both user message and bot response to DB (fire-and-forget,
+      // don't block the response on DB write).
+      const userId = getSessionUserId(req)!;
+      const userMsgId = crypto.randomUUID();
+      const botMsgId = crypto.randomUUID();
+      const now = new Date();
+      db.insert(aiChatMessages).values([
+        { id: userMsgId, userId, role: 'user', text: message, createdAt: now },
+        { id: botMsgId, userId, role: 'bot', text, createdAt: new Date(now.getTime() + 1) },
+      ]).catch((err: any) => log.error('ai', 'failed to persist ai chat', { err: String(err) }));
+
       res.json({ text });
-    } catch (error) {
-      const isTimeout = String(error).includes('ai_timeout');
-      log.error('ai', isTimeout ? 'chat timeout' : 'chat error', { err: String(error) });
-      res.status(isTimeout ? 504 : 502).json({ error: isTimeout ? 'ai_timeout' : 'ai_unavailable' });
+    } catch (error: any) {
+      clearTimeout(timeout);
+      const isAbort = error?.name === 'AbortError';
+      log.error('ai', isAbort ? 'chat timeout' : 'chat error', { err: String(error) });
+      res.status(isAbort ? 504 : 502).json({ error: isAbort ? 'ai_timeout' : 'ai_unavailable' });
+    }
+  });
+
+  api.post('/ai/transcribe', aiRateLimit, requireAuth, upload.single('audio'), async (req, res) => {
+    if (!navyApiKey) {
+      res.status(503).json({ error: 'ai_not_configured' });
+      return;
+    }
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) {
+      res.status(400).json({ error: 'no_audio_file' });
+      return;
+    }
+    try {
+      const fileBuffer = fs.readFileSync(file.path);
+      const formData = new FormData();
+      formData.append('file', new Blob([fileBuffer], { type: file.mimetype || 'audio/webm' }), file.originalname || 'audio.webm');
+      formData.append('model', 'whisper-1');
+      formData.append('language', 'ru');
+      const resp = await fetch(`${navyBaseUrl}/audio/transcriptions`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${navyApiKey}` },
+        body: formData,
+      });
+      try { fs.unlinkSync(file.path); } catch { /* cleanup */ }
+      if (!resp.ok) {
+        res.status(502).json({ error: 'transcription_failed' });
+        return;
+      }
+      const data = await resp.json() as { text?: string };
+      res.json({ text: data.text || '' });
+    } catch (error: any) {
+      try { if (file.path) fs.unlinkSync(file.path); } catch { /* cleanup */ }
+      log.error('ai', 'transcription error', { err: String(error) });
+      res.status(502).json({ error: 'transcription_error' });
     }
   });
 
@@ -831,7 +968,7 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'user_create_failed' });
       return;
     }
-    res.json({ ...toPublicUser(created), interestsCount: 0 });
+    res.json({ ...toPublicUser(created), interestsCount: 0, token: req.sessionID });
   });
 
   // Per-account brute-force lockout. Счётчик неудачных попыток на email,
@@ -886,7 +1023,7 @@ async function startServer(): Promise<void> {
       .select({ count: sql<number>`count(*)::int` })
       .from(userInterests)
       .where(eq(userInterests.userId, user.id));
-    res.json({ ...toPublicUser(user), interestsCount: interestRows[0]?.count ?? 0 });
+    res.json({ ...toPublicUser(user), interestsCount: interestRows[0]?.count ?? 0, token: req.sessionID });
   });
 
   // logout без rate-limit: один и тот же клиент может тыкнуть N раз — это
@@ -927,7 +1064,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const { name, bio, phone, email: emailRaw, pushPreviewHidden } = req.body as import('./src/lib/validation.js').AuthMePatchBody;
+    const { name, bio, phone, email: emailRaw, pushPreviewHidden, company, workplace, education, birthday } = req.body as any;
 
     let nextEmail = user.email;
     if (emailRaw && emailRaw !== user.email) {
@@ -944,6 +1081,10 @@ async function startServer(): Promise<void> {
       bio: bio ?? user.bio,
       phone: phone ?? user.phone,
       email: nextEmail,
+      company: company ?? (user as any).company ?? '',
+      workplace: workplace ?? (user as any).workplace ?? '',
+      education: education ?? (user as any).education ?? '',
+      birthday: birthday ?? (user as any).birthday ?? '',
       pushPreviewHidden: pushPreviewHidden ?? user.pushPreviewHidden,
     }).where(eq(users.id, user.id));
 
@@ -952,7 +1093,9 @@ async function startServer(): Promise<void> {
       res.status(500).json({ error: 'user_update_failed' });
       return;
     }
-    res.json(toPublicUser(updated));
+    // Include interestsCount so frontend doesn't lose it and redirect to onboarding
+    const interestRows = await db.select({ count: count() }).from(userInterests).where(eq(userInterests.userId, user.id));
+    res.json({ ...toPublicUser(updated), interestsCount: interestRows[0]?.count ?? 0 });
   });
 
   // ========================================================================
@@ -1680,6 +1823,25 @@ async function startServer(): Promise<void> {
       res.json({ url: signMediaUrl(`/uploads/dm/${finalName}`), type: detected.type });
     },
   );
+
+  // GET /users/list?q=... — public list of attendees (auth-only).
+  // IMPORTANT: must be declared BEFORE /users/:id to avoid Express matching "list" as :id.
+  api.get('/users/list', requireAuth, async (req, res) => {
+    const q = String(req.query.q ?? '').trim().toLowerCase();
+    const me = getSessionUserId(req)!;
+    let rows = await db.select().from(users);
+    rows = rows.filter((u) => u.id !== me && !u.isPrivate);
+    if (q) {
+      rows = rows.filter((u) =>
+        u.name.toLowerCase().includes(q) ||
+        u.role.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        (u.company ?? '').toLowerCase().includes(q),
+      );
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    res.json(rows.slice(0, 200).map((u) => toPublicUser(u)));
+  });
 
   // GET /users/:id — публичный профиль участника. Возвращает поля, которые
   // другой юзер видит при тапе на иконку в чате: имя, роль, аватар, био.
@@ -2511,31 +2673,6 @@ async function startServer(): Promise<void> {
       answer: r.answer,
       category: r.category,
     })));
-  });
-
-  // ========================================================================
-  // ATTENDEES — раздел «Участники» (Round 6).
-  // ========================================================================
-  // GET /users/list?q=... — paginated public list (только с auth, чтобы не
-  // отдавать всю базу email-ов скрейперам). Возвращает только public-fields
-  // (id, name, role, avatar). Поисковая строка q — substring по name/role/email.
-  // limit 100, без курсора (на small-scale форум этого хватает).
-  api.get('/users/list', requireAuth, async (req, res) => {
-    const q = String(req.query.q ?? '').trim().toLowerCase();
-    const me = getSessionUserId(req)!;
-    let rows = await db.select().from(users);
-    // Не показываем себя в списке + private-юзеров.
-    rows = rows.filter((u) => u.id !== me && !u.isPrivate);
-    if (q) {
-      rows = rows.filter((u) =>
-        u.name.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q),
-      );
-    }
-    // Сорт по имени, лимит 200 (страница покажет паджинацию если станет тесно).
-    rows.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    res.json(rows.slice(0, 200).map((u) => toPublicUser(u)));
   });
 
   // ========================================================================

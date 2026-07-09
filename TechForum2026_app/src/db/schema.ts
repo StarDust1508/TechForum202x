@@ -40,7 +40,7 @@
 //                       days, speakers, session_speakers, partners.]
 // END_CHANGE_SUMMARY
 
-import { pgTable, text, integer, boolean, timestamp, primaryKey, index, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, boolean, timestamp, primaryKey, index, varchar, jsonb } from 'drizzle-orm/pg-core';
 
 // ============================================================================
 // AUTH
@@ -57,7 +57,12 @@ export const users = pgTable(
     bio: text('bio').notNull().default(''),
     phone: text('phone'),
     role: text('role').notNull().default('Участник'),
+    company: text('company').notNull().default(''),
+    workplace: text('workplace').notNull().default(''),
+    education: text('education').notNull().default(''),
+    birthday: text('birthday').notNull().default(''),
     isPrivate: boolean('is_private').notNull().default(false),
+    pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -227,6 +232,7 @@ export const registrations = pgTable(
   {
     userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     sessionId: text('session_id').notNull().references(() => sessionsEvent.id, { onDelete: 'cascade' }),
+    reminderSentAt: timestamp('reminder_sent_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -255,5 +261,209 @@ export const userInterests = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.interestId] }),
     userIdx: index('user_interests_user_idx').on(t.userId),
+  }),
+);
+
+// ============================================================================
+// PASSWORD RESET TOKENS
+// ============================================================================
+
+export const passwordResetTokens = pgTable('password_reset_tokens', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  attempts: integer('attempts').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// DIRECT MESSAGES
+// ============================================================================
+
+export const directMessages = pgTable(
+  'direct_messages',
+  {
+    id: text('id').primaryKey(),
+    fromUserId: text('from_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    toUserId: text('to_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    text: text('text'),
+    mediaUrl: text('media_url'),
+    mediaType: varchar('media_type', { length: 32 }),
+    replyToId: text('reply_to_id'),
+    forwardedFromUserId: text('forwarded_from_user_id'),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    fromIdx: index('dm_from_idx').on(t.fromUserId),
+    toIdx: index('dm_to_idx').on(t.toUserId),
+  }),
+);
+
+export const dmPins = pgTable(
+  'dm_pins',
+  {
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    partnerUserId: text('partner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    messageId: text('message_id').notNull().references(() => directMessages.id, { onDelete: 'cascade' }),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.messageId] }),
+  }),
+);
+
+// ============================================================================
+// NOTES (личные заметки участника)
+// ============================================================================
+
+export const notes = pgTable('notes', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: text('title').notNull().default(''),
+  body: text('body').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// NEWS & EVENTS
+// ============================================================================
+
+export const news = pgTable('news', {
+  id: text('id').primaryKey(),
+  type: varchar('type', { length: 32 }).notNull().default('news'),
+  title: text('title').notNull(),
+  content: text('content'),
+  body: text('body').notNull(),
+  time: text('time'),
+  isCritical: boolean('is_critical').notNull().default(false),
+  category: varchar('category', { length: 64 }),
+  imageUrl: text('image_url'),
+  speakerId: text('speaker_id'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const events = pgTable('events', {
+  id: text('id').primaryKey(),
+  slug: varchar('slug', { length: 128 }).notNull().unique(),
+  name: text('name').notNull(),
+  title: text('title').notNull(),
+  description: text('description'),
+  city: text('city'),
+  timezone: varchar('timezone', { length: 64 }),
+  organizer: text('organizer'),
+  url: text('url'),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  location: text('location'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// PUSH NOTIFICATIONS
+// ============================================================================
+
+export const pushTokens = pgTable(
+  'push_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    platform: varchar('platform', { length: 16 }).notNull().default('android'),
+    deviceLabel: text('device_label'),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+);
+
+// ============================================================================
+// GIVEAWAYS
+// ============================================================================
+
+export const giveaways = pgTable('giveaways', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  category: varchar('category', { length: 64 }).notNull().default('general'),
+  item: text('item').notNull().default(''),
+  iconKey: varchar('icon_key', { length: 32 }),
+  gradient: text('gradient'),
+  description: text('description'),
+  condition: text('condition'),
+  imageUrl: text('image_url'),
+  endTime: text('end_time'),
+  endsAt: timestamp('ends_at', { withTimezone: true }),
+  featured: boolean('featured').notNull().default(false),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  winnerId: text('winner_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const giveawayEntries = pgTable(
+  'giveaway_entries',
+  {
+    giveawayId: text('giveaway_id').notNull().references(() => giveaways.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.giveawayId, t.userId] }),
+  }),
+);
+
+// ============================================================================
+// FAQ
+// ============================================================================
+
+export const faq = pgTable('faq', {
+  id: text('id').primaryKey(),
+  category: varchar('category', { length: 64 }).notNull().default('general'),
+  question: text('question').notNull(),
+  answer: text('answer').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+});
+
+// ============================================================================
+// AI CHAT MESSAGES (серверная персистенция диалогов с AI-ассистентом)
+// ============================================================================
+
+export const aiChatMessages = pgTable(
+  'ai_chat_messages',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role').notNull(), // 'user' | 'bot'
+    text: text('text').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('ai_chat_messages_user_idx').on(t.userId),
+  }),
+);
+
+// ============================================================================
+// CONTACT EXCHANGES (QR-визитка)
+// ============================================================================
+
+export const contactExchanges = pgTable(
+  'contact_exchanges',
+  {
+    ownerId: text('owner_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    contactId: text('contact_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    note: text('note').notNull().default(''),
+    metAt: timestamp('met_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.ownerId, t.contactId] }),
   }),
 );

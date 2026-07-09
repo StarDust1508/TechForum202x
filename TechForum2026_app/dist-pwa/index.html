@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1118" />
+    <meta name="color-scheme" content="dark" />
+
+    <title>TechForum 2026</title>
+    <meta name="description" content="Мобильное приложение конференции TechForum 2026 — программа, спикеры, чат, билет и расписание сессий." />
+
+    <link rel="icon" type="image/png" href="./favicon-32x32.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+
+    <!-- Шрифты self-hosted из /fonts/. См. src/index.css → @import '/fonts/local-fonts.css'.
+         Раньше тут был блокирующий <link> к fonts.googleapis.com — на cold-start
+         WebView ждал DNS+TLS до Google перед первым рендером. Теперь весь
+         типографический набор (Manrope/Forum/Cinzel/JetBrains Mono, cyrillic+latin)
+         внутри APK, грузится мгновенно даже offline. -->
+
+    <!-- iOS PWA support: позволяет «Добавить на главный экран» в Safari выглядеть как нативное приложение -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="TechForum" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="./icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png" />
+
+    <!-- DIAG: SW регистрация ОТКЛЮЧЕНА. Дополнительно агрессивно
+         unregister'им все ранее установленные SW и чистим caches —
+         старый SW из предыдущих APK переживает переустановку
+         (WebView хранит SW-state отдельно) и режет fetch'и. -->
+    <script>
+      (async function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) { try { await r.unregister(); } catch (_) {} }
+          }
+          if (typeof caches !== 'undefined' && caches.keys) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k).catch(() => false)));
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/app/assets/index-D1TLuCjY.js"></script>
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-react-wq6RmBHl.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-Dn8XMqew.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-motion-DyyXAzxT.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-icons-DSvG1Gvm.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-router-eYwTNZHj.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-audio-mbuv27iw.js">
+    <link rel="modulepreload" crossorigin href="/app/assets/vendor-qr-DuytY_tx.js">
+    <link rel="stylesheet" crossorigin href="/app/assets/index-D05OVvRk.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

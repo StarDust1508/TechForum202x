@@ -28,16 +28,17 @@
 // PREV_CHANGE_SUMMARY: [v2.0.0 - ID-based фильтрация, цветные track-pills.]
 // END_CHANGE_SUMMARY
 
-import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, type Session } from '../data';
-import { MapPin, Filter, Cpu, Calendar, AlertTriangle, Download, X } from 'lucide-react';
+import { SESSIONS, TRACKS, HALLS, DAYS, SPEAKERS, getTrackById, EVENT_META, type Session } from '../data';
+import { MapPin, Filter, Calendar, AlertTriangle, Download, X, Building, Coffee, Wifi, Phone, Info, Navigation, Map as MapIcon } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import BackButton from '@/src/components/BackButton';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 
 const MY_TAB_ID = 'my';
 const RECOMMENDED_TAB_ID = 'recommended';
+const MAP_TAB_ID = 'map';
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
 
 /**
@@ -95,7 +96,7 @@ export default function Schedule() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
+        const res = await authFetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled && Array.isArray(data?.interestIds)) {
@@ -114,7 +115,7 @@ export default function Schedule() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
+        const res = await authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (!cancelled && Array.isArray(data?.sessionIds)) {
@@ -136,7 +137,7 @@ export default function Schedule() {
   async function persistRegistration(sessionId: string, register: boolean): Promise<void> {
     try {
       const url = resolveApiUrl(`/sessions/${sessionId}/register`);
-      await fetch(url, { method: register ? 'POST' : 'DELETE', credentials: 'include' });
+      await authFetch(url, { method: register ? 'POST' : 'DELETE', credentials: 'include' });
     } catch (e) {
       // network error — пишем в localStorage как fallback
       console.error('[Schedule] register failed (offline)', e);
@@ -183,6 +184,7 @@ export default function Schedule() {
   // Latin рассинхроном. Сейчас сравниваем строго по hallId.
   const isMyTab = selectedDayId === MY_TAB_ID;
   const isRecommendedTab = selectedDayId === RECOMMENDED_TAB_ID;
+  const isMapTab = selectedDayId === MAP_TAB_ID;
   const myInterestSet = new Set<string>(myInterestIds);
 
   let filteredSessions = SESSIONS.filter(s => {
@@ -208,204 +210,339 @@ export default function Schedule() {
   }
 
   return (
-    <div className="flex-1 pb-24 pt-6 px-5 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-      <header className="space-y-6">
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold flex items-center gap-2">
-            <Cpu className="w-3.5 h-3.5" />
-            ПРОГРАММА ФОРУМА
-          </p>
-          <h1 className="font-elite text-3xl leading-none text-white">Расписание</h1>
-        </div>
+    <div className="flex-1 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
+      {/* Sticky header with title + day tabs */}
+      <div className="sticky top-0 z-20 bg-background border-b border-white/[0.06] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]">
+        <div className="px-5 pt-4 pb-4 space-y-4">
+          <div className="flex items-center gap-3">
+            <BackButton />
+            <h1
+            className="font-display text-[28px] leading-none font-bold"
+            style={{
+              background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}
+          >
+            Программа
+          </h1>
+          </div>
 
-        {/* Day tabs.
-            BUG_FIX_CONTEXT: По требованию заказчика добавлен таб "Recommended"
-            между "20 мая" и "21 мая" — ранжирует сессии по интересам юзера.
-            Таб "Мои записи" остаётся справа. */}
-        <div className="flex bg-[#111827] p-1.5 rounded-[1.75rem] border border-card-border shadow-inner">
-          {[
-            ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
-            { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
-            ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
-            { id: MY_TAB_ID, label: 'Мои записи' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setSelectedDayId(tab.id)}
-              className={cn(
-                'flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest leading-none transition-all',
-                selectedDayId === tab.id
-                  ? 'bg-accent text-surface shadow-xl shadow-accent/20'
-                  : 'text-muted hover:text-primary',
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {/* Day tabs — compact horizontal scroll */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide -mx-5 px-5">
+            {[
+              ...(DAYS[0] ? [{ id: DAYS[0].id, label: DAYS[0].label }] : []),
+              { id: RECOMMENDED_TAB_ID, label: 'Для меня' },
+              ...DAYS.slice(1).map(d => ({ id: d.id, label: d.label })),
+              { id: MY_TAB_ID, label: 'Мои' },
+              { id: MAP_TAB_ID, label: 'Схема' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedDayId(tab.id)}
+                className={cn(
+                  'px-4 py-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all',
+                  selectedDayId === tab.id
+                    ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                    : 'bg-white/[0.04] text-foreground/45 border border-white/[0.06]',
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
+      </div>
 
-        {/* «Скачать всю мою программу в календарь» — показываем только в табе "Мои записи" */}
+      {/* Map tab — venue schema */}
+      {isMapTab && (
+        <div className="px-5 pt-5 space-y-6">
+          <p className="text-[13px] text-foreground/40">{EVENT_META.location}, {EVENT_META.city}</p>
+
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+            className="aspect-[4/5] rounded-2xl border border-primary/15 bg-background relative overflow-hidden"
+          >
+            <div className="absolute inset-0 opacity-[0.04]" style={{
+              backgroundImage: 'linear-gradient(rgba(0,255,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,255,0.4) 1px, transparent 1px)',
+              backgroundSize: '40px 40px',
+            }} />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(0,255,255,0.08),transparent_60%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_70%,rgba(255,51,153,0.05),transparent_50%)]" />
+
+            <div className="absolute inset-6 flex flex-col gap-3">
+              <div className="flex-[3] rounded-xl border border-primary/20 bg-primary/[0.03] flex items-center justify-center relative">
+                <div className="absolute top-2 left-3 text-[8px] uppercase tracking-[0.2em] text-primary/40 font-bold">Главный зал</div>
+                <div className="text-center">
+                  <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-2">
+                    <MapPin className="w-6 h-6 text-primary" />
+                  </div>
+                  <p className="text-[10px] text-foreground/50 font-semibold">600 мест</p>
+                </div>
+              </div>
+              <div className="flex gap-3 flex-[2]">
+                <div className="flex-1 rounded-xl border border-[#ff3399]/15 bg-[#ff3399]/[0.03] flex items-center justify-center">
+                  <div className="text-center">
+                    <p className="text-[9px] uppercase tracking-[0.15em] text-[#ff3399]/50 font-bold">Альфа</p>
+                    <p className="text-[10px] text-foreground/40 mt-0.5">220 мест</p>
+                  </div>
+                </div>
+                <div className="flex-1 rounded-xl border border-[#a855f7]/15 bg-[#a855f7]/[0.03] flex items-center justify-center">
+                  <div className="text-center">
+                    <p className="text-[9px] uppercase tracking-[0.15em] text-[#a855f7]/50 font-bold">Бета</p>
+                    <p className="text-[10px] text-foreground/40 mt-0.5">180 мест</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-[1] rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center gap-6">
+                <div className="flex items-center gap-1.5 text-[9px] text-foreground/30 uppercase tracking-wider">
+                  <Coffee className="w-3 h-3" /> Фойе
+                </div>
+                <div className="flex items-center gap-1.5 text-[9px] text-foreground/30 uppercase tracking-wider">
+                  <Building className="w-3 h-3" /> Выставка
+                </div>
+              </div>
+            </div>
+
+            <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-white/[0.06]">
+              <Navigation className="w-3 h-3 text-primary/50" />
+              <span className="text-[8px] text-foreground/30 font-mono tracking-wide">51.5339°N 46.0014°E</span>
+            </div>
+          </motion.div>
+
+          <section className="space-y-3">
+            <h3 className="text-[11px] uppercase tracking-[0.2em] text-foreground/40 font-bold">Инфраструктура</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Выставка', icon: Building, desc: 'Фойе, этаж 1', accent: '#00ffff' },
+                { label: 'Кофе-брейк', icon: Coffee, desc: 'Правое крыло', accent: '#ff3399' },
+                { label: 'Wi-Fi', icon: Wifi, desc: 'TF_Guests', accent: '#00ffff' },
+                { label: 'Поддержка', icon: Phone, desc: 'Стойка регистрации', accent: '#ff3399' },
+              ].map((item, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: 0.15 + i * 0.06, ease: [0.32, 0.72, 0, 1] }}
+                  className="bg-white/[0.03] border border-white/[0.06] p-4 rounded-2xl flex items-center gap-3"
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${item.accent}10`, borderColor: `${item.accent}20` }}>
+                    <item.icon className="w-5 h-5" style={{ color: item.accent }} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-bold text-foreground/90 truncate">{item.label}</div>
+                    <div className="text-[10px] text-foreground/40 truncate">{item.desc}</div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </section>
+
+          <section className="bg-primary/[0.05] border border-primary/15 p-5 rounded-2xl flex items-start gap-4">
+            <div className="w-11 h-11 bg-primary rounded-xl flex items-center justify-center shrink-0">
+              <Info className="w-5 h-5 text-[#0f1118]" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-bold text-foreground/90 text-[13px]">Регистрация</h4>
+              <p className="text-[11px] text-foreground/50 leading-relaxed">Стойка у главного входа. Получите бейдж и стартовый пакет до 10:00 первого дня.</p>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* Filters + content */}
+      {!isMapTab && <div className="px-5 pt-4 space-y-4">
+        {/* Download all — only in "Мои" tab */}
         {selectedDayId === MY_TAB_ID && registeredIds.length > 0 && (
-          <a
-            href={resolveApiUrl('/sessions/calendar')}
-            download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#00ffff]/10 border border-[#00ffff]/30 text-[#00ffff] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+          <button
+            type="button"
+            onClick={async () => {
+              const r = await authFetch(resolveApiUrl('/sessions/calendar'), { credentials: 'include' });
+              if (!r.ok) return;
+              const blob = await r.blob();
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'techforum2026-my.ics';
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+            className="flex items-center justify-center gap-2 bg-accent/[0.08] border border-accent/20 text-accent py-3 rounded-2xl text-[12px] font-semibold active:scale-[0.98] transition-transform w-full"
           >
             <Download className="w-4 h-4" />
-            Все мои сессии в календарь
-          </a>
+            Скачать всё в календарь
+          </button>
         )}
 
-        {/* Hall filter pills */}
-        <div className="flex gap-3 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все залы' }, ...HALLS.map(h => ({ id: h.id, name: h.name }))].map((h) => {
-            const active = activeHallId === h.id;
-            return (
+        {/* Combined filter row: halls + tracks */}
+        <div className="space-y-2.5">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-5 px-5 pb-1">
+            {[{ id: 'all', name: 'Все залы' }, ...HALLS.map(h => ({ id: h.id, name: h.name }))].map((h) => (
               <button
                 key={h.id}
                 onClick={() => setActiveHallId(h.id)}
                 className={cn(
-                  'px-6 py-3 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none',
-                  active ? 'bg-primary border-primary text-surface' : 'bg-surface border-card-border text-muted/60',
+                  'px-3.5 py-2 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all',
+                  activeHallId === h.id
+                    ? 'bg-white/90 text-[#0f1118]'
+                    : 'text-foreground/35 border border-white/[0.08]',
                 )}
               >
                 {h.name}
               </button>
-            );
-          })}
-        </div>
-
-        {/* Track filter pills */}
-        <div className="flex gap-2 overflow-x-auto scrollbar-hide py-1 -mx-6 px-6">
-          {[{ id: 'all', name: 'Все треки', color: '#00ffff' }, ...TRACKS.map(t => ({ id: t.id, name: t.name, color: t.color }))].map((t) => {
-            const active = activeTrackId === t.id;
-            return (
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-5 px-5 pb-1">
+            {[{ id: 'all', name: 'Все', color: '#00ffff' }, ...TRACKS.map(t => ({ id: t.id, name: t.shortLabel || t.name, color: t.color }))].map((t) => (
               <button
                 key={t.id}
                 onClick={() => setActiveTrackId(t.id)}
                 className={cn(
-                  'px-4 py-2 rounded-2xl text-[10px] font-black whitespace-nowrap border uppercase tracking-widest leading-none transition-all',
-                  active ? 'text-surface' : 'bg-surface text-muted/70 border-card-border',
+                  'px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all',
+                  activeTrackId === t.id ? 'text-[#0f1118]' : 'text-foreground/35 border border-white/[0.06]',
                 )}
-                style={active ? { backgroundColor: t.color, borderColor: t.color, boxShadow: `0 0 18px ${t.color}55` } : undefined}
+                style={activeTrackId === t.id ? { backgroundColor: t.color, boxShadow: `0 0 12px ${t.color}44` } : undefined}
               >
                 {t.name}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </header>
 
-      <div className="space-y-5">
-        <div>
-          {filteredSessions.map((session) => {
+        {/* Session cards — clean timeline design */}
+        <div className="space-y-3 pt-1">
+          {filteredSessions.map((session, idx) => {
             const track = getTrackById(session.trackId);
             const trackColor = track?.color ?? '#00ffff';
             const isRegistered = registeredIds.includes(session.id);
             const isCommonFormat = session.format === 'break' || session.format === 'opening' || session.format === 'closing';
+            const formatLabel = session.format === 'workshop' ? 'Воркшоп' : session.format === 'panel' ? 'Панель' : session.format === 'keynote' ? 'Keynote' : session.format === 'break' ? 'Перерыв' : 'Доклад';
 
             return (
-              <div
+              <motion.div
                 key={session.id}
-                className="mb-5 bg-[#111827]/40 backdrop-blur-xl border border-card-border p-6 rounded-3xl space-y-5 hover:border-accent/40 group relative overflow-hidden circuit-border"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: idx * 0.03, ease: [0.32, 0.72, 0, 1] }}
+                className={cn(
+                  'rounded-2xl border p-4 space-y-3 relative overflow-hidden transition-all',
+                  isRegistered
+                    ? 'bg-primary/[0.06] border-primary/25'
+                    : 'bg-card/80 border-white/[0.06]',
+                )}
               >
+                {/* Track color accent line */}
                 <div
-                  className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
-                  style={{ backgroundColor: trackColor, boxShadow: `0 0 12px ${trackColor}88` }}
+                  className="absolute left-0 top-0 bottom-0 w-[3px]"
+                  style={{ backgroundColor: trackColor }}
                 />
 
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2 text-sm font-bold text-accent">
-                    <div className="w-1.5 h-1.5 bg-accent rounded-full" />
-                    <span className="font-mono tracking-tighter text-primary/80">
-                      {session.startTime} — {session.endTime}
+                {/* Time + status row */}
+                <div className="flex items-center justify-between pl-3">
+                  <span className="font-mono text-[13px] font-semibold text-foreground/70 tracking-tight">
+                    {session.startTime}–{session.endTime}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {session.status === 'Live' && (
+                      <span className="bg-red-500/15 text-red-400 text-[9px] font-bold px-2.5 py-1 rounded-full border border-red-500/20 uppercase tracking-wider animate-pulse">
+                        Live
+                      </span>
+                    )}
+                    <span
+                      className="text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-md"
+                      style={{ color: trackColor, backgroundColor: `${trackColor}15` }}
+                    >
+                      {formatLabel}
                     </span>
                   </div>
-                  {session.status === 'Live' && (
-                    <span className="bg-red-500/10 text-red-500 text-[10px] font-black px-3 py-1 rounded-full border border-red-500/20 uppercase tracking-widest">
-                      В ЭФИРЕ
-                    </span>
-                  )}
                 </div>
 
-                <h3 className="text-xl font-black leading-tight tracking-tight text-white">
+                {/* Title */}
+                <h3 className="text-[15px] font-bold leading-snug text-foreground/95 pl-3">
                   {session.title}
                 </h3>
 
+                {/* Speaker + location row */}
                 {session.speakerIds.length > 0 && (
-                  <div className="flex flex-wrap gap-5 pt-1">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-surface border border-card-border flex items-center justify-center text-accent font-black text-[11px] shadow-sm">
+                  <div className="flex items-center justify-between pl-3 gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0"
+                        style={{ backgroundColor: `${trackColor}20`, color: trackColor }}
+                      >
                         {session.speakerName.split(' ').map(n => n[0]).join('').slice(0, 2)}
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-bold text-primary tracking-tight">{session.speakerName}</span>
-                        <span className="text-[10px] font-bold text-muted uppercase tracking-widest">
-                          {session.format === 'workshop' ? 'Воркшоп' : session.format === 'panel' ? 'Панель' : session.format === 'keynote' ? 'Keynote' : 'Доклад'}
-                        </span>
-                      </div>
+                      <span className="text-[12px] font-semibold text-foreground/70 truncate">{session.speakerName}</span>
                     </div>
-                    <div className="flex items-center gap-2 text-muted text-xs font-medium bg-surface/40 px-3 py-1.5 rounded-xl border border-card-border/50">
-                      <MapPin className="w-3 h-3 text-accent" />
-                      <span className="tracking-tight">{session.location}</span>
+                    <div className="flex items-center gap-1 text-foreground/35 text-[11px] shrink-0">
+                      <MapPin className="w-3 h-3" />
+                      <span>{session.location}</span>
                     </div>
                   </div>
                 )}
 
-                <div className="pt-2 flex justify-between items-center bg-surface/30 -mx-6 -mb-6 px-6 py-4 border-t border-card-border/50 gap-3">
-                  <span
-                    className="text-[10px] font-black uppercase tracking-widest pl-2 border-l-2 truncate max-w-[40%]"
-                    style={{ borderColor: trackColor, color: trackColor }}
-                  >
-                    {session.track}
-                  </span>
-                  <div className="flex gap-2 items-center">
-                    {!isCommonFormat && (
-                      <a
-                        href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
-                        download={`techforum2026-${session.id}.ics`}
-                        title="Добавить в календарь"
-                        className="text-[10px] font-black uppercase tracking-widest p-2.5 rounded-2xl bg-card border border-card-border text-muted/70 hover:text-accent hover:border-accent/30 transition-all"
+                {/* Track + actions */}
+                {!isCommonFormat && (
+                  <div className="flex items-center justify-between pl-3 pt-1">
+                    <span
+                      className="text-[9px] font-bold uppercase tracking-widest"
+                      style={{ color: `${trackColor}99` }}
+                    >
+                      {session.track}
+                    </span>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const r = await authFetch(resolveApiUrl(`/sessions/${session.id}/calendar`), { credentials: 'include' });
+                          if (!r.ok) return;
+                          const blob = await r.blob();
+                          const a = document.createElement('a');
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `techforum2026-${session.id}.ics`;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                        }}
+                        title="В календарь"
+                        className="p-2 rounded-lg border border-white/[0.06] text-foreground/30 hover:text-accent hover:border-accent/30 transition-all"
                       >
-                        <Download className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {!isCommonFormat && (
+                        <Calendar className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => handleRegisterClick(session)}
                         className={cn(
-                          'text-[10px] font-black uppercase tracking-widest py-2.5 px-6 rounded-2xl shadow-lg transition-all active:scale-95',
+                          'text-[11px] font-bold py-2 px-5 rounded-xl transition-all active:scale-95',
                           isRegistered
-                            ? 'bg-card border border-accent/40 text-accent'
-                            : 'bg-accent text-surface shadow-accent/10 hover:brightness-110',
+                            ? 'bg-primary/15 border border-primary/30 text-primary'
+                            : 'bg-primary text-primary-foreground shadow-md shadow-primary/20',
                         )}
                       >
-                        {isRegistered ? 'Уже иду' : 'Пойду'}
+                        {isRegistered ? 'Иду ✓' : 'Пойду'}
                       </button>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
+              </motion.div>
             );
           })}
         </div>
 
         {filteredSessions.length === 0 && (
-          <div className="py-20 text-center space-y-4">
-            <div className="w-16 h-16 bg-card border border-card-border rounded-3xl flex items-center justify-center mx-auto text-muted/30">
-              {selectedDayId === MY_TAB_ID ? <Calendar className="w-8 h-8" /> : <Filter className="w-8 h-8" />}
+          <div className="py-16 text-center space-y-3">
+            <div className="w-14 h-14 bg-white/[0.03] border border-white/[0.06] rounded-2xl flex items-center justify-center mx-auto">
+              {selectedDayId === MY_TAB_ID ? <Calendar className="w-7 h-7 text-foreground/15" /> : <Filter className="w-7 h-7 text-foreground/15" />}
             </div>
-            <p className="text-muted font-medium">
+            <p className="text-foreground/35 text-[13px] font-medium">
               {selectedDayId === MY_TAB_ID
                 ? 'Вы ещё не записались ни на одну сессию'
                 : selectedDayId === RECOMMENDED_TAB_ID
-                  ? 'Нет рекомендаций — попробуй сменить фильтры или выбрать больше интересов'
-                  : 'Нет докладов по выбранным фильтрам'}
+                  ? 'Нет рекомендаций — попробуй выбрать больше интересов'
+                  : 'Нет докладов по фильтрам'}
             </p>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Conflict warning modal */}
       <AnimatePresence>
@@ -423,24 +560,24 @@ export default function Schedule() {
               exit={{ y: 40, opacity: 0 }}
               transition={{ type: 'spring', damping: 24, stiffness: 280 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm bg-[#111827] border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
+              className="w-full max-w-sm bg-background border border-amber-500/30 rounded-[2rem] p-6 shadow-2xl space-y-5"
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
                     <AlertTriangle className="w-5 h-5 text-amber-400" />
                   </div>
-                  <h2 className="text-base font-black text-white tracking-tight">Конфликт времени</h2>
+                  <h2 className="text-base font-black text-foreground tracking-tight">Конфликт времени</h2>
                 </div>
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="w-8 h-8 rounded-xl bg-card border border-card-border flex items-center justify-center text-muted hover:text-primary"
+                  className="w-8 h-8 rounded-xl bg-card border border-border flex items-center justify-center text-foreground/40 hover:text-foreground"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <p className="text-[13px] text-white/75 leading-relaxed">
+              <p className="text-[13px] text-foreground/75 leading-relaxed">
                 «{conflictTarget.session.title}» ({conflictTarget.session.startTime}–{conflictTarget.session.endTime}) пересекается со временем уже выбранных сессий:
               </p>
 
@@ -455,7 +592,7 @@ export default function Schedule() {
               <div className="flex gap-3 pt-1">
                 <button
                   onClick={() => setConflictTarget(null)}
-                  className="flex-1 py-3 rounded-2xl bg-card border border-card-border text-[12px] font-semibold text-white/75 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-2xl bg-card border border-border text-[12px] font-semibold text-foreground/75 active:scale-[0.98]"
                 >
                   Отмена
                 </button>

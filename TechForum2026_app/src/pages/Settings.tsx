@@ -33,7 +33,7 @@ const TERMS_TEXT = `Используя приложение ТехнологИИ
 
 Все материалы (доклады, фото, видео) защищены авторским правом и не могут быть опубликованы вне приложения без разрешения авторов и организатора.
 
-Полную версию пользовательского соглашения см. на сайте pravotech.pro.`;
+Полную версию пользовательского соглашения см. на сайте tech-pravo.ru.`;
 
 const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
 — ФИО, контактный email, телефон;
@@ -51,7 +51,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 — скачать копию своих данных (запрос через pravotechhub@mail.ru);
 — удалить аккаунт через профиль (необратимо).
 
-Полная политика конфиденциальности доступна на сайте pravotech.pro/privacy.`;
+Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
 const APP_VERSION = '1.0.0';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
@@ -349,7 +349,7 @@ export default function Settings() {
                   </p>
                   <p className="text-[12px] text-foreground/40 leading-relaxed">
                     Поддержка: pravotechhub@mail.ru<br />
-                    Сайт: pravotech.pro
+                    Сайт: tech-pravo.ru
                   </p>
                 </div>
               )}

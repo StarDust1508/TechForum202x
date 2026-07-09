@@ -19,9 +19,10 @@
 
 import { useEffect, useState } from 'react';
 import { CalendarCheck2, Clock3, MapPin, Download } from 'lucide-react';
+import { motion } from 'motion/react';
 import { SESSIONS, DAYS, getDayById } from '../data';
 import BackButton from '@/src/components/BackButton';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
 
@@ -48,7 +49,7 @@ export default function MyRecords() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
+        const res = await authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (!cancelled && Array.isArray(data?.sessionIds)) {
@@ -79,59 +80,86 @@ export default function MyRecords() {
   }, {});
 
   return (
-    <div className="flex-1 min-h-full px-5 pt-8 pb-10 space-y-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
-      <BackButton />
-      <header className="space-y-2">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-[#ff3399]/60 font-bold flex items-center gap-2">
-          <CalendarCheck2 className="w-3.5 h-3.5" />
-          Личный кабинет
-        </p>
-        <h1 className="font-elite text-3xl leading-none text-white">Мои записи</h1>
+    <div className="flex-1 min-h-full px-5 space-y-6" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
+      <header className="flex items-center gap-3">
+        <BackButton />
+        <h1
+          className="font-display text-[28px] leading-none font-bold"
+          style={{
+            background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}
+        >Мои записи</h1>
       </header>
 
       {registeredSessions.length === 0 ? (
-        <div className="rounded-3xl border border-dashed border-white/20 bg-white/[0.03] p-8 text-center">
-          <CalendarCheck2 className="w-9 h-9 mx-auto text-white/55" />
-          <p className="mt-3 text-white/75">Пока нет выбранных сессий в расписании.</p>
+        <div className="rounded-2xl border border-dashed border-foreground/20 bg-card p-8 text-center">
+          <CalendarCheck2 className="w-9 h-9 mx-auto text-foreground/55" />
+          <p className="mt-3 text-foreground/75">Пока нет выбранных сессий в расписании.</p>
         </div>
       ) : (
         <>
-          <a
-            href={resolveApiUrl('/sessions/calendar')}
-            download="techforum2026-my.ics"
-            className="flex items-center justify-center gap-2 bg-[#00ffff]/10 border border-[#00ffff]/30 text-[#00ffff] py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
+          <button
+            type="button"
+            onClick={async () => {
+              const r = await authFetch(resolveApiUrl('/sessions/calendar'), { credentials: 'include' });
+              if (!r.ok) return;
+              const blob = await r.blob();
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = 'techforum2026-my.ics';
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+            className="flex items-center justify-center gap-2 bg-primary/10 border border-primary/30 text-primary py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
           >
             <Download className="w-4 h-4" />
             Все мои сессии в календарь
-          </a>
+          </button>
 
           <div className="space-y-6">
             {Object.entries(byDay).map(([dayId, list]) => {
               const day = getDayById(dayId);
               return (
                 <section key={dayId} className="space-y-3">
-                  <h3 className="text-[11px] uppercase tracking-[0.22em] font-semibold text-white/55 px-1">
+                  <h3 className="text-[11px] uppercase tracking-[0.22em] font-semibold text-foreground/55 px-1">
                     {day?.label ?? dayId} · {day?.weekday ?? ''}
                   </h3>
-                  {list.map((session) => (
-                    <article key={session.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 space-y-3">
-                      <h2 className="text-xl font-semibold text-white/95">{session.title}</h2>
-                      <div className="flex flex-wrap gap-4 text-sm text-white/70">
+                  {list.map((session, idx) => (
+                    <motion.article
+                      key={session.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: Math.min(idx * 0.05, 0.3), ease: [0.32, 0.72, 0, 1] }}
+                      className="rounded-2xl border border-border bg-card p-5 space-y-3"
+                    >
+                      <h2 className="text-xl font-semibold text-foreground/95">{session.title}</h2>
+                      <div className="flex flex-wrap gap-4 text-sm text-foreground/70">
                         <span className="inline-flex items-center gap-1.5"><Clock3 className="w-4 h-4" />{session.startTime} – {session.endTime}</span>
                         <span className="inline-flex items-center gap-1.5"><MapPin className="w-4 h-4" />{session.location}</span>
                       </div>
                       {session.speakerName !== '—' && (
-                        <p className="text-[12px] text-white/55">{session.speakerName} · {session.track}</p>
+                        <p className="text-[12px] text-foreground/55">{session.speakerName} · {session.track}</p>
                       )}
-                      <a
-                        href={resolveApiUrl(`/sessions/${session.id}/calendar`)}
-                        download={`techforum2026-${session.id}.ics`}
-                        className="inline-flex items-center gap-1.5 text-[11px] text-[#00ffff]/80 hover:text-[#00ffff] font-semibold uppercase tracking-widest"
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const r = await authFetch(resolveApiUrl(`/sessions/${session.id}/calendar`), { credentials: 'include' });
+                          if (!r.ok) return;
+                          const blob = await r.blob();
+                          const a = document.createElement('a');
+                          a.href = URL.createObjectURL(blob);
+                          a.download = `techforum2026-${session.id}.ics`;
+                          a.click();
+                          URL.revokeObjectURL(a.href);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary font-semibold uppercase tracking-widest"
                       >
                         <Download className="w-3.5 h-3.5" />
                         В календарь
-                      </a>
-                    </article>
+                      </button>
+                    </motion.article>
                   ))}
                 </section>
               );

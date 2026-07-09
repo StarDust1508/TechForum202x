@@ -60,7 +60,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               onAnimationComplete={() => {
                 setTimeout(() => dismiss(t.id), t.durationMs);
               }}
-              className="pointer-events-auto rounded-2xl bg-[#111827]/95 backdrop-blur-md border border-[#00ffff]/30 px-5 py-3 shadow-[0_8px_28px_rgba(0,255,255,0.18)] text-[13px] font-semibold text-white/95 max-w-[90vw]"
+              className="pointer-events-auto rounded-2xl bg-background/95 backdrop-blur-md border border-primary/30 px-5 py-3 shadow-[0_8px_28px_rgba(0,255,255,0.18)] text-[13px] font-semibold text-foreground/95 max-w-[90vw]"
             >
               {t.message}
             </motion.div>

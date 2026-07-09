@@ -57,6 +57,10 @@ export const authMePatchSchema = z.object({
   bio: z.string().max(500).optional(),
   phone: z.string().trim().max(32).optional(),
   email: emailSchema.optional(),
+  company: z.string().max(200).optional(),
+  workplace: z.string().max(200).optional(),
+  education: z.string().max(200).optional(),
+  pushPreviewHidden: z.boolean().optional(),
 });
 
 export const meInterestsPutSchema = z.object({
@@ -92,3 +96,37 @@ export type PostCreateBody = z.infer<typeof postCreateSchema>;
 export type CommentCreateBody = z.infer<typeof commentCreateSchema>;
 export type StatusCreateBody = z.infer<typeof statusCreateSchema>;
 export type AiChatBody = z.infer<typeof aiChatSchema>;
+
+export const forgotPasswordStartSchema = z.object({
+  email: emailSchema,
+});
+
+export const forgotPasswordVerifySchema = z.object({
+  token: z.string().min(1),
+  newPassword: passwordSchema,
+});
+
+export const dmSendSchema = z.object({
+  toUserId: z.string().min(1),
+  text: z.string().max(4000).optional().default(''),
+  mediaUrl: z.string().max(2048).optional(),
+  mediaType: z.string().max(32).optional(),
+  replyToId: z.string().optional(),
+  forwardedFromUserId: z.string().optional(),
+});
+
+export const noteUpsertSchema = z.object({
+  body: z.string().min(1).max(50000),
+});
+
+export const pushTokenRegisterSchema = z.object({
+  token: z.string().min(1).max(512),
+  platform: z.string().max(32).optional().default('unknown'),
+  deviceLabel: z.string().max(128).optional().default(''),
+});
+
+export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;
+export type ForgotPasswordVerifyBody = z.infer<typeof forgotPasswordVerifySchema>;
+export type DmSendBody = z.infer<typeof dmSendSchema>;
+export type NoteUpsertBody = z.infer<typeof noteUpsertSchema>;
+export type PushTokenRegisterBody = z.infer<typeof pushTokenRegisterSchema>;

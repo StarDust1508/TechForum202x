@@ -1,87 +1,58 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800&family=Cormorant+Garamond:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
-/*
-  GOST Type A — фирменный чертёжный шрифт ГОСТ 2.304 (Type A).
-  Перекликается с blueprint-фоном TechForum 2026, единый brand-вижуал.
-
-  Файлы должны лежать в public/fonts/:
-    - GOSTTypeA-Regular.woff2
-    - GOSTTypeA-Italic.woff2
-    - GOSTTypeA-Bold.woff2
-  См. public/fonts/README.md — инструкция по выкладке файлов и лицензия.
-
-  font-display: swap — пока файлы не догрузились, используется fallback
-  (Cormorant Garamond / Georgia), но без FOIT (невидимого текста).
-*/
-@font-face {
-  font-family: 'GOST Type A';
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url('/fonts/GOSTTypeA-Regular.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'GOST Type A';
-  font-style: italic;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url('/fonts/GOSTTypeA-Italic.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'GOST Type A';
-  font-style: normal;
-  font-weight: 700 900;
-  font-display: swap;
-  src: url('/fonts/GOSTTypeA-Bold.woff2') format('woff2');
-}
-
 @theme {
-  /* Палитра: единый бренд с pravo-tech-hub (neon-cyan + neon-magenta) */
+  --color-background: #0f1118;
+  --color-foreground: #f2f2f2;
+  --color-card: #181d2e;
+  --color-card-foreground: #f2f2f2;
+  --color-primary: #ff3399;
+  --color-primary-foreground: #ffffff;
   --color-accent: #00ffff;
+  --color-accent-foreground: #0f1118;
+  --color-muted: #252a3a;
+  --color-muted-foreground: #8189a2;
+  --color-border: #2a3048;
+  --color-input: #2a3048;
+  --color-ring: #ff3399;
+  --color-destructive: #ef4444;
   --color-magenta: #ff3399;
-  --color-surface: #0d1117;
-  --color-card: #111827;
-  --color-card-border: rgba(255, 255, 255, 0.08);
-  --color-primary: #ffffff;
-  --color-muted: #9ca3af;
-  --font-sans: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --color-surface: #0f1118;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Unbounded", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-  /* font-blueprint — основной brand-шрифт TechForum 2026.
-     Используется в Auth, заголовках разделов, кнопках главного действия. */
-  --font-blueprint: "GOST Type A", "Cormorant Garamond", ui-serif, Georgia, serif;
+
+  --radius: 0.5rem;
+  --radius-lg: 0.5rem;
+  --radius-md: calc(0.5rem - 2px);
+  --radius-sm: calc(0.5rem - 4px);
 }
 
 :root {
-  --font-elite: "Cinzel", Georgia, serif;
   --neon-cyan: #00ffff;
   --neon-magenta: #ff3399;
-  background-color: #0a0e17;
-  color: white;
+  --neon-cyan-glow: 0 0 20px rgba(0, 255, 255, 0.5), 0 0 40px rgba(0, 255, 255, 0.2);
+  --neon-magenta-glow: 0 0 20px rgba(255, 51, 153, 0.5), 0 0 40px rgba(255, 51, 153, 0.2);
+  background-color: #0f1118;
+  color: #f2f2f2;
 }
 
-/*
-  BUG_FIX_CONTEXT: На Android WebView (Samsung S25 / OnePlus 9R) наблюдались:
-  1) auto-увеличение шрифта при rotate → -webkit-text-size-adjust: 100%
-  2) синяя tap-highlight подсветка кнопок → -webkit-tap-highlight-color: transparent
-  3) Pull-to-refresh / overscroll bounce ломали UX → overscroll-behavior: contain
-*/
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  margin: 0;
+  height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background-color: #0f1118;
+  overscroll-behavior: none;
 }
 
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
-/*
-  BUG_FIX_CONTEXT: Long-press на тексте в Capacitor Android WebView вызывал
-  системный Action Mode (Google Assistant overlay с белым фоном — тот самый
-  пустой белый экран, который пользователь видел при попытке выделить текст).
-  Решение: запретить выделение и long-press contextual actions по всему UI,
-  кроме явных полей ввода (input/textarea/[contenteditable]).
-*/
 body, button, a, span, p, h1, h2, h3, h4, h5, h6, div, li, ul, header, section, article {
   -webkit-user-select: none;
   -ms-user-select: none;
@@ -96,26 +67,6 @@ input, textarea, [contenteditable="true"], [contenteditable=""] {
   -webkit-touch-callout: default;
 }
 
-/*
-  BUG_FIX_CONTEXT: на Samsung S25 / OnePlus 9R под main была видна чёрная
-  полоса навигации, потому что main с h-[100dvh] меньше body на высоту
-  navbar. html/body теперь явно тёмные + min-height с fallback на 100vh
-  для Android WebView, который иногда отдаёт 0 для 100dvh при инициализации.
-*/
-/*
-  BUG_FIX_CONTEXT: bg-color только на html (fallback пока body не отрисовался).
-  body и #root — transparent, чтобы body::before/::after blueprint-слои были
-  видны под контентом. Раньше bg-color на #root перекрывал ::before — фон
-  не показывался.
-*/
-html {
-  margin: 0;
-  height: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  background-color: #0a0e17;
-  overscroll-behavior: none;
-}
 body, #root {
   margin: 0;
   height: 100%;
@@ -125,65 +76,91 @@ body, #root {
   overscroll-behavior: none;
 }
 
-/*
-  Глобальный blueprint-фон. fixed → viewport-pinned, не двигается при скролле
-  и не показывает чёрных полос на overscroll bounce. body::before — blueprint
-  с blur, body::after — тёмные градиенты для контраста. Оба pointer-events:none
-  чтобы не ловить тапы.
-*/
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Solid dark background — no colored gradients that bleed on overscroll */
 body::before {
   content: '';
   position: fixed;
-  inset: 0;
+  inset: -200px;
   z-index: -2;
-  background-image: url('/conference-bg.jpg');
-  background-size: cover;
-  background-position: center 42%;
-  background-repeat: no-repeat;
-  transform: scale(1.25);
-  transform-origin: center 42%;
-  opacity: 0.85;
-  filter: blur(3px) saturate(1.15);
+  background-color: #0f1118;
   pointer-events: none;
-  transition: opacity 500ms ease-out, filter 500ms ease-out, transform 500ms ease-out;
 }
+
 body::after {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(0,255,255,0.12), transparent 55%),
-    radial-gradient(circle at 80% 85%, rgba(255,51,153,0.06), transparent 45%),
-    linear-gradient(180deg, rgba(10,14,23,0.78) 0%, rgba(10,14,23,0.32) 22%, rgba(10,14,23,0.42) 72%, rgba(10,14,23,0.92) 100%);
+  background-color: #0f1118;
   pointer-events: none;
-  transition: opacity 500ms ease-out;
-}
-/* focus-state: при .bp-focused на body blueprint приглушается, форма
-   выходит на передний план. Управляется JS из Auth.tsx onFocus/onBlur. */
-body.bp-focused::before {
-  opacity: 0.5;
-  filter: blur(6px) saturate(0.9);
-  transform: scale(1.32);
 }
 
-body {
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  /* Поглощаем нижний safe-area inset фоном — чтобы под навбаром не было
-     пустоты другого цвета. */
-  padding-bottom: env(safe-area-inset-bottom, 0);
+body.bp-focused::before {
+  opacity: 0.4;
+}
+
+/* Font utility classes — matching site */
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-display-cyrl {
+  font-family: var(--font-display);
 }
 
 .font-elite {
-  font-family: var(--font-elite);
+  font-family: var(--font-display);
 }
 
 .font-blueprint {
-  font-family: var(--font-blueprint);
-  font-feature-settings: "ss01" on, "kern" on;
-  letter-spacing: 0.005em;
+  font-family: var(--font-sans);
+}
+
+.font-ui {
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+/* Neon utilities matching site */
+.text-neon-cyan {
+  color: var(--neon-cyan);
+}
+
+.text-neon-magenta {
+  color: var(--neon-magenta);
+}
+
+.bg-neon-cyan {
+  background-color: var(--neon-cyan);
+}
+
+.bg-neon-magenta {
+  background-color: var(--neon-magenta);
+}
+
+.shadow-neon-cyan {
+  box-shadow: var(--neon-cyan-glow);
+}
+
+.shadow-neon-magenta {
+  box-shadow: var(--neon-magenta-glow);
+}
+
+/* Skeleton animation */
+@keyframes tfSkeleton {
+  0% { opacity: 0.15; }
+  50% { opacity: 0.35; }
+  100% { opacity: 0.15; }
 }
 
 .scrollbar-hide::-webkit-scrollbar {
@@ -223,14 +200,22 @@ body {
   filter: drop-shadow(0 0 8px rgba(255, 51, 153, 0.4));
 }
 
-.blob-organic {
-  position: absolute;
-  filter: blur(100px);
-  border-radius: 50%;
-  animation: blob-drift 20s infinite alternate ease-in-out;
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 12px rgba(255, 51, 153, 0.2); }
+  50% { box-shadow: 0 0 24px rgba(255, 51, 153, 0.4), 0 0 48px rgba(0, 255, 255, 0.15); }
 }
 
-@keyframes blob-drift {
-  from { transform: translate(0, 0) scale(1); }
-  to { transform: translate(100px, 50px) scale(1.2); }
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 255, 0.06) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
 }
