@@ -212,7 +212,7 @@ export default function Schedule() {
   return (
     <div className="flex-1 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
       {/* Sticky header with title + day tabs */}
-      <div className="sticky top-0 z-20 bg-background border-b border-white/[0.06] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]">
+      <div className="sticky top-0 z-20 bg-background border-b border-foreground/[0.06] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.6)]">
         <div className="px-5 pt-4 pb-4 space-y-4">
           <div className="flex items-center gap-3">
             <BackButton />
@@ -244,7 +244,7 @@ export default function Schedule() {
                   'px-4 py-2.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all',
                   selectedDayId === tab.id
                     ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
-                    : 'bg-white/[0.04] text-foreground/45 border border-white/[0.06]',
+                    : 'bg-foreground/[0.04] text-foreground/45 border border-foreground/[0.06]',
                 )}
               >
                 {tab.label}
@@ -296,7 +296,7 @@ export default function Schedule() {
                   </div>
                 </div>
               </div>
-              <div className="flex-[1] rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center gap-6">
+              <div className="flex-[1] rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] flex items-center justify-center gap-6">
                 <div className="flex items-center gap-1.5 text-[9px] text-foreground/30 uppercase tracking-wider">
                   <Coffee className="w-3 h-3" /> Фойе
                 </div>
@@ -306,7 +306,7 @@ export default function Schedule() {
               </div>
             </div>
 
-            <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-white/[0.06]">
+            <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-foreground/[0.06]">
               <Navigation className="w-3 h-3 text-primary/50" />
               <span className="text-[8px] text-foreground/30 font-mono tracking-wide">51.5339°N 46.0014°E</span>
             </div>
@@ -326,7 +326,7 @@ export default function Schedule() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.3, delay: 0.15 + i * 0.06, ease: [0.32, 0.72, 0, 1] }}
-                  className="bg-white/[0.03] border border-white/[0.06] p-4 rounded-2xl flex items-center gap-3"
+                  className="bg-foreground/[0.03] border border-foreground/[0.06] p-4 rounded-2xl flex items-center gap-3"
                 >
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${item.accent}10`, borderColor: `${item.accent}20` }}>
                     <item.icon className="w-5 h-5" style={{ color: item.accent }} />
@@ -385,8 +385,8 @@ export default function Schedule() {
                 className={cn(
                   'px-3.5 py-2 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all',
                   activeHallId === h.id
-                    ? 'bg-white/90 text-[#0f1118]'
-                    : 'text-foreground/35 border border-white/[0.08]',
+                    ? 'bg-foreground/90 text-[#0f1118]'
+                    : 'text-foreground/35 border border-foreground/[0.08]',
                 )}
               >
                 {h.name}
@@ -400,7 +400,7 @@ export default function Schedule() {
                 onClick={() => setActiveTrackId(t.id)}
                 className={cn(
                   'px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all',
-                  activeTrackId === t.id ? 'text-[#0f1118]' : 'text-foreground/35 border border-white/[0.06]',
+                  activeTrackId === t.id ? 'text-[#0f1118]' : 'text-foreground/35 border border-foreground/[0.06]',
                 )}
                 style={activeTrackId === t.id ? { backgroundColor: t.color, boxShadow: `0 0 12px ${t.color}44` } : undefined}
               >
@@ -429,7 +429,7 @@ export default function Schedule() {
                   'rounded-2xl border p-4 space-y-3 relative overflow-hidden transition-all',
                   isRegistered
                     ? 'bg-primary/[0.06] border-primary/25'
-                    : 'bg-card/80 border-white/[0.06]',
+                    : 'bg-card/80 border-foreground/[0.06]',
                 )}
               >
                 {/* Track color accent line */}
@@ -505,7 +505,7 @@ export default function Schedule() {
                           URL.revokeObjectURL(a.href);
                         }}
                         title="В календарь"
-                        className="p-2 rounded-lg border border-white/[0.06] text-foreground/30 hover:text-accent hover:border-accent/30 transition-all"
+                        className="p-2 rounded-lg border border-foreground/[0.06] text-foreground/30 hover:text-accent hover:border-accent/30 transition-all"
                       >
                         <Calendar className="w-3.5 h-3.5" />
                       </button>
@@ -530,7 +530,7 @@ export default function Schedule() {
 
         {filteredSessions.length === 0 && (
           <div className="py-16 text-center space-y-3">
-            <div className="w-14 h-14 bg-white/[0.03] border border-white/[0.06] rounded-2xl flex items-center justify-center mx-auto">
+            <div className="w-14 h-14 bg-foreground/[0.03] border border-foreground/[0.06] rounded-2xl flex items-center justify-center mx-auto">
               {selectedDayId === MY_TAB_ID ? <Calendar className="w-7 h-7 text-foreground/15" /> : <Filter className="w-7 h-7 text-foreground/15" />}
             </div>
             <p className="text-foreground/35 text-[13px] font-medium">

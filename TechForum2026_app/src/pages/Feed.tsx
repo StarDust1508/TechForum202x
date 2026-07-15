@@ -16,13 +16,15 @@
 // PREV_CHANGE_SUMMARY: [v3.0.0 - Полный рерайт под "Новости от спикеров".]
 // END_CHANGE_SUMMARY
 
-import { Clock, ChevronRight } from 'lucide-react';
+import { Clock, ChevronRight, MessageCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { NEWS, getSpeakerById } from '../data';
+import { getSpeakerById } from '../data';
+import { useNews } from '../lib/useNews';
 import BackButton from '@/src/components/BackButton';
 
 export default function Feed() {
+  const { news: NEWS } = useNews();
   return (
     <div
       className="flex-1 px-5 relative"
@@ -31,16 +33,24 @@ export default function Feed() {
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
       }}
     >
-      <header className="flex items-center gap-3 mb-7">
+      {/* 3 колонки: назад (слева) · Лента (центр) · чат (справа) — симметрия */}
+      <header className="sticky top-0 z-20 -mx-5 px-5 pt-1 pb-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 mb-7 bg-background/90 backdrop-blur-md border-b border-border">
         <BackButton to="/" />
         <h1
-          className="font-display text-[28px] leading-none font-bold"
+          className="font-display text-[28px] leading-none font-bold text-center"
           style={{
             background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
           }}
         >Лента</h1>
+        <Link
+          to="/chat"
+          aria-label="Чат"
+          className="shrink-0 h-10 w-10 flex items-center justify-center rounded-2xl border border-border bg-card backdrop-blur-md text-foreground/85 hover:text-primary hover:border-primary/40 active:scale-90 transition-all shadow-[0_4px_16px_rgba(0,0,0,0.4)]"
+        >
+          <MessageCircle className="h-5 w-5" />
+        </Link>
       </header>
 
       <ul className="space-y-3">

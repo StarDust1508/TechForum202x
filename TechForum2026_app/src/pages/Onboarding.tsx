@@ -16,11 +16,13 @@
 //                       localStorage остаётся retry-буфером для App.tsx.]
 // END_CHANGE_SUMMARY
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { INTERESTS } from '../data';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
+
+interface InterestOpt { id: string; label: string; color: string }
 
 interface OnboardingProps {
   onDone: (interestsCount: number) => void;
@@ -35,6 +37,26 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
+  // Интересы берём с сервера (единый источник истины) — так выбор ВСЕГДА
+  // валиден при сохранении (никакого unknown_interest_ids из-за рассинхрона
+  // бандла и БД). Статический INTERESTS — фолбэк на случай оффлайна.
+  const [interests, setInterests] = useState<InterestOpt[]>(INTERESTS as InterestOpt[]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(resolveApiUrl('/interests'));
+        if (r.ok && !cancelled) {
+          const data = await r.json();
+          if (Array.isArray(data) && data.length) setInterests(data);
+        }
+      } catch {
+        /* оффлайн — остаётся статический фолбэк */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   function toggle(id: string): void {
     setSelected(prev => {
@@ -96,7 +118,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
         minHeight: '100dvh',
         paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
-        backgroundColor: '#0f1118',
+        backgroundColor: 'var(--color-background)',
       }}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(0,255,255,0.12),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(255,51,153,0.1),transparent_50%)] pointer-events-none" />
@@ -112,7 +134,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
         </div>
 
         <div className="flex flex-wrap gap-2 pt-2">
-          {INTERESTS.map((it) => {
+          {interests.map((it) => {
             const active = selected.has(it.id);
             return (
               <button

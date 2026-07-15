@@ -69,7 +69,7 @@ export default function Map() {
           </div>
 
           {/* Foyer */}
-          <div className="flex-[1] rounded-xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center gap-6">
+          <div className="flex-[1] rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] flex items-center justify-center gap-6">
             <div className="flex items-center gap-1.5 text-[9px] text-foreground/30 uppercase tracking-wider">
               <Coffee className="w-3 h-3" /> Фойе
             </div>
@@ -80,7 +80,7 @@ export default function Map() {
         </div>
 
         {/* GPS badge */}
-        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-white/[0.06]">
+        <div className="absolute bottom-3 right-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-foreground/[0.06]">
           <Navigation className="w-3 h-3 text-primary/50" />
           <span className="text-[8px] text-foreground/30 font-mono tracking-wide">51.5339°N 46.0014°E</span>
         </div>
@@ -101,7 +101,7 @@ export default function Map() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, delay: 0.15 + i * 0.06, ease: [0.32, 0.72, 0, 1] }}
-              className="bg-white/[0.03] border border-white/[0.06] p-4 rounded-2xl flex items-center gap-3"
+              className="bg-foreground/[0.03] border border-foreground/[0.06] p-4 rounded-2xl flex items-center gap-3"
             >
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${item.accent}10`, borderColor: `${item.accent}20` }}>
                 <item.icon className="w-5 h-5" style={{ color: item.accent }} />

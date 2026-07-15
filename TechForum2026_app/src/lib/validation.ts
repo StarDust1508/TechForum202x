@@ -41,16 +41,23 @@ const passwordSchema = z.string().min(6, 'Пароль должен быть н�
 // Имя — 1..80 символов, .trim для удаления хвостовых пробелов.
 const nameSchema = z.string().trim().min(1, 'Укажите имя').max(80);
 
+// Телефон-логин (без SMS): номер как идентификатор. Допускаем +, цифры,
+// пробелы, скобки, дефис; 5–19 значащих символов.
+const phoneSchema = z.string().trim().regex(/^\+?[0-9][0-9\s()\-]{4,18}$/, 'Некорректный телефон');
+
+// Регистрация/вход: email ИЛИ телефон (хотя бы один из них).
 export const authRegisterSchema = z.object({
-  email: emailSchema,
+  email: emailSchema.optional(),
+  phone: phoneSchema.optional(),
   password: passwordSchema,
   name: nameSchema,
-});
+}).refine((d) => !!(d.email || d.phone), { message: 'Укажите email или телефон', path: ['email'] });
 
 export const authLoginSchema = z.object({
-  email: emailSchema,
+  email: emailSchema.optional(),
+  phone: phoneSchema.optional(),
   password: passwordSchema,
-});
+}).refine((d) => !!(d.email || d.phone), { message: 'Укажите email или телефон', path: ['email'] });
 
 export const authMePatchSchema = z.object({
   name: nameSchema.optional(),

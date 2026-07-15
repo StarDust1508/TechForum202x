@@ -72,7 +72,7 @@ export default function Faq() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           inputMode="search"
-          className="w-full rounded-[14px] border border-primary/30 bg-card py-3.5 pl-12 pr-12 text-[15px] text-foreground placeholder:text-foreground/40 outline-none focus:border-primary/70 focus:bg-white/[0.06] transition-colors font-sans"
+          className="w-full rounded-[14px] border border-primary/30 bg-card py-3.5 pl-12 pr-12 text-[15px] text-foreground placeholder:text-foreground/40 outline-none focus:border-primary/70 focus:bg-foreground/[0.06] transition-colors font-sans"
         />
         {search && (
           <button

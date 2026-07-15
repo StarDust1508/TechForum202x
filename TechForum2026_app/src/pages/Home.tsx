@@ -91,7 +91,7 @@ export default function Home() {
             снизу/сверху. Заголовок "TechForum / 2026" в две строки — как
             на главном экране. */}
         <header
-          className="sticky top-0 z-20 -mx-5 px-5 pb-5 text-center bg-[#0f1118] border-b border-white/[0.06]"
+          className="sticky top-0 z-20 -mx-5 px-5 pb-5 text-center bg-background border-b border-border"
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
           }}
@@ -113,12 +113,12 @@ export default function Home() {
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
             aria-label="О форуме: 25–26 сентября 2026, Москва"
           >
             <CalendarDays className="h-3.5 w-3.5 text-accent" />
             <span>25–26 сент.</span>
-            <span className="h-0.5 w-0.5 rounded-full bg-white/30" />
+            <span className="h-0.5 w-0.5 rounded-full bg-foreground/30" />
             <MapPin className="h-3.5 w-3.5 text-accent" />
             <span>Москва</span>
           </Link>

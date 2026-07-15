@@ -65,7 +65,7 @@ export default function Ticket() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.4 }}
-        className="w-full max-w-[320px] rounded-3xl border border-border bg-white/[0.03] overflow-hidden"
+        className="w-full max-w-[320px] rounded-3xl border border-border bg-foreground/[0.03] overflow-hidden"
       >
         <div className="p-8 flex flex-col items-center gap-6">
           <div className="bg-white p-4 rounded-2xl shadow-lg shadow-black/30">

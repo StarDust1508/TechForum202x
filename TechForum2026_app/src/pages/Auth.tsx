@@ -23,9 +23,20 @@ export default function Auth({ onSuccess }: AuthProps) {
   const [form, setForm] = useState({ email: '', phone: '+7', password: '', name: '' });
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState('');
+  // Двухшаговый сброс: 'email' → запрос кода (уходит в привязанный Telegram),
+  // 'code' → ввод кода + нового пароля, 'done' → успех.
+  const [resetStep, setResetStep] = useState<'email' | 'code' | 'done'>('email');
+  const [resetCode, setResetCode] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  function closeForgot(): void {
+    setShowForgot(false);
+    setResetStep('email');
+    setResetCode('');
+    setResetPassword('');
+    setForgotError('');
+  }
   // BUG_FIX_CONTEXT: По требованию 152-ФЗ при регистрации нужно явное
   // согласие на обработку ПД. На login-моде чекбокс не нужен.
   const [consent, setConsent] = useState(false);
@@ -63,12 +74,35 @@ export default function Auth({ onSuccess }: AuthProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ email: identifier, password: form.password, name: form.name }),
+        body: JSON.stringify(
+          method === 'phone'
+            ? { phone: identifier, password: form.password, name: form.name }
+            : { email: identifier, password: form.password, name: form.name }
+        ),
       });
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
       const data = ct.includes('application/json') ? await res.json() : null;
       if (!ct.includes('application/json')) throw new Error('backend_invalid_response');
-      if (!res.ok) throw new Error(data?.error || 'Ошибка входа');
+      if (!res.ok) {
+        // Показываем ПОНЯТНОЕ сообщение вместо сырого кода. При invalid_body
+        // сервер кладёт конкретную причину в issues[0].message («Некорректный
+        // email», «Пароль должен быть не менее 6 символов»). Известные коды
+        // маппим, русские фразы сервера показываем как есть.
+        const issueMsg = Array.isArray(data?.issues) && data.issues.length
+          ? String(data.issues[0]?.message || '')
+          : '';
+        const code = String(data?.error || '');
+        const codeMap: Record<string, string> = {
+          invalid_body: issueMsg || 'Проверьте email и пароль: email — в корректном формате, пароль — минимум 6 символов.',
+          user_create_failed: 'Не удалось создать аккаунт. Попробуйте позже.',
+          invalid_credentials: 'Неверный email или пароль.',
+          user_not_found: 'Неверный email или пароль.',
+          wrong_password: 'Неверный email или пароль.',
+          email_taken: 'Пользователь с таким email уже зарегистрирован — войдите.',
+        };
+        const looksHuman = /[А-Яа-яЁё]/.test(code); // сервер прислал готовую русскую фразу
+        throw new Error(codeMap[code] || (looksHuman ? code : (issueMsg || 'Не удалось выполнить. Проверьте введённые данные.')));
+      }
       if (!data || typeof data !== 'object') throw new Error('backend_invalid_response');
       if (data.token) saveSessionToken(data.token);
       // BUG_FIX_CONTEXT: Если биометрия доступна и ещё не включена —
@@ -123,7 +157,7 @@ export default function Auth({ onSuccess }: AuthProps) {
   // только при ≥16px). Все ярлыки и табы — 16px font-semibold, Inter (default body font).
   // Headings use font-display (Unbounded). Primary color = magenta via CSS var.
   const labelClass = 'text-[16px] font-semibold tracking-[0.01em] text-foreground/80';
-  const inputClass = 'w-full bg-white/[0.05] border border-white/12 rounded-2xl py-4 pl-12 pr-4 text-[17px] font-medium text-foreground placeholder:text-foreground/30 focus:border-primary/60 focus:bg-white/[0.08] outline-none transition-all';
+  const inputClass = 'w-full bg-foreground/[0.05] border border-foreground/12 rounded-2xl py-4 pl-12 pr-4 text-[17px] font-medium text-foreground placeholder:text-foreground/30 focus:border-primary/60 focus:bg-foreground/[0.08] outline-none transition-all';
   const iconClass  = 'absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-foreground/45';
 
   // BUG_FIX_CONTEXT: focus-handlers навешиваются на каждый input через
@@ -203,7 +237,7 @@ export default function Auth({ onSuccess }: AuthProps) {
         {/* Тонкий переключатель login / register с плавной motion-индикацией.
             BUG_FIX_CONTEXT: Раньше был layout + одновременный inline style.left —
             двойная анимация дёргала бегунок. Теперь чисто motion.animate{left}. */}
-        <div className="relative flex bg-white/[0.04] border border-white/10 p-1 rounded-2xl mb-6">
+        <div className="relative flex bg-foreground/[0.04] border border-foreground/10 p-1 rounded-2xl mb-6">
           <motion.span
             initial={false}
             animate={{ left: mode === 'login' ? 4 : 'calc(50% + 0px)' }}
@@ -226,7 +260,7 @@ export default function Auth({ onSuccess }: AuthProps) {
         </div>
 
         {/* Email / телефон — мини-таб */}
-        <div className="flex bg-white/[0.04] border border-white/10 p-1 rounded-2xl mb-6">
+        <div className="flex bg-foreground/[0.04] border border-foreground/10 p-1 rounded-2xl mb-6">
           {(['email','phone'] as const).map((m) => (
             <button
               key={m}
@@ -234,7 +268,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               onClick={() => setMethod(m)}
               className={cn(
                 'flex-1 py-2.5 text-[16px] font-semibold rounded-xl transition-all',
-                method === m ? 'bg-white/[0.06] text-primary' : 'text-foreground/55'
+                method === m ? 'bg-foreground/[0.06] text-primary' : 'text-foreground/55'
               )}
             >
               {m === 'email' ? 'Email' : 'Телефон'}
@@ -317,7 +351,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               {mode === 'login' && (
                 <button
                   type="button"
-                  onClick={() => { setShowForgot(true); setForgotEmail(form.email); setForgotSent(false); setForgotError(''); }}
+                  onClick={() => { setShowForgot(true); setForgotEmail(form.email); setResetStep('email'); setResetCode(''); setResetPassword(''); setForgotError(''); }}
                   className="text-[13px] text-accent/70 hover:text-accent font-medium transition-colors"
                 >
                   Забыли пароль?
@@ -398,13 +432,13 @@ export default function Auth({ onSuccess }: AuthProps) {
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 24, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="w-full max-w-[380px] bg-background border border-white/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(0,255,255,0.12)] relative"
+              className="w-full max-w-[380px] bg-background border border-foreground/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(0,255,255,0.12)] relative"
             >
               <button
                 type="button"
-                onClick={() => setShowForgot(false)}
+                onClick={closeForgot}
                 aria-label="Закрыть"
-                className="absolute right-4 top-4 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-white/[0.06] transition-colors"
+                className="absolute right-4 top-4 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
               >
                 <XIcon className="w-[18px] h-[18px]" />
               </button>
@@ -417,38 +451,107 @@ export default function Auth({ onSuccess }: AuthProps) {
                   Восстановление пароля
                 </h2>
 
-                {forgotSent ? (
-                  <div className="space-y-4 mt-2">
-                    <p className="text-[14px] leading-relaxed text-foreground/65">
-                      Инструкция отправлена на <span className="text-accent font-semibold">{forgotEmail}</span>. Проверьте почту и следуйте указаниям.
+                {resetStep === 'done' ? (
+                  <div className="space-y-5 mt-2 w-full">
+                    <p className="text-[14px] leading-relaxed text-foreground/70">
+                      Пароль изменён. Все прежние сессии завершены — войдите с новым паролем.
                     </p>
-                    <p className="text-[13px] text-foreground/45">
-                      Не пришло? Напишите нам в Telegram:
-                    </p>
-                    <a
-                      href="https://t.me/NeuroPravo_Bot"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent/10 border border-accent/30 text-accent rounded-xl text-[13px] font-semibold hover:bg-accent/15 transition-colors"
-                    >
-                      @NeuroPravo_Bot
-                    </a>
                     <button
                       type="button"
-                      onClick={() => setShowForgot(false)}
-                      className="w-full mt-2 text-[15px] font-semibold text-foreground/55 hover:text-foreground/85 transition-colors py-3"
+                      onClick={closeForgot}
+                      className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[16px] font-bold active:scale-[0.98] transition-transform shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
                     >
-                      Закрыть
+                      Войти
                     </button>
+                  </div>
+                ) : resetStep === 'code' ? (
+                  <div className="space-y-4 mt-2 w-full">
+                    <p className="text-[14px] leading-relaxed text-foreground/65">
+                      Если email привязан к Telegram, бот <span className="text-accent font-semibold">@NeuroPravo_Bot</span> прислал код. Введите его и новый пароль.
+                    </p>
+                    <input
+                      type="text"
+                      inputMode="text"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      placeholder="Код из Telegram"
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value.trim())}
+                      className={inputClass}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Новый пароль (мин. 6 символов)"
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                      className={inputClass}
+                    />
+                    {forgotError && (
+                      <p className="text-[13px] font-semibold text-rose-300 text-center">{forgotError}</p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={forgotLoading || !resetCode.trim() || resetPassword.length < 6}
+                      onClick={async () => {
+                        setForgotLoading(true);
+                        setForgotError('');
+                        try {
+                          const res = await fetch(resolveApiUrl('/auth/forgot-password/verify'), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: resetCode.trim(), newPassword: resetPassword }),
+                          });
+                          if (res.ok) {
+                            setResetStep('done');
+                          } else {
+                            const data = await res.json().catch(() => null);
+                            const map: Record<string, string> = {
+                              invalid_token: 'Неверный код. Проверьте и попробуйте снова.',
+                              token_expired: 'Код истёк. Запросите новый.',
+                              too_many_attempts: 'Слишком много попыток. Запросите новый код.',
+                            };
+                            setForgotError((data?.error && map[data.error]) || 'Не удалось сменить пароль. Попробуйте позже.');
+                          }
+                        } catch {
+                          setForgotError('Нет соединения с сервером');
+                        } finally {
+                          setForgotLoading(false);
+                        }
+                      }}
+                      className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
+                    >
+                      {forgotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Сменить пароль'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setResetStep('email'); setForgotError(''); }}
+                      className="w-full text-[13px] font-medium text-foreground/50 hover:text-foreground/80 transition-colors"
+                    >
+                      ← Изменить email
+                    </button>
+                    <div className="text-center">
+                      <p className="text-[12px] text-foreground/40 mb-2">Код не пришёл? Напишите в поддержку:</p>
+                      <div className="flex justify-center gap-3">
+                        <a href="https://t.me/NeuroPravo_Bot" target="_blank" rel="noopener noreferrer"
+                          className="text-[12px] text-accent/70 hover:text-accent font-medium">
+                          @NeuroPravo_Bot
+                        </a>
+                        <span className="text-foreground/20">·</span>
+                        <a href="mailto:pravotechhub@mail.ru"
+                          className="text-[12px] text-accent/70 hover:text-accent font-medium">
+                          pravotechhub@mail.ru
+                        </a>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-4 mt-2 w-full">
                     <p className="text-[14px] leading-relaxed text-foreground/65">
-                      Введите email, на который зарегистрирован аккаунт. Мы отправим ссылку для сброса пароля.
+                      Введите email аккаунта. Если к нему привязан Telegram, код для сброса придёт в бота <span className="text-accent font-semibold">@NeuroPravo_Bot</span>.
                     </p>
                     <input
                       type="email"
-                      placeholder=""
+                      placeholder="Email"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}
                       className={inputClass}
@@ -463,16 +566,17 @@ export default function Auth({ onSuccess }: AuthProps) {
                         setForgotLoading(true);
                         setForgotError('');
                         try {
-                          const res = await fetch(resolveApiUrl('/auth/forgot-password'), {
+                          const res = await fetch(resolveApiUrl('/auth/forgot-password/start'), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email: forgotEmail.trim() }),
                           });
                           if (res.ok) {
-                            setForgotSent(true);
+                            setResetStep('code');
+                          } else if (res.status === 429) {
+                            setForgotError('Слишком часто. Подождите минуту и попробуйте снова.');
                           } else {
-                            const data = await res.json().catch(() => null);
-                            setForgotError(data?.error === 'user_not_found' ? 'Пользователь с таким email не найден' : 'Ошибка. Попробуйте позже.');
+                            setForgotError('Ошибка. Попробуйте позже.');
                           }
                         } catch {
                           setForgotError('Нет соединения с сервером');
@@ -482,10 +586,10 @@ export default function Auth({ onSuccess }: AuthProps) {
                       }}
                       className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[16px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
                     >
-                      {forgotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Отправить'}
+                      {forgotLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Получить код'}
                     </button>
                     <div className="text-center">
-                      <p className="text-[12px] text-foreground/40 mb-2">Или свяжитесь с поддержкой:</p>
+                      <p className="text-[12px] text-foreground/40 mb-2">Не привязывали Telegram? Напишите в поддержку:</p>
                       <div className="flex justify-center gap-3">
                         <a href="https://t.me/NeuroPravo_Bot" target="_blank" rel="noopener noreferrer"
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
@@ -524,7 +628,7 @@ export default function Auth({ onSuccess }: AuthProps) {
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 24, opacity: 0, scale: 0.96 }}
               transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="w-full max-w-[380px] bg-background border border-white/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(var(--primary-rgb),0.18)]"
+              className="w-full max-w-[380px] bg-background border border-foreground/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(var(--primary-rgb),0.18)]"
             >
               <button
                 type="button"
@@ -534,7 +638,7 @@ export default function Auth({ onSuccess }: AuthProps) {
                   if (pendingUser) onSuccess(pendingUser);
                 }}
                 aria-label="Закрыть"
-                className="absolute right-5 top-5 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-white/[0.06] transition-colors"
+                className="absolute right-5 top-5 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
               >
                 <XIcon className="w-[18px] h-[18px]" />
               </button>

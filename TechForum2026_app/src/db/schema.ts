@@ -63,6 +63,16 @@ export const users = pgTable(
     birthday: text('birthday').notNull().default(''),
     isPrivate: boolean('is_private').notNull().default(false),
     pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
+    // Telegram-привязка для безопасного сброса пароля: код сброса шлётся ТОЛЬКО
+    // в привязанный чат владельца (см. server.ts forgot-password). telegram_id —
+    // это chat_id приватного чата (== telegram user id). Привязку выпускает сам
+    // владелец под своей сессией (POST /me/telegram/link-token) → бот вяжет.
+    telegramId: text('telegram_id'),
+    telegramUsername: text('telegram_username'),
+    // Presence: обновляется при подключении/отключении WS-сокета (см. server.ts
+    // initDmWs). Пока юзер онлайн (есть сокет в userSockets) — «в сети»; иначе
+    // показываем «был(а) в сети {relative(last_seen_at)}».
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -106,6 +116,10 @@ export const speakers = pgTable(
     company: text('company').notNull(),
     bio: text('bio').notNull(),
     avatarLetter: text('avatar_letter').notNull(),
+    // Фото спикера (абсолютный URL на сайт, напр. https://tech-pravo.ru/speakers/x.jpg
+    // или /api/media/file/<uuid>). null → карточка показывает инициалы. Заполняется
+    // живым синком с сайта (см. syncSpeakersFromSite в server.ts).
+    avatarUrl: text('avatar_url'),
     topic: text('topic'),
     trackId: text('track_id').notNull().references(() => tracks.id, { onDelete: 'restrict' }),
     // BUG_FIX_CONTEXT: Для ранжирования "Recommended" в Schedule нужно знать
@@ -347,6 +361,7 @@ export const news = pgTable('news', {
   imageUrl: text('image_url'),
   speakerId: text('speaker_id'),
   sortOrder: integer('sort_order').notNull().default(0),
+  isPublished: boolean('is_published').notNull().default(true),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

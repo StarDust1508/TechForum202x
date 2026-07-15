@@ -1,13 +1,57 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Calendar, ChevronRight, Sparkles, Clock3, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
-import { SPEAKERS, SESSIONS, TRACKS, getDayById } from '../data';
+import { useState, useEffect } from 'react';
+import { SESSIONS, TRACKS, getDayById } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
+import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
+
+// Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
+// программы (id спикеров сохранены → связка работает для программных спикеров).
+interface ApiSpeaker {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  bio: string;
+  avatarLetter: string;
+  avatarUrl?: string | null;
+  topic?: string | null;
+  trackId: string;
+}
 
 export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const speaker = SPEAKERS.find((s) => s.id === id);
+  const [speaker, setSpeaker] = useState<ApiSpeaker | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const r = await fetch(resolveApiUrl('/speakers'));
+        if (r.ok && !cancelled) {
+          const data = await r.json();
+          setSpeaker(Array.isArray(data) ? (data.find((s: ApiSpeaker) => s.id === id) ?? null) : null);
+        }
+      } catch {
+        /* offline */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <PageShell kicker="Спикер" title="Загрузка…">
+        <div className="mt-8 h-24 rounded-3xl border border-primary/20 bg-card animate-pulse" />
+      </PageShell>
+    );
+  }
 
   if (!speaker) {
     return (
@@ -26,23 +70,30 @@ export default function SpeakerDetail() {
     );
   }
 
-  // Сессии этого спикера
   const speakerSessions = SESSIONS.filter((s) => s.speakerIds.includes(speaker.id));
   const track = TRACKS.find((t) => t.id === speaker.trackId);
   const bioParagraphs = (speaker.bio || '').split('\n\n').filter(Boolean);
 
   return (
     <PageShell kicker={track?.name || 'Спикер'} title={speaker.name} subtitle={`${speaker.role} · ${speaker.company}`}>
-      {/* Hero — большая HUD-плашка с инициалом + базовые факты */}
+      {/* Hero — фото (или инициал) + базовые факты */}
       <motion.section
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
         className="rounded-3xl border border-primary/30 bg-gradient-to-br from-card to-card/50 p-6 mb-6 flex items-center gap-5"
       >
-        <div className="w-20 h-20 rounded-2xl border border-primary/55 bg-background/80 flex items-center justify-center text-primary font-display text-[32px] font-semibold shrink-0 shadow-[0_0_24px_rgba(255,51,153,0.25)]">
-          {speaker.avatarLetter}
-        </div>
+        {speaker.avatarUrl ? (
+          <img
+            src={resolveAssetUrl(speaker.avatarUrl)}
+            alt={speaker.name}
+            className="w-20 h-20 rounded-2xl border border-primary/55 object-cover shrink-0 bg-background/80 shadow-[0_0_24px_rgba(255,51,153,0.25)]"
+          />
+        ) : (
+          <div className="w-20 h-20 rounded-2xl border border-primary/55 bg-background/80 flex items-center justify-center text-primary font-display text-[32px] font-semibold shrink-0 shadow-[0_0_24px_rgba(255,51,153,0.25)]">
+            {speaker.avatarLetter}
+          </div>
+        )}
         <div className="flex-1 min-w-0 space-y-1">
           {track && (
             <p className="text-[12px] text-foreground/40">
@@ -69,7 +120,7 @@ export default function SpeakerDetail() {
         </section>
       )}
 
-      {/* Расширенная биография */}
+      {/* Биография */}
       <section className="mb-6">
         <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary mb-3">Биография</h2>
         <div className="space-y-3 text-[14px] leading-relaxed text-foreground/85 font-sans">
@@ -79,7 +130,7 @@ export default function SpeakerDetail() {
         </div>
       </section>
 
-      {/* Сессии этого спикера на форуме — переход в расписание */}
+      {/* Сессии этого спикера на форуме */}
       {speakerSessions.length > 0 && (
         <section className="mb-2">
           <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary mb-3 flex items-center gap-2">

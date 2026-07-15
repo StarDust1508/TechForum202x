@@ -13,6 +13,7 @@ import { resolveApiUrl, resolveAssetUrl, authFetch } from '@/src/lib/runtimeEndp
 import BackButton from '@/src/components/BackButton';
 import { useToast } from '@/src/components/Toast';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useDmSocket, sendDm, type DmSocketEvent } from '@/src/lib/dmSocket';
 
 interface ChatMessage {
   id?: string;
@@ -74,7 +75,7 @@ const MessageContextMenu = ({
             key={it.label}
             onClick={() => { it.action(); onClose(); }}
             className={cn(
-              'w-full flex items-center gap-3 px-4 py-3 text-[13px] font-medium transition-colors active:bg-white/10',
+              'w-full flex items-center gap-3 px-4 py-3 text-[13px] font-medium transition-colors active:bg-foreground/10',
               it.label === 'Удалить' ? 'text-rose-400' : 'text-foreground/85',
               i < menuItems.length - 1 && 'border-b border-border/50',
             )}
@@ -95,8 +96,11 @@ const MediaMessage = memo(({ media, role }: { media: NonNullable<ChatMessage['me
   const wavesurferRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [paused, setPaused] = useState(false);
+  // Кружок автоплеит БЕЗ звука (иначе политика автоплея WebView его блокирует
+  // → серый плейсхолдер вместо видео). paused=true на старте → чистая кнопка
+  // Play, если автоплей всё же не разрешён (тап запускает).
+  const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(true);
   const ws = useRef<WaveSurfer | null>(null);
 
   useEffect(() => {
@@ -120,6 +124,16 @@ const MediaMessage = memo(({ media, role }: { media: NonNullable<ChatMessage['me
       return () => ws.current?.destroy();
     }
   }, [media.url, media.type, role]);
+
+  // Кружок (video-note): пробуем автоплей без звука на маунте. Если WebView
+  // требует жест — останется пауза с кнопкой Play, тап запустит.
+  useEffect(() => {
+    if (media.type === 'video-bubble' && videoRef.current) {
+      const v = videoRef.current;
+      v.muted = true;
+      v.play().then(() => setPaused(false)).catch(() => setPaused(true));
+    }
+  }, [media.type, media.url]);
 
   const togglePlay = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -146,7 +160,7 @@ const MediaMessage = memo(({ media, role }: { media: NonNullable<ChatMessage['me
     return (
       <div className="relative w-48 h-48 rounded-full overflow-hidden border-2 border-accent shadow-neon-cyan mt-2 mx-auto bg-black">
         <video ref={videoRef} src={media.url} autoPlay loop muted={muted} playsInline className="w-full h-full object-cover"
-          onClick={togglePlay} />
+          onClick={togglePlay} onPlay={() => setPaused(false)} onPause={() => setPaused(true)} />
         <AnimatePresence>
           {paused && (
             <motion.div
@@ -171,10 +185,10 @@ const MediaMessage = memo(({ media, role }: { media: NonNullable<ChatMessage['me
 
   if (media.type === 'audio') {
     return (
-      <div className="flex items-center gap-3 py-2 px-1 min-w-[200px] mt-2 bg-white/5 rounded-xl">
+      <div className="flex items-center gap-3 py-2 px-1 min-w-[200px] mt-2 bg-foreground/5 rounded-xl">
         <button onClick={() => { ws.current?.playPause(); setIsPlaying(!isPlaying); }}
           className={cn('w-10 h-10 rounded-full flex items-center justify-center shrink-0',
-            role === 'user' ? 'bg-white/20 text-white' : 'bg-accent/20 text-accent')}>
+            role === 'user' ? 'bg-foreground/20 text-white' : 'bg-accent/20 text-accent')}>
           {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
         </button>
         <div className="flex-1"><div ref={wavesurferRef} /></div>
@@ -264,7 +278,48 @@ export default function Chat() {
   const [dmContacts, setDmContacts] = useState<Array<{ id: string; name: string; role: string; avatar: string; online: boolean; lastMsg: string }>>([]);
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [dmMessages, setDmMessages] = useState<Record<string, ChatMessage[]>>({});
+  // Presence + typing («как в Telegram»). presence: online/last-seen по userId
+  // (снапшот из /users/list + live через WS). typingPeers: до какого времени (ms)
+  // показывать «печатает» для пира. forceTick: 1с-таймер для авто-скрытия
+  // «печатает» и пересчёта «был(а) в сети N назад».
+  const [presence, setPresence] = useState<Record<string, { online: boolean; lastSeenAt: string | null }>>({});
+  const [typingPeers, setTypingPeers] = useState<Record<string, number>>({});
+  const [, forceTick] = useState(0);
+  const lastTypingSentRef = useRef(0);
+
+  useDmSocket((ev: DmSocketEvent) => {
+    if (ev.type === 'presence') {
+      setPresence(prev => ({ ...prev, [ev.userId]: { online: ev.online, lastSeenAt: ev.lastSeenAt } }));
+    } else if (ev.type === 'typing') {
+      setTypingPeers(prev => ({ ...prev, [ev.from]: Date.now() + 5000 }));
+    } else if (ev.type === 'dm:new') {
+      const m = ev.message;
+      if (!myId || m.fromUserId === myId) return; // своё эхо — уже добавлено оптимистично
+      const peer = m.fromUserId;
+      const cm: ChatMessage = {
+        id: m.id,
+        role: 'other',
+        text: m.text,
+        time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        ...(m.mediaUrl ? { media: { type: m.mediaType || 'image', url: m.mediaUrl.startsWith('/uploads/') ? resolveAssetUrl(m.mediaUrl) : m.mediaUrl } } : {}),
+      };
+      setDmMessages(prev => {
+        const arr = prev[peer] || [];
+        if (arr.some(x => x.id === m.id)) return prev; // дедуп по id
+        return { ...prev, [peer]: [...arr, cm] };
+      });
+      setTypingPeers(prev => { const n = { ...prev }; delete n[peer]; return n; }); // прислал → уже не печатает
+    }
+  });
+
+  useEffect(() => {
+    const t = setInterval(() => forceTick(v => v + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
   const [dmInput, setDmInput] = useState('');
+  // Режим записи для круглой кнопки композера: голос ↔ видео (переключается
+  // тумблером в пилюле, как в Telegram).
+  const [recordMode, setRecordMode] = useState<'audio' | 'video'>('audio');
   const [loadingDm, setLoadingDm] = useState(true);
 
   // Context menu & message actions
@@ -309,8 +364,14 @@ export default function Chat() {
           const data = await r.json();
           const contacts = data.map((u: any) => ({
             id: u.id, name: u.name, role: u.role || 'Участник',
-            avatar: u.avatar || '', online: false, lastMsg: ''
+            avatar: u.avatar || '', online: !!u.online, lastMsg: ''
           }));
+          // Начальный снапшот presence из списка (дальше — live через WS).
+          setPresence(() => {
+            const init: Record<string, { online: boolean; lastSeenAt: string | null }> = {};
+            for (const u of data) init[u.id] = { online: !!u.online, lastSeenAt: u.lastSeenAt ?? null };
+            return init;
+          });
           // Preload all contact avatars into browser cache before rendering
           const avatarUrls = contacts
             .map((c: any) => c.avatar ? (c.avatar.startsWith('/uploads/') ? resolveAssetUrl(c.avatar) : c.avatar) : '')
@@ -620,6 +681,35 @@ export default function Chat() {
   const fmtTimer = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
   const contact = useMemo(() => dmContacts.find(c => c.id === selectedContact), [dmContacts, selectedContact]);
 
+  // ── Presence / typing helpers («как в Telegram») ──
+  function relLastSeen(iso: string | null): string {
+    if (!iso) return '';
+    const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1) return 'только что';
+    if (min < 60) return `${min} мин назад`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} ч назад`;
+    return `${Math.floor(hr / 24)} дн назад`;
+  }
+  function peerStatus(peerId: string | null | undefined): { text: string; tone: 'typing' | 'online' | 'offline' } {
+    if (!peerId) return { text: '', tone: 'offline' };
+    if ((typingPeers[peerId] || 0) > Date.now()) return { text: 'печатает…', tone: 'typing' };
+    const p = presence[peerId];
+    if (p?.online) return { text: 'в сети', tone: 'online' };
+    const seen = p?.lastSeenAt ?? null;
+    return { text: seen ? `был(а) в сети ${relLastSeen(seen)}` : 'не в сети', tone: 'offline' };
+  }
+  function isPeerOnline(peerId: string): boolean {
+    return presence[peerId]?.online ?? false;
+  }
+  function sendTyping(to: string): void {
+    const now = Date.now();
+    if (now - lastTypingSentRef.current > 2000) {
+      lastTypingSentRef.current = now;
+      sendDm({ type: 'typing', to });
+    }
+  }
+
   /* ── Long-press handlers for context menu ── */
   const handleMsgPointerDown = useCallback((e: React.PointerEvent, idx: number, tab: 'assistant' | 'dm', isOwn: boolean, hasMedia: boolean, hasText: boolean) => {
     const { clientX, clientY } = e;
@@ -760,7 +850,7 @@ export default function Chat() {
   ];
 
   return (
-    <div className="flex flex-col relative" style={{ minHeight: '100dvh', height: '100dvh', overflow: 'hidden' }}>
+    <div className="flex flex-col relative" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))', height: 'calc(100dvh - env(safe-area-inset-top, 0px))', overflow: 'hidden' }}>
       {/* Header */}
       <header className="shrink-0 z-30 bg-background/90 backdrop-blur-xl border-b border-border"
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 4px)' }}>
@@ -786,7 +876,11 @@ export default function Chat() {
               className="flex-1 min-w-0 text-left active:opacity-70 transition-opacity"
             >
               <span className="font-display text-[17px] font-bold text-foreground block truncate leading-tight">{contact?.name || 'Чат'}</span>
-              <span className="text-[11px] text-foreground/40 leading-none">{contact?.role || 'Участник'}</span>
+              {(() => {
+                const st = peerStatus(selectedContact);
+                const color = st.tone === 'typing' ? 'text-primary' : st.tone === 'online' ? 'text-emerald-400' : 'text-foreground/40';
+                return <span className={`text-[11px] leading-none transition-colors ${color}`}>{st.text || contact?.role || 'Участник'}</span>;
+              })()}
             </button>
           </div>
         ) : (
@@ -824,7 +918,7 @@ export default function Chat() {
 
       {/* Content — slightly lighter background for messages area with smooth gradient */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide min-h-0"
-        style={{ background: 'linear-gradient(to bottom, rgba(15,17,24,0) 0%, rgba(25,28,38,0.6) 15%, rgba(25,28,38,0.6) 85%, rgba(15,17,24,0) 100%)' }}>
+        style={{ background: 'transparent' }}>
         <div className="p-5 pb-4">
           {activeTab === 'assistant' ? (
             <div className="flex flex-col gap-1.5">
@@ -861,7 +955,9 @@ export default function Chat() {
                       ) : <Bot className="w-3.5 h-3.5 text-accent" />}
                     </div>
                     <div className={cn('max-w-[78%]', isUser ? 'items-end' : 'items-start')}>
-                      <div className={cn('px-3 py-2 text-[13px] leading-snug',
+                      <div className={(msg.media?.type === 'video-bubble' && !msg.text && !isEditing)
+                        ? 'bg-transparent'
+                        : cn('px-3 py-2 text-[13px] leading-snug',
                         isUser
                           ? 'bg-primary/15 border border-primary/20 rounded-2xl rounded-tr-sm text-foreground'
                           : 'bg-card border border-border rounded-2xl rounded-tl-sm text-foreground/90')}>
@@ -947,8 +1043,13 @@ export default function Chat() {
                   return (
                   <button key={c.id} onClick={() => selectContactWithHistory(c.id)}
                     className="w-full flex items-center gap-3 bg-card border border-border p-3.5 rounded-xl hover:border-primary/30 active:scale-[0.98] transition-all">
-                    <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center text-foreground font-display font-bold text-sm shrink-0 overflow-hidden">
-                      {cAvatar ? <img src={cAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : c.name.charAt(0)}
+                    <div className="relative shrink-0">
+                      <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center text-foreground font-display font-bold text-sm overflow-hidden">
+                        {cAvatar ? <img src={cAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : c.name.charAt(0)}
+                      </div>
+                      {isPeerOnline(c.id) && (
+                        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-background" />
+                      )}
                     </div>
                     <div className="flex-1 text-left min-w-0">
                       <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
@@ -990,7 +1091,9 @@ export default function Chat() {
                       )}
                     </div>
                     <div className="max-w-[78%]">
-                      <div className={cn('px-3 py-2 text-[13px] leading-snug',
+                      <div className={(msg.media?.type === 'video-bubble' && !msg.text && !isEditing)
+                        ? 'bg-transparent'
+                        : cn('px-3 py-2 text-[13px] leading-snug',
                         isUser
                           ? 'bg-primary/15 border border-primary/20 rounded-2xl rounded-tr-sm text-foreground'
                           : 'bg-card border border-border rounded-2xl rounded-tl-sm text-foreground/90')}>
@@ -1039,7 +1142,7 @@ export default function Chat() {
               </div>
               <div className="text-white font-mono text-2xl font-bold">{fmtTimer(recordingTime)}</div>
               <div className="flex gap-4">
-                <button onClick={cancelRecording} className="w-14 h-14 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-white"><X className="w-6 h-6" /></button>
+                <button onClick={cancelRecording} className="w-14 h-14 bg-foreground/10 border border-foreground/20 rounded-full flex items-center justify-center text-white"><X className="w-6 h-6" /></button>
                 <button onClick={stopRecording} className="w-16 h-16 bg-primary rounded-full flex items-center justify-center text-white shadow-neon-magenta"><Square className="w-7 h-7 fill-current" /></button>
               </div>
             </div>
@@ -1187,36 +1290,46 @@ export default function Chat() {
               <button onClick={stopRecording} className="w-11 h-11 bg-green-500 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0"><Square className="w-5 h-5 fill-current" /></button>
             </motion.div>
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-2">
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleMediaUpload} />
-              <button onClick={() => fileInputRef.current?.click()}
-                className="w-10 h-10 bg-card border border-border rounded-xl flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-95 shrink-0">
-                <Paperclip className="w-5 h-5" />
-              </button>
-              <textarea
-                value={activeTab === 'assistant' ? input : dmInput}
-                onChange={e => activeTab === 'assistant' ? setInput(e.target.value) : setDmInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); activeTab === 'assistant' ? handleSend() : handleDmSend(); } }}
-                placeholder={activeTab === 'assistant' ? 'Спрашивай...' : `Написать ${contact?.name || ''}...`}
-                rows={1}
-                className="flex-1 bg-card border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-primary/40 text-foreground placeholder:text-muted-foreground resize-none min-h-[44px] max-h-32"
-              />
-              {!(activeTab === 'assistant' ? input : dmInput).trim() ? (
-                <div className="flex gap-1.5 shrink-0">
-                  <button onClick={() => startRecording('audio')}
-                    className="w-10 h-10 bg-card border border-border rounded-xl flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-95">
-                    <Mic className="w-5 h-5" />
+              {/* Пилюля в стиле Telegram: скрепка + текст + тумблер голос/видео. Стикеров нет. */}
+              <div className="flex-1 flex items-end gap-0.5 rounded-[22px] border border-border bg-card pl-1.5 pr-1 py-1">
+                <button onClick={() => fileInputRef.current?.click()} aria-label="Прикрепить"
+                  className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-90 shrink-0 self-end">
+                  <Paperclip className="w-[21px] h-[21px]" />
+                </button>
+                <textarea
+                  value={activeTab === 'assistant' ? input : dmInput}
+                  onChange={e => {
+                    if (activeTab === 'assistant') { setInput(e.target.value); }
+                    else { setDmInput(e.target.value); if (selectedContact) sendTyping(selectedContact); }
+                  }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); activeTab === 'assistant' ? handleSend() : handleDmSend(); } }}
+                  placeholder={activeTab === 'assistant' ? 'Спрашивай…' : 'Сообщение'}
+                  rows={1}
+                  className="flex-1 bg-transparent border-0 px-1 py-2 text-[15px] leading-snug focus:outline-none text-foreground placeholder:text-muted-foreground resize-none min-h-[38px] max-h-32"
+                />
+                {activeTab === 'dm' && !dmInput.trim() && (
+                  <button onClick={() => setRecordMode(m => (m === 'audio' ? 'video' : 'audio'))}
+                    aria-label={recordMode === 'audio' ? 'Переключить на видео' : 'Переключить на голос'}
+                    className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-90 shrink-0 self-end">
+                    {recordMode === 'audio' ? <Camera className="w-[21px] h-[21px]" /> : <Mic className="w-[21px] h-[21px]" />}
                   </button>
-                  <button onClick={() => startRecording('video')}
-                    className="w-10 h-10 bg-card border border-border rounded-xl flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-95">
-                    <Camera className="w-5 h-5" />
-                  </button>
-                </div>
-              ) : (
+                )}
+              </div>
+              {/* Круглая кнопка: отправка (если есть текст) или запись в текущем режиме */}
+              {(activeTab === 'assistant' ? input : dmInput).trim() ? (
                 <button onClick={activeTab === 'assistant' ? handleSend : handleDmSend}
                   disabled={activeTab === 'assistant' ? loading : false}
-                  className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground disabled:opacity-30 transition-all active:scale-95 shadow-neon-magenta shrink-0">
+                  aria-label="Отправить"
+                  className="w-11 h-11 rounded-full bg-primary flex items-center justify-center text-primary-foreground disabled:opacity-30 transition-all active:scale-95 shadow-neon-magenta shrink-0">
                   <Send className="w-5 h-5" />
+                </button>
+              ) : (
+                <button onClick={() => startRecording(activeTab === 'assistant' ? 'audio' : recordMode)}
+                  aria-label={(activeTab === 'assistant' || recordMode === 'audio') ? 'Записать голосовое' : 'Записать видео'}
+                  className="w-11 h-11 rounded-full bg-card border border-border flex items-center justify-center text-primary transition-all active:scale-95 hover:border-primary/40 shrink-0">
+                  {(activeTab === 'assistant' || recordMode === 'audio') ? <Mic className="w-5 h-5" /> : <Camera className="w-5 h-5" />}
                 </button>
               )}
             </div>

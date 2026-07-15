@@ -165,6 +165,9 @@ type PublicUser = {
   birthday: string;
   isPrivate: boolean;
   pushPreviewHidden: boolean;
+  telegramLinked: boolean;
+  telegramUsername: string | null;
+  lastSeenAt: string | null;
 };
 
 function toPublicUser(row: typeof users.$inferSelect): PublicUser {
@@ -182,6 +185,9 @@ function toPublicUser(row: typeof users.$inferSelect): PublicUser {
     birthday: (row as any).birthday ?? '',
     isPrivate: row.isPrivate,
     pushPreviewHidden: row.pushPreviewHidden ?? false,
+    telegramLinked: !!(row as any).telegramId,
+    telegramUsername: (row as any).telegramUsername ?? null,
+    lastSeenAt: (row as any).lastSeenAt instanceof Date ? (row as any).lastSeenAt.toISOString() : ((row as any).lastSeenAt ?? null),
   };
 }
 
@@ -214,6 +220,18 @@ async function findUserById(id: string): Promise<typeof users.$inferSelect | nul
 
 async function findUserByEmail(email: string): Promise<typeof users.$inferSelect | null> {
   const rows = await db.select().from(users).where(eq(users.email, normalizeEmail(email))).limit(1);
+  return rows[0] ?? null;
+}
+
+// Телефон-логин: нормализуем к «+<только цифры>» (единый формат для сравнения).
+function normalizePhone(p: string): string {
+  const digits = String(p || '').replace(/[^\d]/g, '');
+  return digits ? `+${digits}` : '';
+}
+async function findUserByPhone(phone: string): Promise<typeof users.$inferSelect | null> {
+  const norm = normalizePhone(phone);
+  if (!norm) return null;
+  const rows = await db.select().from(users).where(eq(users.phone, norm)).limit(1);
   return rows[0] ?? null;
 }
 
@@ -412,6 +430,28 @@ async function startServer(): Promise<void> {
     }
   }
 
+  // Отправка события КОНКРЕТНОМУ юзеру (на все его открытые сокеты). Для typing.
+  function sendToUser(userId: string, event: Record<string, unknown>): void {
+    const set = userSockets.get(userId);
+    if (!set) return;
+    const payload = JSON.stringify(event);
+    for (const ws of set) {
+      if (ws.readyState === 1) { try { ws.send(payload); } catch { /* socket lost */ } }
+    }
+  }
+
+  // Presence: рассылаем ВСЕМ онлайн-юзерам, что userId зашёл/вышел из сети.
+  // Клиент сам решает, релевантно ли (открытый чат или строка в списке контактов).
+  // Для конференции (сотни онлайн) стоимость незначительна.
+  function broadcastPresence(userId: string, online: boolean, lastSeenAt: string | null): void {
+    const event = JSON.stringify({ type: 'presence', userId, online, lastSeenAt });
+    for (const [, set] of userSockets) {
+      for (const ws of set) {
+        if (ws.readyState === 1) { try { ws.send(event); } catch { /* socket lost */ } }
+      }
+    }
+  }
+
   // DIAG (повторно включено): полный лог auth-flow + interests +
   // body-summary при ошибках 4xx. Без этого нельзя поймать жалобы вида
   // «не могу войти / не работает онбординг» с устройств юзеров. Собирает
@@ -525,7 +565,15 @@ async function startServer(): Promise<void> {
   });
 
   const navyApiKey = String(process.env.NAVY_API_KEY || '').trim();
-  const navyModel = String(process.env.NAVY_MODEL || 'gpt-4.1').trim();
+  // Основная модель чата — deepseek-v4-pro. Если она не отвечает (HTTP-ошибка,
+  // пустой ответ или таймаут) — по очереди пробуем фолбэки. Порядок и состав
+  // переопределяются через env (NAVY_MODEL / NAVY_FALLBACK_MODELS).
+  // whisper-1 (транскрипция) — отдельно, в цепочку чата не входит.
+  const navyModel = String(process.env.NAVY_MODEL || 'deepseek-v4-pro').trim();
+  const navyFallbackModels = String(
+    process.env.NAVY_FALLBACK_MODELS || 'qwen3.5-397b-a17b,deepseek-v4-flash,minimax-m3',
+  ).split(',').map((s) => s.trim()).filter(Boolean);
+  const navyChatModels = [navyModel, ...navyFallbackModels.filter((m) => m !== navyModel)];
   const navyBaseUrl = 'https://api.navy/v1';
   const authRateLimit = createRateLimiter(30, 60_000);
   const writeRateLimit = createRateLimiter(60, 60_000); // posts/comments/statuses
@@ -834,58 +882,79 @@ async function startServer(): Promise<void> {
     }
     messages.push({ role: 'user', content: message });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
+    // Фолбэк-цепочка: пробуем модели по очереди (deepseek-v4-pro → фолбэки).
+    // Первый непустой ответ выигрывает. Причины перехода к следующей модели:
+    // HTTP-ошибка (5xx/429/квота), пустой ответ, таймаут 15с или сетевой сбой.
+    let text = '';
+    let usedModel = '';
+    let sawNonTimeoutFailure = false;
+    for (const model of navyChatModels) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      try {
+        const resp = await fetch(`${navyBaseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${navyApiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: 1024,
+            temperature: 0.7,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-    try {
-      const resp = await fetch(`${navyBaseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${navyApiKey}`,
-        },
-        body: JSON.stringify({
-          model: navyModel,
-          messages,
-          max_tokens: 1024,
-          temperature: 0.7,
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => '');
-        log.error('ai', 'navy api error', { status: resp.status, body: errBody });
-        res.status(502).json({ error: 'ai_unavailable' });
-        return;
+        if (!resp.ok) {
+          sawNonTimeoutFailure = true;
+          const errBody = await resp.text().catch(() => '');
+          log.warn('ai', 'model failed, trying next', { model, status: resp.status, body: errBody.slice(0, 200) });
+          continue;
+        }
+        const data = await resp.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const candidate = data.choices?.[0]?.message?.content?.trim() || '';
+        if (!candidate) {
+          sawNonTimeoutFailure = true;
+          log.warn('ai', 'model returned empty, trying next', { model });
+          continue;
+        }
+        text = candidate;
+        usedModel = model;
+        break;
+      } catch (error: any) {
+        clearTimeout(timeout);
+        const isAbort = error?.name === 'AbortError';
+        if (!isAbort) sawNonTimeoutFailure = true;
+        log.warn('ai', isAbort ? 'model timeout, trying next' : 'model error, trying next', { model, err: String(error) });
+        continue;
       }
-
-      const data = await resp.json() as { choices?: Array<{ message?: { content?: string } }> };
-      const text = data.choices?.[0]?.message?.content?.trim() || '';
-      if (!text) {
-        res.status(502).json({ error: 'ai_empty_response' });
-        return;
-      }
-
-      // Persist both user message and bot response to DB (fire-and-forget,
-      // don't block the response on DB write).
-      const userId = getSessionUserId(req)!;
-      const userMsgId = crypto.randomUUID();
-      const botMsgId = crypto.randomUUID();
-      const now = new Date();
-      db.insert(aiChatMessages).values([
-        { id: userMsgId, userId, role: 'user', text: message, createdAt: now },
-        { id: botMsgId, userId, role: 'bot', text, createdAt: new Date(now.getTime() + 1) },
-      ]).catch((err: any) => log.error('ai', 'failed to persist ai chat', { err: String(err) }));
-
-      res.json({ text });
-    } catch (error: any) {
-      clearTimeout(timeout);
-      const isAbort = error?.name === 'AbortError';
-      log.error('ai', isAbort ? 'chat timeout' : 'chat error', { err: String(error) });
-      res.status(isAbort ? 504 : 502).json({ error: isAbort ? 'ai_timeout' : 'ai_unavailable' });
     }
+
+    if (!text) {
+      log.error('ai', 'all navy models failed', { models: navyChatModels.join(',') });
+      // Если ни одна модель не ответила и все падения были таймаутами — 504,
+      // иначе 502 (ошибки/пустые ответы).
+      res.status(sawNonTimeoutFailure ? 502 : 504).json({ error: sawNonTimeoutFailure ? 'ai_unavailable' : 'ai_timeout' });
+      return;
+    }
+
+    log.info('ai', 'chat ok', { model: usedModel });
+
+    // Persist both user message and bot response to DB (fire-and-forget,
+    // don't block the response on DB write).
+    const userId = getSessionUserId(req)!;
+    const userMsgId = crypto.randomUUID();
+    const botMsgId = crypto.randomUUID();
+    const now = new Date();
+    db.insert(aiChatMessages).values([
+      { id: userMsgId, userId, role: 'user', text: message, createdAt: now },
+      { id: botMsgId, userId, role: 'bot', text, createdAt: new Date(now.getTime() + 1) },
+    ]).catch((err: any) => log.error('ai', 'failed to persist ai chat', { err: String(err) }));
+
+    res.json({ text });
   });
 
   api.post('/ai/transcribe', aiRateLimit, requireAuth, upload.single('audio'), async (req, res) => {
@@ -928,22 +997,37 @@ async function startServer(): Promise<void> {
   // ========================================================================
 
   api.post('/auth/register', authRateLimit, validateBody(authRegisterSchema), async (req, res) => {
-    const { email, password, name } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
+    const { email, phone, password, name } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
 
-    const existing = await findUserByEmail(email);
-    if (existing) {
-      res.status(400).json({ error: 'Пользователь уже существует' });
-      return;
+    // Идентификатор — email ИЛИ телефон. Для телефона генерим внутренний
+    // синтетический email (колонка users.email NOT NULL UNIQUE), реальный
+    // номер кладём в users.phone — по нему идёт вход. Сброс пароля у
+    // телефон-юзеров — только через привязанный Telegram.
+    const normPhone = phone ? normalizePhone(phone) : '';
+    if (normPhone) {
+      const existingByPhone = await findUserByPhone(normPhone);
+      if (existingByPhone) {
+        res.status(400).json({ error: 'Пользователь с таким телефоном уже существует' });
+        return;
+      }
+    } else {
+      const existing = await findUserByEmail(email!);
+      if (existing) {
+        res.status(400).json({ error: 'Пользователь уже существует' });
+        return;
+      }
     }
 
     const id = crypto.randomUUID();
     const passwordHash = hashPassword(password);
     const avatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
+    const storedEmail = normPhone ? `${normPhone}@phone.tech-pravo.ru` : normalizeEmail(email!);
 
     try {
       await db.insert(users).values({
         id,
-        email,
+        email: storedEmail,
+        phone: normPhone || null,
         passwordHash,
         name,
         avatar,
@@ -952,7 +1036,7 @@ async function startServer(): Promise<void> {
         role: 'Участник',
       });
     } catch (err) {
-      log.error('auth', 'register insert failed', { err: String(err), email });
+      log.error('auth', 'register insert failed', { err: String(err) });
       res.status(500).json({ error: 'user_create_failed' });
       return;
     }
@@ -1000,23 +1084,26 @@ async function startServer(): Promise<void> {
   }
 
   api.post('/auth/login', authRateLimit, validateBody(authLoginSchema), async (req, res) => {
-    const { email, password } = req.body as import('./src/lib/validation.js').AuthLoginBody;
+    const { email, phone, password } = req.body as import('./src/lib/validation.js').AuthLoginBody;
 
-    const lock = checkAccountLock(email);
+    // Ключ для anti-bruteforce и поиска: телефон (нормализованный) ИЛИ email.
+    const lockKey = phone ? normalizePhone(phone) : (email || '');
+
+    const lock = checkAccountLock(lockKey);
     if (lock.locked) {
       res.setHeader('Retry-After', String(lock.retryAfterSec || 60));
       res.status(429).json({ error: 'account_locked', retryAfterSeconds: lock.retryAfterSec });
       return;
     }
 
-    const user = await findUserByEmail(email);
+    const user = phone ? await findUserByPhone(phone) : await findUserByEmail(email!);
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
-      noteFailedLogin(email);
+      noteFailedLogin(lockKey);
       res.status(401).json({ error: 'Неверные данные' });
       return;
     }
-    clearAccountLock(email);
+    clearAccountLock(lockKey);
 
     req.session.userId = user.id;
     const interestRows = await db
@@ -1111,6 +1198,387 @@ async function startServer(): Promise<void> {
   //
   // Anti-enumeration: на /start всегда возвращаем 200 ok, не раскрывая
   // существование email-а в БД. Реальная отсылка идёт только если юзер найден.
+
+  // ========================================================================
+  // TELEGRAM LINK (безопасный сброс пароля)
+  // ========================================================================
+  // Модель безопасности: код сброса пароля доставляется ТОЛЬКО в заранее
+  // привязанный Telegram-чат владельца аккаунта. Привязку может выпустить
+  // лишь сам владелец под своей сессией (POST /me/telegram/link-token) —
+  // поэтому атакующий, знающий чужой email, НЕ может перехватить код
+  // (в отличие от «ссылка тому, кто её открыл»).
+  //
+  // Транспорт: у techforum-api нет своего Telegram-egress. Доставку делает
+  // бот основного сайта (@NeuroPravo_Bot, pravo-api) через WARP:
+  //   • привязка: бот ловит /start tflink_<id> → POST сюда /internal/telegram/bind
+  //   • сброс:    здесь POST → pravo-api /internal/tg-send → bot.sendMessage
+  // Оба internal-канала защищены общим секретом INTERNAL_BOT_SECRET
+  // (fail-closed: если секрет не задан, привязка и пуш выключены).
+  const internalBotSecret = String(process.env.INTERNAL_BOT_SECRET || '').trim();
+  const botUsername = String(process.env.TELEGRAM_BOT_USERNAME || 'NeuroPravo_Bot').trim().replace(/^@/, '');
+  const pravoSendUrl = String(process.env.PRAVO_TG_SEND_URL || 'http://127.0.0.1:3001/internal/tg-send').trim();
+  const internalRateLimit = createRateLimiter(20, 60_000);
+  if (!internalBotSecret) {
+    log.warn('telegram-link', 'INTERNAL_BOT_SECRET не задан — привязка Telegram и пуш кода сброса выключены (fail-closed).');
+  }
+
+  // Короткоживущие link-токены. Telegram start-param ограничен 64 символами и
+  // алфавитом [A-Za-z0-9_-], поэтому храним КОРОТКИЙ случайный id в памяти, а не
+  // длинный самоподписанный блоб. Одноразовые, TTL 15 мин. Процесс techforum-api
+  // одноинстансный (pm2 fork) — карта живёт в нём; при рестарте юзер повторно
+  // жмёт «Привязать» (самовосстановление, не критично).
+  const tgLinkTokens = new Map<string, { userId: string; exp: number }>();
+  function sweepLinkTokens(): void {
+    const now = Date.now();
+    for (const [k, v] of tgLinkTokens) if (v.exp < now) tgLinkTokens.delete(k);
+  }
+  function htmlEscape(s: string): string {
+    return String(s).replace(/[<>&]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'));
+  }
+
+  // Пуш произвольного текста в Telegram-чат через бота основного сайта.
+  async function pushTelegram(chatId: string, text: string): Promise<boolean> {
+    if (!internalBotSecret) return false;
+    try {
+      const r = await fetch(pravoSendUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-internal-secret': internalBotSecret },
+        body: JSON.stringify({ chatId, text }),
+      });
+      if (!r.ok) log.warn('telegram-link', 'tg-send non-ok', { status: r.status });
+      return r.ok;
+    } catch (err) {
+      log.warn('telegram-link', 'tg-send failed', { err: String(err) });
+      return false;
+    }
+  }
+
+  // Владелец (под своей сессией) выпускает одноразовую ссылку привязки.
+  api.post('/me/telegram/link-token', requireAuth, (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) { res.status(401).json({ error: 'Не авторизован' }); return; }
+    if (!internalBotSecret) { res.status(503).json({ error: 'telegram_link_disabled' }); return; }
+    sweepLinkTokens();
+    const id = crypto.randomBytes(18).toString('base64url'); // 24 симв. → 'tflink_'+id = 31 (< 64)
+    tgLinkTokens.set(id, { userId, exp: Date.now() + 15 * 60 * 1000 });
+    res.json({ deepLink: `https://t.me/${botUsername}?start=tflink_${id}`, botUsername, ttlSeconds: 15 * 60 });
+  });
+
+  // Владелец отвязывает Telegram.
+  api.post('/me/telegram/unlink', requireAuth, async (req, res) => {
+    const userId = getSessionUserId(req);
+    if (!userId) { res.status(401).json({ error: 'Не авторизован' }); return; }
+    await db.update(users).set({ telegramId: null, telegramUsername: null }).where(eq(users.id, userId));
+    res.json({ ok: true });
+  });
+
+  // Бот основного сайта завершает привязку: /start tflink_<id> → сюда.
+  // Гейт: общий секрет + валидный одноразовый link-токен.
+  api.post('/internal/telegram/bind', internalRateLimit, async (req, res) => {
+    if (!internalBotSecret) { res.status(503).json({ error: 'internal_disabled' }); return; }
+    const provided = String(req.header('x-internal-secret') || '');
+    if (provided.length !== internalBotSecret.length ||
+        !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(internalBotSecret))) {
+      res.status(403).json({ error: 'forbidden' });
+      return;
+    }
+    const body = (req.body ?? {}) as { token?: unknown; telegramId?: unknown; username?: unknown };
+    const token = String(body.token || '');
+    const telegramId = body.telegramId != null ? String(body.telegramId) : '';
+    const username = body.username != null ? String(body.username) : '';
+    const rec = tgLinkTokens.get(token);
+    if (!rec || rec.exp < Date.now() || !telegramId) {
+      tgLinkTokens.delete(token);
+      res.status(400).json({ error: 'invalid_or_expired' });
+      return;
+    }
+    tgLinkTokens.delete(token); // одноразово
+    const user = await findUserById(rec.userId);
+    if (!user) { res.status(404).json({ error: 'user_not_found' }); return; }
+    await db.update(users)
+      .set({ telegramId, telegramUsername: username || null })
+      .where(eq(users.id, user.id));
+    log.info('telegram-link', 'bound', { userId: user.id, telegramId });
+    res.json({ ok: true, name: user.name, email: user.email });
+  });
+
+  // ========================================================================
+  // APP CMS — новости приложения. Оператор редактирует их из общей админки
+  // основного сайта; pravo-api проксирует сюда с общим INTERNAL_BOT_SECRET
+  // (тот же fail-closed паттерн, что и привязка Telegram). Публичный GET /news
+  // отдаёт только isPublished=true; здесь — полный CRUD, включая черновики.
+  // ========================================================================
+  const cmsRateLimit = createRateLimiter(240, 60_000);
+  function internalSecretOk(provided: string): boolean {
+    if (!internalBotSecret || provided.length !== internalBotSecret.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(internalBotSecret)); }
+    catch { return false; }
+  }
+  // Возвращает true, если запрос авторизован; иначе сам пишет ответ (503/403).
+  function cmsGuard(req: express.Request, res: express.Response): boolean {
+    if (!internalBotSecret) { res.status(503).json({ error: 'internal_disabled' }); return false; }
+    if (!internalSecretOk(String(req.header('x-internal-secret') || ''))) {
+      res.status(403).json({ error: 'forbidden' }); return false;
+    }
+    return true;
+  }
+  function str(v: unknown, max: number): string | null {
+    if (v == null) return null;
+    const t = String(v).trim();
+    return t ? t.slice(0, max) : null;
+  }
+  function bool(v: unknown): boolean { return v === true || v === 'true' || v === 1 || v === '1'; }
+
+  // GET все новости (включая черновики) — для списка в админке.
+  api.get('/internal/news', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const rows = await db.select().from(news).orderBy(news.sortOrder);
+    res.json(rows);
+  });
+
+  // POST создать новость.
+  api.post('/internal/news', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const title = str(b.title, 500);
+    if (!title) { res.status(400).json({ error: 'title_required' }); return; }
+    const row = {
+      id: 'n_' + crypto.randomBytes(7).toString('hex'),
+      type: str(b.type, 32) || 'Новость',
+      title,
+      content: str(b.content, 2000),
+      body: str(b.body, 20000) || str(b.content, 20000) || title,
+      time: str(b.time, 100),
+      isCritical: bool(b.isCritical),
+      category: str(b.category, 64),
+      imageUrl: str(b.imageUrl, 1000),
+      speakerId: str(b.speakerId, 64),
+      sortOrder: Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0,
+      isPublished: b.isPublished === undefined ? true : bool(b.isPublished),
+    };
+    await db.insert(news).values(row);
+    res.status(201).json(row);
+  });
+
+  // PUT обновить (частично — только переданные поля).
+  api.put('/internal/news/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const id = String(req.params.id);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (b.type !== undefined) patch.type = str(b.type, 32) || 'Новость';
+    if (b.title !== undefined) { const t = str(b.title, 500); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
+    if (b.content !== undefined) patch.content = str(b.content, 2000);
+    if (b.body !== undefined) patch.body = str(b.body, 20000) || '';
+    if (b.time !== undefined) patch.time = str(b.time, 100);
+    if (b.isCritical !== undefined) patch.isCritical = bool(b.isCritical);
+    if (b.category !== undefined) patch.category = str(b.category, 64);
+    if (b.imageUrl !== undefined) patch.imageUrl = str(b.imageUrl, 1000);
+    if (b.speakerId !== undefined) patch.speakerId = str(b.speakerId, 64);
+    if (b.sortOrder !== undefined) patch.sortOrder = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0;
+    if (b.isPublished !== undefined) patch.isPublished = bool(b.isPublished);
+    if (Object.keys(patch).length === 0) { res.status(400).json({ error: 'no_fields' }); return; }
+    const upd = await db.update(news).set(patch).where(eq(news.id, id)).returning();
+    if (!upd[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(upd[0]);
+  });
+
+  // DELETE удалить.
+  api.delete('/internal/news/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const del = await db.delete(news).where(eq(news.id, String(req.params.id))).returning();
+    if (!del[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json({ ok: true });
+  });
+
+  // ======================= APP CMS — РОЗЫГРЫШИ =======================
+  api.get('/internal/giveaways', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const rows = await db.select().from(giveaways).orderBy(giveaways.sortOrder);
+    const counts = await db.select({ gid: giveawayEntries.giveawayId, c: count() })
+      .from(giveawayEntries).groupBy(giveawayEntries.giveawayId);
+    const cmap = new Map(counts.map((r) => [r.gid, Number(r.c)]));
+    res.json(rows.map((g) => ({ ...g, entriesCount: cmap.get(g.id) ?? 0 })));
+  });
+
+  api.post('/internal/giveaways', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const title = str(b.title, 300);
+    if (!title) { res.status(400).json({ error: 'title_required' }); return; }
+    const row = {
+      id: 'g_' + crypto.randomBytes(7).toString('hex'),
+      title,
+      category: str(b.category, 64) || 'general',
+      item: str(b.item, 500) || '',
+      iconKey: str(b.iconKey, 32),
+      gradient: str(b.gradient, 200),
+      description: str(b.description, 4000),
+      condition: str(b.condition, 2000),
+      imageUrl: str(b.imageUrl, 1000),
+      endTime: str(b.endTime, 100),
+      featured: bool(b.featured),
+      isActive: b.isActive === undefined ? true : bool(b.isActive),
+      sortOrder: Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0,
+    };
+    await db.insert(giveaways).values(row);
+    res.status(201).json(row);
+  });
+
+  api.put('/internal/giveaways/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (b.title !== undefined) { const t = str(b.title, 300); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
+    if (b.category !== undefined) patch.category = str(b.category, 64) || 'general';
+    if (b.item !== undefined) patch.item = str(b.item, 500) || '';
+    if (b.iconKey !== undefined) patch.iconKey = str(b.iconKey, 32);
+    if (b.gradient !== undefined) patch.gradient = str(b.gradient, 200);
+    if (b.description !== undefined) patch.description = str(b.description, 4000);
+    if (b.condition !== undefined) patch.condition = str(b.condition, 2000);
+    if (b.imageUrl !== undefined) patch.imageUrl = str(b.imageUrl, 1000);
+    if (b.endTime !== undefined) patch.endTime = str(b.endTime, 100);
+    if (b.featured !== undefined) patch.featured = bool(b.featured);
+    if (b.isActive !== undefined) patch.isActive = bool(b.isActive);
+    if (b.winnerId !== undefined) patch.winnerId = str(b.winnerId, 64);
+    if (b.sortOrder !== undefined) patch.sortOrder = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0;
+    if (Object.keys(patch).length === 0) { res.status(400).json({ error: 'no_fields' }); return; }
+    const upd = await db.update(giveaways).set(patch).where(eq(giveaways.id, String(req.params.id))).returning();
+    if (!upd[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(upd[0]);
+  });
+
+  api.delete('/internal/giveaways/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const del = await db.delete(giveaways).where(eq(giveaways.id, String(req.params.id))).returning();
+    if (!del[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json({ ok: true });
+  });
+
+  // Участники розыгрыша (кто нажал «участвовать»).
+  api.get('/internal/giveaways/:id/entries', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const rows = await db
+      .select({ userId: giveawayEntries.userId, createdAt: giveawayEntries.createdAt, name: users.name, email: users.email, phone: users.phone })
+      .from(giveawayEntries)
+      .innerJoin(users, eq(giveawayEntries.userId, users.id))
+      .where(eq(giveawayEntries.giveawayId, String(req.params.id)))
+      .orderBy(giveawayEntries.createdAt);
+    res.json(rows.map((r) => ({
+      ...r,
+      email: r.email && r.email.endsWith('@phone.tech-pravo.ru') ? null : r.email,
+    })));
+  });
+
+  // ==================== APP CMS — УЧАСТНИКИ ПРИЛОЖЕНИЯ ====================
+  // Все юзеры приложения = все, кто его скачал и зарегистрировался.
+  api.get('/internal/app-users', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const rows = await db.select().from(users).orderBy(desc(users.createdAt));
+    const ic = await db.select({ uid: userInterests.userId, c: count() }).from(userInterests).groupBy(userInterests.userId);
+    const icmap = new Map(ic.map((r) => [r.uid, Number(r.c)]));
+    res.json(rows.map((u) => ({
+      id: u.id,
+      name: u.name,
+      // phone-auth юзеры имеют синтетический email — скрываем, показываем телефон.
+      email: u.email.endsWith('@phone.tech-pravo.ru') ? null : u.email,
+      phone: u.phone,
+      telegramUsername: u.telegramUsername,
+      telegramLinked: !!u.telegramId,
+      lastSeenAt: u.lastSeenAt,
+      createdAt: u.createdAt,
+      interestsCount: icmap.get(u.id) ?? 0,
+    })));
+  });
+
+  // ======================= APP CMS — ПРОГРАММА =======================
+  // Агрегат для редактора: справочники + сессии со спикер-связями.
+  api.get('/internal/program', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
+      db.select().from(tracks),
+      db.select().from(halls),
+      db.select().from(days),
+      db.select().from(speakers),
+      db.select().from(sessionsEvent),
+      db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
+    ]);
+    const speakersBySession = new Map<string, string[]>();
+    for (const l of linkRows) {
+      const a = speakersBySession.get(l.sessionId) ?? [];
+      a.push(l.speakerId);
+      speakersBySession.set(l.sessionId, a);
+    }
+    res.json({
+      tracks: trackRows,
+      halls: hallRows,
+      days: dayRows,
+      speakers: speakerRows.map((s) => ({ id: s.id, name: s.name, role: s.role, company: s.company })),
+      sessions: sessRows.map((s) => ({ ...s, speakerIds: speakersBySession.get(s.id) ?? [] })),
+    });
+  });
+
+  api.post('/internal/sessions', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const title = str(b.title, 500);
+    if (!title) { res.status(400).json({ error: 'title_required' }); return; }
+    const dayId = str(b.dayId, 64);
+    if (!dayId) { res.status(400).json({ error: 'dayId_required' }); return; }
+    const id = 'ev_' + crypto.randomBytes(7).toString('hex');
+    const row = {
+      id, title,
+      description: str(b.description, 8000) || '',
+      startTime: str(b.startTime, 20) || '',
+      endTime: str(b.endTime, 20) || '',
+      format: str(b.format, 64) || 'Доклад',
+      hallId: str(b.hallId, 64),
+      dayId,
+      trackId: str(b.trackId, 64),
+      status: str(b.status, 32) || 'Soon',
+    };
+    await db.insert(sessionsEvent).values(row);
+    const speakerIds = Array.isArray(b.speakerIds) ? (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean) : [];
+    if (speakerIds.length) {
+      await db.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
+    }
+    res.status(201).json({ ...row, speakerIds });
+  });
+
+  api.put('/internal/sessions/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const id = String(req.params.id);
+    const b = (req.body ?? {}) as Record<string, unknown>;
+    const patch: Record<string, unknown> = {};
+    if (b.title !== undefined) { const t = str(b.title, 500); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
+    if (b.description !== undefined) patch.description = str(b.description, 8000) || '';
+    if (b.startTime !== undefined) patch.startTime = str(b.startTime, 20) || '';
+    if (b.endTime !== undefined) patch.endTime = str(b.endTime, 20) || '';
+    if (b.format !== undefined) patch.format = str(b.format, 64) || 'Доклад';
+    if (b.hallId !== undefined) patch.hallId = str(b.hallId, 64);
+    if (b.dayId !== undefined) { const d = str(b.dayId, 64); if (!d) { res.status(400).json({ error: 'dayId_required' }); return; } patch.dayId = d; }
+    if (b.trackId !== undefined) patch.trackId = str(b.trackId, 64);
+    if (b.status !== undefined) patch.status = str(b.status, 32) || 'Soon';
+    if (Object.keys(patch).length) {
+      const upd = await db.update(sessionsEvent).set(patch).where(eq(sessionsEvent.id, id)).returning();
+      if (!upd[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    }
+    if (Array.isArray(b.speakerIds)) {
+      const speakerIds = (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean);
+      await db.delete(sessionSpeakers).where(eq(sessionSpeakers.sessionId, id));
+      if (speakerIds.length) {
+        await db.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
+      }
+    }
+    res.json({ ok: true });
+  });
+
+  api.delete('/internal/sessions/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const del = await db.delete(sessionsEvent).where(eq(sessionsEvent.id, String(req.params.id))).returning();
+    if (!del[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json({ ok: true });
+  });
 
   function hashResetToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -1213,6 +1681,20 @@ async function startServer(): Promise<void> {
     });
 
     await sendResetNotification(user.email, rawToken, id);
+
+    // Доставка кода: ТОЛЬКО в привязанный Telegram владельца (безопасный канал).
+    // Если Telegram не привязан — код никуда не уходит; юзер увидит подсказку
+    // про поддержку. Ответ /start одинаков в любом случае (anti-enumeration).
+    if (user.telegramId) {
+      const text =
+        '🔐 <b>Сброс пароля — ТехнологИИ Права</b>\n\n' +
+        `Запрошен сброс пароля для аккаунта <b>${htmlEscape(user.email)}</b>.\n\n` +
+        'Ваш код (действует 30 минут) — нажмите, чтобы скопировать:\n' +
+        `<code>${rawToken}</code>\n\n` +
+        'Вставьте его в приложении на экране «Восстановление пароля».\n' +
+        'Если сброс запрашивали не вы — просто игнорируйте это сообщение, пароль не изменится.';
+      void pushTelegram(user.telegramId, text);
+    }
 
     res.json({ ok: true, ttlSeconds: 30 * 60 });
   });
@@ -1840,7 +2322,7 @@ async function startServer(): Promise<void> {
       );
     }
     rows.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
-    res.json(rows.slice(0, 200).map((u) => toPublicUser(u)));
+    res.json(rows.slice(0, 200).map((u) => ({ ...toPublicUser(u), online: userSockets.has(u.id) })));
   });
 
   // GET /users/:id — публичный профиль участника. Возвращает поля, которые
@@ -1860,6 +2342,7 @@ async function startServer(): Promise<void> {
       role: users.role,
       bio: users.bio,
       isPrivate: users.isPrivate,
+      lastSeenAt: users.lastSeenAt,
     }).from(users).where(eq(users.id, targetId)).limit(1);
     const u = rows[0];
     if (!u) {
@@ -1872,6 +2355,8 @@ async function startServer(): Promise<void> {
       avatar: u.avatar,
       role: u.role,
       bio: u.isPrivate ? null : u.bio,
+      online: userSockets.has(u.id),
+      lastSeenAt: u.lastSeenAt ? u.lastSeenAt.toISOString() : null,
     });
   });
 
@@ -2245,6 +2730,7 @@ async function startServer(): Promise<void> {
       company: s.company,
       bio: s.bio,
       avatarLetter: s.avatarLetter,
+      avatarUrl: s.avatarUrl,
       topic: s.topic,
       trackId: s.trackId,
       interestIds: s.interestIds,
@@ -2463,7 +2949,9 @@ async function startServer(): Promise<void> {
   });
 
   api.get('/news', async (_req, res) => {
-    const rows = await db.select().from(news).orderBy(news.sortOrder);
+    // Публично отдаём только опубликованные (черновики видит лишь оператор через
+    // /internal/news). Порядок — sortOrder ASC.
+    const rows = await db.select().from(news).where(eq(news.isPublished, true)).orderBy(news.sortOrder);
     res.json(rows.map((n) => ({
       id: n.id,
       type: n.type,
@@ -2875,26 +3363,48 @@ async function startServer(): Promise<void> {
         wss.handleUpgrade(req, socket, head, (ws) => {
           // Регистрируем сокет в Map.
           let set = userSockets.get(userId);
+          const wasOffline = !set || set.size === 0;
           if (!set) { set = new Set(); userSockets.set(userId, set); }
           set.add(ws);
           ws.send(JSON.stringify({ type: 'hello', userId }));
+          // Presence: если это ПЕРВЫЙ сокет юзера — он только что стал онлайн.
+          if (wasOffline) {
+            db.update(users).set({ lastSeenAt: new Date() }).where(eq(users.id, userId))
+              .catch(() => { /* presence best-effort */ });
+            broadcastPresence(userId, true, null);
+          }
           // Heart-beat: пинг каждые 30с, отключаем мёртвых клиентов.
           const heartbeat = setInterval(() => {
             if (ws.readyState !== 1) { clearInterval(heartbeat); return; }
             try { ws.ping(); } catch { /* socket lost */ }
           }, 30_000);
+          // Клиент шлёт { type:'typing', to } при вводе — релеим ПИРУ (без эха себе).
+          ws.on('message', (raw) => {
+            try {
+              const msg = JSON.parse(String(raw)) as { type?: string; to?: string };
+              if (msg?.type === 'typing' && typeof msg.to === 'string' && msg.to) {
+                sendToUser(msg.to, { type: 'typing', from: userId, to: msg.to });
+              }
+            } catch { /* malformed — ignore */ }
+          });
           ws.on('close', () => {
             clearInterval(heartbeat);
             const s = userSockets.get(userId);
             if (s) {
               s.delete(ws);
-              if (s.size === 0) userSockets.delete(userId);
+              if (s.size === 0) {
+                userSockets.delete(userId);
+                // Последний сокет закрылся — юзер ушёл в оффлайн, фиксируем last_seen.
+                const now = new Date();
+                db.update(users).set({ lastSeenAt: now }).where(eq(users.id, userId))
+                  .catch(() => { /* presence best-effort */ });
+                broadcastPresence(userId, false, now.toISOString());
+              }
             }
           });
           ws.on('error', () => {
             try { ws.close(); } catch { /* noop */ }
           });
-          // Клиент-инициированных сообщений у нас нет (пока). Игнорируем.
         });
       });
     });
@@ -2979,9 +3489,84 @@ async function startServer(): Promise<void> {
     console.log(`FCM: ${fcm.disabled ? 'disabled (set FCM_SERVICE_ACCOUNT_PATH)' : 'live'}`);
   });
 
+  // ── Живой синк спикеров сайт → приложение (де-факто ОДНА БД спикеров) ──────
+  // На старте и раз в 10 мин тянем опубликованных спикеров сайта и апсертим в
+  // app.speakers С ФОТО. Совпадение по имени сохраняет существующий id (не рвём
+  // session_speakers), новых вставляем как ss_<id>, снятых с публикации ss_* —
+  // удаляем. sp_* (программные из seed) не удаляем никогда.
+  const SITE_SPEAKERS_URL = process.env.SITE_SPEAKERS_URL || 'http://127.0.0.1:3001/api/speakers?published=true';
+  const initialsFrom = (fullName: string): string => {
+    const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+    return parts.slice(0, 2).map((p) => (p[0] || '').toUpperCase()).join('') || '—';
+  };
+  const mapStreamToTrack = (stream: unknown): string => {
+    const s = String(stream || '').toLowerCase();
+    if (/банкрот|бфл|должник/.test(s)) return 't_bfl';
+    if (/масштаб|рост|маркетинг/.test(s)) return 't_growth';
+    if (/данн|безопас|пдн|152/.test(s)) return 't_data';
+    if (/legaltech|legal tech|сервис|инструмент/.test(s)) return 't_legaltech';
+    if (/автоматиз|арбитраж|документооборот|crm/.test(s)) return 't_automation';
+    return 't_ai';
+  };
+  const absPhoto = (url: unknown): string | null => {
+    const u = String(url || '').trim();
+    if (!u) return null;
+    if (/^https?:\/\//i.test(u)) return u;
+    return `https://tech-pravo.ru${u.startsWith('/') ? '' : '/'}${u}`;
+  };
+  async function syncSpeakersFromSite(): Promise<void> {
+    try {
+      const resp = await fetch(SITE_SPEAKERS_URL, { signal: AbortSignal.timeout(15000) });
+      if (!resp.ok) { console.error(`[speakers-sync] site ${resp.status}`); return; }
+      const raw: any = await resp.json();
+      const site: any[] = Array.isArray(raw) ? raw : (raw?.speakers || raw?.data || []);
+      if (!Array.isArray(site) || !site.length) { console.error('[speakers-sync] empty site list'); return; }
+      const existing = await db.select({ id: speakers.id, name: speakers.name }).from(speakers);
+      const idByName = new Map(existing.map((e) => [e.name.trim().toLowerCase(), e.id]));
+      const keptSs: string[] = [];
+      for (const s of site) {
+        const fullName = String(s.full_name || s.name || '').trim();
+        if (!fullName) continue;
+        const matchId = idByName.get(fullName.toLowerCase());
+        const id = matchId || ('ss_' + String(s.id || fullName).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+        if (!matchId) keptSs.push(id);
+        const set = {
+          name: fullName,
+          role: String(s.position || 'Спикер').slice(0, 200),
+          company: String(s.company || '—').slice(0, 200),
+          bio: String(s.bio || '—').slice(0, 4000),
+          avatarLetter: initialsFrom(fullName),
+          avatarUrl: absPhoto(s.photo_url),
+          topic: s.talk_title ? String(s.talk_title).slice(0, 500) : null,
+          trackId: mapStreamToTrack(s.stream),
+        };
+        await db.insert(speakers).values({ id, interestIds: [], ...set })
+          .onConflictDoUpdate({ target: speakers.id, set });
+      }
+      const stale = (await db.select({ id: speakers.id }).from(speakers))
+        .map((r) => r.id).filter((id) => id.startsWith('ss_') && !keptSs.includes(id));
+      if (stale.length) await db.delete(speakers).where(inArray(speakers.id, stale));
+      console.log(`[speakers-sync] ok: ${site.length} from site (+${keptSs.length} new, -${stale.length} pruned)`);
+    } catch (err) {
+      console.error('[speakers-sync] failed:', (err as Error).message);
+    }
+  }
+  void syncSpeakersFromSite();
+  setInterval(() => { void syncSpeakersFromSite(); }, 10 * 60 * 1000).unref?.();
+
   // BUG_FIX_CONTEXT: graceful shutdown — Postgres pool должен закрыться явно,
   // иначе остаются "висячие" idle connections, и при рестарте сервер не может
   // взять lock на migration (drizzle-kit migrate ругается).
+  // Защита: unhandled rejection в async-роуте (напр. SQL-ошибка из-за старой
+  // схемы таблицы) НЕ должна ронять весь процесс — иначе одна битая ручка кладёт
+  // всё приложение (новости/программа/чат). Логируем, сервер продолжает жить.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason instanceof Error ? (reason.stack || reason.message) : reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err instanceof Error ? (err.stack || err.message) : err);
+  });
+
   process.on('SIGINT', async () => {
     console.log('[server] SIGINT received, closing pool…');
     await pool.end();

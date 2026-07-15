@@ -321,8 +321,13 @@ function AppContent() {
 }
 
 export default function App() {
+  // basename берём из base сборки: web-PWA собирается с --base=/app/ (nginx-alias),
+  // поэтому react-router должен знать префикс, иначе <Routes> не матчат пути и
+  // залогиненный экран рендерится пустым. APK собирается с base=/ → basename
+  // undefined (корень), поведение не меняется.
+  const routerBase = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
   return (
-    <Router>
+    <Router basename={routerBase}>
       <ToastProvider>
         <AppContent />
       </ToastProvider>

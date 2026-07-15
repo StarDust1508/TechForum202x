@@ -7,7 +7,7 @@ const tierConfig: Record<string, { icon: typeof Crown; color: string; glow: stri
   'Генеральный':     { icon: Crown,  color: 'text-[#ff3399]', glow: 'shadow-[0_0_20px_rgba(255,51,153,0.2)]', border: 'border-[#ff3399]/30', bg: 'bg-[#ff3399]/[0.06]' },
   'Платиновый':      { icon: Award,  color: 'text-primary', glow: 'shadow-[0_0_20px_rgba(255,51,153,0.15)]', border: 'border-primary/25', bg: 'bg-primary/[0.04]' },
   'Золотой':         { icon: Star,   color: 'text-[#fbbf24]', glow: 'shadow-[0_0_15px_rgba(251,191,36,0.15)]', border: 'border-[#fbbf24]/20', bg: 'bg-[#fbbf24]/[0.04]' },
-  'Серебряный':      { icon: Star,   color: 'text-foreground/60', glow: '', border: 'border-border', bg: 'bg-white/[0.03]' },
+  'Серебряный':      { icon: Star,   color: 'text-foreground/60', glow: '', border: 'border-border', bg: 'bg-foreground/[0.03]' },
   'Технологический': { icon: Cpu,    color: 'text-[#a855f7]', glow: '', border: 'border-[#a855f7]/20', bg: 'bg-[#a855f7]/[0.04]' },
 };
 

@@ -227,7 +227,7 @@ export default function Giveaways() {
                 'rounded-2xl overflow-hidden transition-all duration-300 border',
                 isParticipating
                   ? 'border-green-500/30 shadow-[0_0_30px_rgba(34,197,94,0.08)]'
-                  : 'border-white/[0.06] shadow-[0_2px_20px_rgba(0,0,0,0.3)]',
+                  : 'border-foreground/[0.06] shadow-[0_2px_20px_rgba(0,0,0,0.3)]',
               )}
               style={{
                 background: isParticipating
@@ -255,7 +255,7 @@ export default function Giveaways() {
                       ГЛАВНЫЙ ПРИЗ
                     </span>
                   )}
-                  <span className="bg-black/60 backdrop-blur-md text-white/80 text-[8px] font-bold px-2.5 py-1 rounded-full border border-white/10 uppercase tracking-[0.1em] flex items-center gap-1">
+                  <span className="bg-black/60 backdrop-blur-md text-white/80 text-[8px] font-bold px-2.5 py-1 rounded-full border border-foreground/10 uppercase tracking-[0.1em] flex items-center gap-1">
                     <Clock className="w-2.5 h-2.5" style={{ color: giveaway.accentColor }} />
                     {giveaway.endTime}
                   </span>
@@ -291,7 +291,7 @@ export default function Giveaways() {
                 </p>
 
                 {/* Condition */}
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-foreground/[0.03] border border-foreground/[0.06]">
                   <div
                     className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                     style={{ background: `${giveaway.accentColor}15`, border: `1px solid ${giveaway.accentColor}25` }}
@@ -395,7 +395,7 @@ export default function Giveaways() {
           >
             <div className={cn(
               'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
-              toastMessage.type === 'join' ? 'bg-white/20' : 'bg-white/10',
+              toastMessage.type === 'join' ? 'bg-foreground/20' : 'bg-foreground/10',
             )}>
               {toastMessage.type === 'join' ? (
                 <Trophy className="w-5 h-5" />

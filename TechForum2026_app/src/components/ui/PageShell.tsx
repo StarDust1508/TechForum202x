@@ -31,7 +31,9 @@ export default function PageShell({
       }}
     >
       {showHeader ? (
-        <header className="mb-6 flex items-center justify-between gap-3">
+        <header
+          className="sticky top-0 z-20 -mx-6 mb-6 flex items-center justify-between gap-3 border-b border-border/60 bg-background/85 px-6 pb-3 pt-1 backdrop-blur-md"
+        >
           <div className="flex items-center gap-3 min-w-0">
             {!hideBack && <BackButton />}
             <div className="min-w-0">

@@ -14,14 +14,16 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff,
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff, Send, Moon, Sun,
 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
 import { hapticSelection } from '@/src/lib/haptics';
 import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
+import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
+import { cn } from '@/src/lib/utils';
 
-type Section = 'notifications' | 'terms' | 'privacy' | 'about';
+type Section = 'notifications' | 'telegram' | 'terms' | 'privacy' | 'about';
 
 const TERMS_TEXT = `Используя приложение ТехнологИИ Права 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
 
@@ -132,7 +134,7 @@ function NotificationsPage() {
         type="button"
         onClick={toggle}
         disabled={busy}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-white/[0.06] px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-foreground/[0.06] px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
       >
         <div className="text-left">
           <p className="font-display text-[15px] font-semibold text-foreground">
@@ -147,7 +149,7 @@ function NotificationsPage() {
         ) : (
           <span
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-primary' : 'bg-white/[0.06] border border-primary/30'
+              enabled ? 'bg-primary' : 'bg-foreground/[0.06] border border-primary/30'
             }`}
           >
             <motion.span
@@ -198,7 +200,7 @@ function NotificationsPage() {
           ) : (
             <span
               className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${
-                previewHidden ? 'bg-primary' : 'bg-white/[0.06] border border-primary/30'
+                previewHidden ? 'bg-primary' : 'bg-foreground/[0.06] border border-primary/30'
               }`}
               style={{ height: 22, width: 40 }}
             >
@@ -217,8 +219,159 @@ function NotificationsPage() {
   );
 }
 
+// Привязка Telegram для безопасного сброса пароля. Владелец под своей сессией
+// получает одноразовую ссылку → открывает @NeuroPravo_Bot → бот вяжет chat_id к
+// аккаунту. При сбросе код приходит ТОЛЬКО в этот привязанный чат (см. Auth.tsx +
+// server.ts forgot-password).
+function TelegramLinkPage() {
+  const [loading, setLoading] = useState(true);
+  const [linked, setLinked] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [manualLink, setManualLink] = useState<string | null>(null);
+
+  async function refresh(): Promise<void> {
+    try {
+      const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
+      if (r.ok) {
+        const u = await r.json();
+        setLinked(!!u.telegramLinked);
+        setUsername(u.telegramUsername ?? null);
+      }
+    } catch {
+      /* offline — оставляем текущее состояние */
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void refresh(); }, []);
+  // Юзер уходит в Telegram привязывать и возвращается — перечитываем статус.
+  useEffect(() => {
+    const onFocus = () => { void refresh(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  async function startLink(): Promise<void> {
+    setBusy(true); setError(null); setManualLink(null);
+    try {
+      const r = await authFetch(resolveApiUrl('/me/telegram/link-token'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!r.ok) {
+        setError(r.status === 503
+          ? 'Привязка временно недоступна. Попробуйте позже.'
+          : 'Не удалось создать ссылку. Попробуйте позже.');
+        return;
+      }
+      const data = await r.json();
+      const link = String(data?.deepLink || '');
+      if (!link) { setError('Не удалось создать ссылку. Попробуйте позже.'); return; }
+      const w = window.open(link, '_blank', 'noopener,noreferrer');
+      if (!w) setManualLink(link); // всплывашка заблокирована — показываем ссылку вручную
+    } catch {
+      setError('Нет соединения с сервером');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlink(): Promise<void> {
+    setBusy(true); setError(null);
+    try {
+      const r = await authFetch(resolveApiUrl('/me/telegram/unlink'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (r.ok) { setLinked(false); setUsername(null); }
+      else setError('Не удалось отвязать. Попробуйте позже.');
+    } catch {
+      setError('Нет соединения с сервером');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10">
+        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-primary/25 bg-foreground/[0.04] p-5">
+        <p className="text-[14px] text-foreground/85 leading-relaxed">
+          Привязка нужна для <b>безопасного сброса пароля</b>: если забудете пароль, код придёт
+          в бота <span className="text-accent font-semibold">@NeuroPravo_Bot</span> — только в ваш
+          привязанный аккаунт, никто другой его не получит.
+        </p>
+      </div>
+
+      {linked ? (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/[0.06] p-5 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl border border-emerald-400/40 bg-background/40 flex items-center justify-center text-emerald-300 shrink-0">
+              <Send className="w-[18px] h-[18px]" strokeWidth={1.7} />
+            </div>
+            <div className="min-w-0">
+              <p className="font-display text-[15px] font-semibold text-foreground">Telegram привязан</p>
+              <p className="text-[12px] text-foreground/50 mt-0.5 truncate">
+                {username ? `@${username}` : 'Аккаунт привязан'}
+              </p>
+            </div>
+          </div>
+          {error && <p className="text-[13px] font-semibold text-rose-300 text-center">{error}</p>}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={unlink}
+            className="w-full border border-rose-400/40 text-rose-300 py-3.5 rounded-2xl text-[14px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Отвязать Telegram'}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {error && <p className="text-[13px] font-semibold text-rose-300 text-center">{error}</p>}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={startLink}
+            className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
+          >
+            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : (<><Send className="w-4 h-4" strokeWidth={1.9} /> Привязать Telegram</>)}
+          </button>
+          {manualLink && (
+            <a
+              href={manualLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-center text-[13px] text-accent underline"
+            >
+              Открыть @NeuroPravo_Bot вручную
+            </a>
+          )}
+          <p className="text-[12px] text-foreground/45 text-center leading-relaxed">
+            Откроется бот в Telegram — нажмите «Start». Вернитесь сюда, статус обновится сам.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const [section, setSectionRaw] = useState<Section | null>(null);
+  const [theme, setThemeState] = useState<Theme>(getTheme());
+  const changeTheme = (t: Theme) => { setTheme(t); setThemeState(t); void hapticSelection(); };
 
   // Integrate with browser history so swipe-back closes the sub-section
   // instead of navigating away from Settings entirely
@@ -251,6 +404,7 @@ export default function Settings() {
 
   const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
     { key: 'notifications', icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' },
+    { key: 'telegram', icon: Send, label: 'Привязка Telegram', sub: 'Для безопасного сброса пароля' },
     { key: 'terms', icon: FileText, label: 'Условия использования', sub: 'Правила форума' },
     { key: 'privacy', icon: ShieldCheck, label: 'Согласие на обработку ПД', sub: '152-ФЗ' },
     { key: 'about', icon: Info, label: 'О приложении', sub: `Версия ${APP_VERSION}` },
@@ -258,6 +412,29 @@ export default function Settings() {
 
   return (
     <PageShell title="Настройки">
+      {/* Тема оформления — тёмная (бренд) / светлая */}
+      <div className="mb-4 rounded-2xl border border-primary/22 bg-card p-4">
+        <p className="font-display text-[14px] font-semibold text-foreground mb-3">Тема оформления</p>
+        <div className="flex gap-2">
+          {([['dark', 'Тёмная', Moon], ['light', 'Светлая', Sun]] as const).map(([val, label, Icon]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => changeTheme(val)}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-semibold border transition-all active:scale-[0.98]',
+                theme === val
+                  ? 'bg-primary/15 border-primary/45 text-primary'
+                  : 'bg-background/40 border-border text-foreground/55 hover:text-foreground/80',
+              )}
+            >
+              <Icon className="w-4 h-4" strokeWidth={1.8} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-2.5">
         {items.map((it, idx) => (
           <motion.button
@@ -302,12 +479,13 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Назад"
-                className="h-10 w-10 rounded-xl border border-primary/35 bg-white/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
+                className="h-10 w-10 rounded-xl border border-primary/35 bg-foreground/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
               >
                 <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
               </button>
               <h2 className="font-display text-[18px] font-semibold text-foreground">
                 {section === 'notifications' && 'Уведомления'}
+                {section === 'telegram' && 'Привязка Telegram'}
                 {section === 'terms' && 'Условия использования'}
                 {section === 'privacy' && 'Согласие на обработку ПД'}
                 {section === 'about' && 'О приложении'}
@@ -325,6 +503,7 @@ export default function Settings() {
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
               {section === 'notifications' && <NotificationsPage />}
+              {section === 'telegram' && <TelegramLinkPage />}
               {section === 'terms' && (
                 <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
                   {TERMS_TEXT}
@@ -337,7 +516,7 @@ export default function Settings() {
               )}
               {section === 'about' && (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-primary/30 bg-white/[0.06] p-5 text-center">
+                  <div className="rounded-2xl border border-primary/30 bg-foreground/[0.06] p-5 text-center">
                     <p className="font-display text-[24px] font-semibold text-foreground">ТехнологИИ Права 2026</p>
                     <p className="font-mono text-[11px] uppercase tracking-widest text-primary mt-1">
                       Версия {APP_VERSION} · build {APP_BUILD}

@@ -20,7 +20,9 @@ export type DmSocketEvent =
   | { type: 'dm:new'; from: string; to: string; message: { id: string; fromUserId: string; toUserId: string; text: string; mediaUrl: string | null; mediaType: 'image' | 'audio' | 'video' | null; replyToId: string | null; forwardedFromUserId: string | null; createdAt: string; readAt: string | null } }
   | { type: 'dm:edit'; from: string; to: string; messageId: string; text: string }
   | { type: 'dm:delete'; from: string; to: string; messageId: string }
-  | { type: 'dm:pin'; from: string; partnerUserId: string; messageId: string | null };
+  | { type: 'dm:pin'; from: string; partnerUserId: string; messageId: string | null }
+  | { type: 'presence'; userId: string; online: boolean; lastSeenAt: string | null }
+  | { type: 'typing'; from: string; to: string };
 
 type Listener = (ev: DmSocketEvent) => void;
 
@@ -101,6 +103,16 @@ function teardownIfIdle(): void {
   if (socket) {
     try { socket.close(1000, 'idle'); } catch { /* noop */ }
     socket = null;
+  }
+}
+
+/**
+ * Отправка сообщения на сервер по shared-сокету (напр. { type:'typing', to }).
+ * No-op, если сокет ещё не открыт — typing не критичен.
+ */
+export function sendDm(msg: Record<string, unknown>): void {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    try { socket.send(JSON.stringify(msg)); } catch { /* socket lost */ }
   }
 }
 

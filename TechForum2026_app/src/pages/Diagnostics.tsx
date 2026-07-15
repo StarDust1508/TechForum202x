@@ -56,9 +56,9 @@ export default function Diagnostics() {
         >Диагностика</h1>
       </header>
 
-      <section className="rounded-3xl border border-border bg-white/[0.03] p-5 space-y-5">
+      <section className="rounded-3xl border border-border bg-foreground/[0.03] p-5 space-y-5">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl border border-border bg-white/5 flex items-center justify-center">
+          <div className="h-10 w-10 rounded-2xl border border-border bg-foreground/5 flex items-center justify-center">
             <Server className="w-5 h-5 text-foreground/80" />
           </div>
           <div>

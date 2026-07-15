@@ -19,6 +19,7 @@ interface PublicUser {
   avatar: string;
   bio: string;
   company?: string;
+  online?: boolean;
 }
 
 const isUploadedAvatar = (url: string | null | undefined): boolean =>
@@ -53,11 +54,14 @@ export default function Attendees() {
         return u.name.toLowerCase().includes(q) || u.role.toLowerCase().includes(q) || (u.company ?? '').toLowerCase().includes(q);
       })
     : list;
+  // Онлайн-участники — вперёд (Telegram-механика), плюс счётчик «в сети».
+  const onlineCount = list.filter(u => u.online).length;
+  const sorted = [...filtered].sort((a, b) => Number(!!b.online) - Number(!!a.online));
 
   return (
     <PageShell
       title="Участники"
-      subtitle={loading ? undefined : `${list.length} ${list.length === 1 ? 'участник' : list.length < 5 ? 'участника' : 'участников'} зарегистрировано`}
+      subtitle={loading ? undefined : `${list.length} ${list.length === 1 ? 'участник' : list.length < 5 ? 'участника' : 'участников'}${onlineCount > 0 ? ` · ${onlineCount} в сети` : ''}`}
     >
       <div className="relative mb-5">
         <Search
@@ -113,7 +117,7 @@ export default function Attendees() {
       )}
 
       <div className="space-y-2">
-        {filtered.map((u, idx) => {
+        {sorted.map((u, idx) => {
           const avatarSrc = isUploadedAvatar(u.avatar) ? resolveAssetUrl(u.avatar) : (u.avatar || null);
           return (
             <motion.article
@@ -128,8 +132,13 @@ export default function Attendees() {
                 onClick={() => navigate(`/users/${u.id}`)}
                 className="flex items-center gap-3 flex-1 min-w-0 text-left active:scale-[0.99] transition-transform"
               >
-                <div className="relative w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-card border border-primary/35 shrink-0">
-                  <AvatarImage src={avatarSrc} name={u.name} className="h-full w-full" letterClassName="text-base" />
+                <div className="relative shrink-0">
+                  <div className="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center bg-card border border-primary/35">
+                    <AvatarImage src={avatarSrc} name={u.name} className="h-full w-full" letterClassName="text-base" />
+                  </div>
+                  {u.online && (
+                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-card" title="в сети" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-display text-[14px] font-semibold text-foreground truncate">{u.name}</p>

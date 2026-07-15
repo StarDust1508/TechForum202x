@@ -64,7 +64,7 @@ export default function UserProfile() {
       {profile && !loading && (
         <>
           <div className="flex flex-col items-center gap-4 pt-2">
-            <div className="relative h-28 w-28 rounded-full overflow-hidden border-2 border-primary/45 bg-white/[0.06] shadow-[0_0_28px_rgba(255,51,153,0.25)]">
+            <div className="relative h-28 w-28 rounded-full overflow-hidden border-2 border-primary/45 bg-foreground/[0.06] shadow-[0_0_28px_rgba(255,51,153,0.25)]">
               <AvatarImage src={avatarSrc || undefined} name={profile.name} className="h-full w-full" letterClassName="text-4xl" />
             </div>
             <div className="text-center">
@@ -86,7 +86,7 @@ export default function UserProfile() {
             <button
               type="button"
               onClick={() => navigate(`/chat?dm=${userId}`)}
-              className="w-full rounded-[14px] border border-primary/55 bg-white/[0.06] text-foreground py-4 text-[14px] font-display font-semibold uppercase tracking-[0.08em] flex items-center justify-center gap-2 hover:border-primary/80 active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(255,51,153,0.18)]"
+              className="w-full rounded-[14px] border border-primary/55 bg-foreground/[0.06] text-foreground py-4 text-[14px] font-display font-semibold uppercase tracking-[0.08em] flex items-center justify-center gap-2 hover:border-primary/80 active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(255,51,153,0.18)]"
             >
               <MessageCircle className="w-4 h-4 text-primary" strokeWidth={1.6} />
               Написать сообщение

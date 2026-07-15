@@ -12,6 +12,14 @@ import { resolveApiUrl, authFetch } from './runtimeEndpoint';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
+// FCM ещё НЕ настроен (нет google-services.json). Нативный
+// PushNotifications.register() без Firebase-конфига падает НАТИВНО — JS
+// try/catch это не ловит, приложение вылетает. Пока флаг false: не зовём
+// register(), тумблер работает как локальный preference (запрос permission
+// без краша). Когда добавите Firebase service-account + google-services.json —
+// поставьте true, и пойдёт реальная FCM-регистрация без правок клиента.
+const FCM_CONFIGURED = false;
+
 function isNative(): boolean {
   const Capacitor: any = (window as any).Capacitor;
   return !!(Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform());
@@ -55,6 +63,13 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
       }
     }
     if (!granted) return false;
+
+    // FCM не настроен — НЕ зовём native register() (падает). Сохраняем как
+    // локальный preference: разрешение получено, токен отправим когда включат FCM.
+    if (!FCM_CONFIGURED) {
+      console.info('[Push] permission granted; native FCM register skipped (FCM not configured)');
+      return true;
+    }
 
     return await new Promise<boolean>((resolve) => {
       // Установка listener'ов до register() — Capacitor docs.

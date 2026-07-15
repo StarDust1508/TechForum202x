@@ -29,3 +29,7 @@ TechForum2026_app/.env.development
 TechForum2026_app/.env.production
 TechForum2026_app/.env.development.local
 TechForum2026_app/.env.production.local
+
+# APK-бинарники — на GitHub Releases, не в историю (раздувает .git)
+apk/*.apk
+*.apk

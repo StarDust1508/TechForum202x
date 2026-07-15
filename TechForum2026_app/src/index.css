@@ -34,8 +34,30 @@
   --neon-magenta: #ff3399;
   --neon-cyan-glow: 0 0 20px rgba(0, 255, 255, 0.5), 0 0 40px rgba(0, 255, 255, 0.2);
   --neon-magenta-glow: 0 0 20px rgba(255, 51, 153, 0.5), 0 0 40px rgba(255, 51, 153, 0.2);
-  background-color: #0f1118;
-  color: #f2f2f2;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* СВЕТЛАЯ ТЕМА — переопределяет семантические переменные @theme. Включается
+   установкой data-theme="light" на <html> (см. src/lib/theme.ts + Settings).
+   Неон-бренд сохраняем, но cyan углубляем (#00ffff невидим на белом). */
+:root[data-theme="light"] {
+  --color-background: #f3f4f9;
+  --color-foreground: #16182b;
+  --color-card: #ffffff;
+  --color-card-foreground: #16182b;
+  --color-primary: #ff2e93;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #00aebc;
+  --color-accent-foreground: #ffffff;
+  --color-muted: #eceef5;
+  --color-muted-foreground: #59607a;
+  --color-border: #e3e6f0;
+  --color-input: #e3e6f0;
+  --color-ring: #ff2e93;
+  --color-surface: #f3f4f9;
+  --neon-cyan: #00aebc;
+  --neon-magenta: #ff2e93;
 }
 
 html {
@@ -45,7 +67,7 @@ html {
   height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
-  background-color: #0f1118;
+  background-color: var(--color-background);
   overscroll-behavior: none;
 }
 
@@ -89,7 +111,7 @@ body::before {
   position: fixed;
   inset: -200px;
   z-index: -2;
-  background-color: #0f1118;
+  background-color: var(--color-background);
   pointer-events: none;
 }
 
@@ -98,7 +120,7 @@ body::after {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background-color: #0f1118;
+  background-color: var(--color-background);
   pointer-events: none;
 }
 

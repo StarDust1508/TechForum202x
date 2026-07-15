@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f1118" />
     <meta name="color-scheme" content="dark" />
+    <script>
+      // Применяем сохранённую тему ДО первого рендера — иначе при светлой теме
+      // мелькает тёмный фон. Полная логика — src/lib/theme.ts.
+      try {
+        if (localStorage.getItem('techforum_theme') === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          var __m = document.querySelector('meta[name="theme-color"]');
+          if (__m) __m.setAttribute('content', '#f3f4f9');
+        }
+      } catch (e) {}
+    </script>
 
     <title>ТехнологИИ Права 2026</title>
     <meta name="description" content="Мобильное приложение конференции ТехнологИИ Права 2026 — программа, спикеры, чат, билет и расписание сессий." />

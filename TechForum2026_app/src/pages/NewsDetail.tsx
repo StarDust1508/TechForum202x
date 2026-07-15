@@ -10,13 +10,28 @@
 // END_MODULE_CONTRACT
 
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Clock, ArrowRight, ChevronLeft } from 'lucide-react';
-import { NEWS, getSpeakerById } from '../data';
+import { Clock, ArrowRight, ChevronLeft, Loader2 } from 'lucide-react';
+import { getSpeakerById } from '../data';
+import { useNews } from '../lib/useNews';
 
 export default function NewsDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const news = NEWS.find((n) => n.id === id);
+  const { news: newsList, loading } = useNews();
+  const news = newsList.find((n) => n.id === id);
+
+  // Живая новость может ещё грузиться (id из БД нет в статике) — не показываем
+  // «не найдена», пока идёт первая загрузка.
+  if (!news && loading) {
+    return (
+      <div
+        className="flex-1 px-5 flex items-center justify-center"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}
+      >
+        <Loader2 className="w-6 h-6 animate-spin text-foreground/40" />
+      </div>
+    );
+  }
 
   if (!news) {
     return (
@@ -100,7 +115,7 @@ export default function NewsDetail() {
         {speaker && (
           <Link
             to={`/speakers/${speaker.id}`}
-            className="block rounded-3xl border border-border bg-card hover:bg-white/[0.07] hover:border-primary/30 active:scale-[0.99] transition-all p-5 mt-6"
+            className="block rounded-3xl border border-border bg-card hover:bg-foreground/[0.07] hover:border-primary/30 active:scale-[0.99] transition-all p-5 mt-6"
           >
             <p className="text-[10px] uppercase tracking-widest font-semibold text-foreground/45 mb-2">
               О спикере

@@ -253,7 +253,7 @@ export default function MyCard() {
           <button
             type="button"
             onClick={refreshCard}
-            className="w-full flex items-center justify-center gap-2 border border-primary/35 bg-white/[0.06] hover:border-primary/60 text-foreground py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] transition-all font-display"
+            className="w-full flex items-center justify-center gap-2 border border-primary/35 bg-foreground/[0.06] hover:border-primary/60 text-foreground py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-[0.14em] active:scale-[0.98] transition-all font-display"
           >
             <RefreshCw className="w-4 h-4 text-primary" strokeWidth={1.8} />
             Обновить QR
@@ -294,7 +294,7 @@ export default function MyCard() {
             ))}
           </div>
         ) : contacts.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-primary/25 bg-white/[0.03] p-6 text-center">
+          <div className="rounded-2xl border border-dashed border-primary/25 bg-foreground/[0.03] p-6 text-center">
             <p className="text-[12px] text-foreground/40 leading-relaxed">
               Пока пусто. Сканируйте QR-визитки других участников — список начнёт расти.
             </p>
