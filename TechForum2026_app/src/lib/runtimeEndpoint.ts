@@ -83,31 +83,38 @@ export function clearSessionToken(): void {
   try { localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ }
 }
 
-const DEFAULT_AUTH_TIMEOUT_MS = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+
+/** Fetch с обязательным завершением — для экранов с loading-состоянием. */
+export function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const upstreamSignal = init?.signal;
+  const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
+  if (upstreamSignal?.aborted) abortFromUpstream();
+  else upstreamSignal?.addEventListener('abort', abortFromUpstream, { once: true });
+  const timer = globalThis.setTimeout(
+    () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+    timeoutMs,
+  );
+
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => {
+    globalThis.clearTimeout(timer);
+    upstreamSignal?.removeEventListener('abort', abortFromUpstream);
+  });
+}
 
 /**
  * Авторизованные запросы не должны оставлять экран в вечном loading-состоянии.
  * В Capacitor fetch иногда не отклоняется при потере сети, поэтому завершаем
  * запрос сами. Переданный вызывающим кодом AbortSignal также сохраняется.
  */
-export function authFetch(url: string, init?: RequestInit, timeoutMs = DEFAULT_AUTH_TIMEOUT_MS): Promise<Response> {
+export function authFetch(url: string, init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<Response> {
   const token = getSessionToken();
   const headers = new Headers(init?.headers);
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const controller = new AbortController();
-  const upstreamSignal = init?.signal;
-  const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
-  if (upstreamSignal?.aborted) abortFromUpstream();
-  else upstreamSignal?.addEventListener('abort', abortFromUpstream, { once: true });
-  const timer = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs);
-
-  return fetch(url, { ...init, credentials: 'include', headers, signal: controller.signal })
-    .finally(() => {
-      window.clearTimeout(timer);
-      upstreamSignal?.removeEventListener('abort', abortFromUpstream);
-    });
+  return fetchWithTimeout(url, { ...init, credentials: 'include', headers }, timeoutMs);
 }
 
 export function resolveWsUrl(path = '/ws'): string {

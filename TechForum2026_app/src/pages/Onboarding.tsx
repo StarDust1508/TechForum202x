@@ -19,7 +19,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { INTERESTS } from '../data';
-import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, authFetch, fetchWithTimeout } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
 
 interface InterestOpt { id: string; label: string; color: string }
@@ -46,7 +46,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(resolveApiUrl('/interests'));
+        const r = await fetchWithTimeout(resolveApiUrl('/interests'));
         if (r.ok && !cancelled) {
           const data = await r.json();
           if (Array.isArray(data) && data.length) setInterests(data);
@@ -100,7 +100,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
       onDone(interestIds.length);
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
-      const isNetwork = /failed to fetch|networkerror|load failed|typeerror/i.test(raw);
+      const isNetwork = /failed to fetch|networkerror|load failed|typeerror|timeout|timed out|abort/i.test(raw);
       setError(isNetwork
         ? 'Нет соединения с сервером. Проверьте интернет и попробуйте ещё раз.'
         : `Не удалось сохранить выбор: ${raw}`);

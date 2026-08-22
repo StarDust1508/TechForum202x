@@ -5,7 +5,7 @@
 //          не используются как fallback: пустая БД должна означать пустую ленту.
 import { useState, useEffect } from 'react';
 import { type NewsItem } from '../data';
-import { resolveApiUrl } from './runtimeEndpoint';
+import { fetchWithTimeout, resolveApiUrl } from './runtimeEndpoint';
 
 export function useNews(): { news: NewsItem[]; loading: boolean } {
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -15,7 +15,7 @@ export function useNews(): { news: NewsItem[]; loading: boolean } {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(resolveApiUrl('/news'));
+        const r = await fetchWithTimeout(resolveApiUrl('/news'));
         if (r.ok && !cancelled) {
           const data = await r.json();
           if (Array.isArray(data)) setNews(data as NewsItem[]);

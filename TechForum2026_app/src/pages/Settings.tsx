@@ -56,7 +56,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.8.2';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -136,10 +136,14 @@ function NotificationsPage() {
       }
     } else {
       // OFF: unregister
-      await unregisterPushNotifications();
-      setEnabled(false);
-      try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
-      setHint('Подписка отключена. Push-уведомления приходить не будут.');
+      const removed = await unregisterPushNotifications();
+      if (removed) {
+        setEnabled(false);
+        try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
+        setHint('Подписка отключена. Push-уведомления приходить не будут.');
+      } else {
+        setHint('Не удалось отключить подписку на сервере. Проверьте соединение и попробуйте ещё раз.');
+      }
     }
     setBusy(false);
   };

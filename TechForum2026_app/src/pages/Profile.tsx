@@ -5,6 +5,7 @@ import { clearLocalSession, isLocalAuthFallbackEnabled, updateLocalUser } from '
 import { resolveApiUrl, resolveAssetUrl, authFetch, clearSessionToken } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
 import { INTERESTS } from '../data';
+import { clearPushRegistrationLocally, getStoredPushToken, unregisterPushNotifications } from '@/src/lib/push';
 
 interface UserData {
   id?: string;
@@ -128,9 +129,23 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
   };
 
   const handleLogout = async () => {
+    const pushToken = getStoredPushToken();
+    if (pushToken) {
+      // Сначала используем уже развёрнутый endpoint удаления. Если сеть/сервер
+      // недоступны, всё равно инвалидируем native token: старый аккаунт не
+      // должен продолжать получать сообщения на этом телефоне.
+      const removed = await unregisterPushNotifications();
+      if (!removed) await clearPushRegistrationLocally();
+    }
     try {
       const logoutUrl = resolveApiUrl('/auth/logout');
-      await authFetch(logoutUrl, { method: 'POST', credentials: 'include' });
+      const response = await authFetch(logoutUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pushToken: pushToken || null }),
+      });
+      if (response.ok) await clearPushRegistrationLocally();
     } catch (e) {
       console.error('Backend logout failed (continuing with local cleanup)', e);
     }

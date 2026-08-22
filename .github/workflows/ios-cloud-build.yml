@@ -105,7 +105,7 @@ jobs:
           test -d "$DEVICE_APP_PATH"
           mkdir -p build/qa/Payload
           ditto "$DEVICE_APP_PATH" build/qa/Payload/App.app
-          (cd build/qa && zip -qry TechPravo-iPhone-Unsigned-1.8.1-26.ipa Payload)
+          (cd build/qa && zip -qry TechPravo-iPhone-Unsigned-1.8.2-27.ipa Payload)
           rm -rf build/qa/Payload
 
       - name: Launch app and capture proof screenshot
@@ -129,7 +129,7 @@ jobs:
           name: TechPravo-iPhone-Simulator-${{ github.sha }}
           path: |
             TechForum2026_app/build/qa/TechPravo-iPhone-Simulator.app.zip
-            TechForum2026_app/build/qa/TechPravo-iPhone-Unsigned-1.8.1-26.ipa
+            TechForum2026_app/build/qa/TechPravo-iPhone-Unsigned-1.8.2-27.ipa
             TechForum2026_app/build/qa/iphone-launch.png
           retention-days: 14
 
@@ -248,7 +248,7 @@ jobs:
       - name: Upload signed IPA
         uses: actions/upload-artifact@v4
         with:
-          name: TechPravo-iPhone-AppStore-1.8.1-26
+          name: TechPravo-iPhone-AppStore-1.8.2-27
           path: TechForum2026_app/build/export/*.ipa
           if-no-files-found: error
           retention-days: 30

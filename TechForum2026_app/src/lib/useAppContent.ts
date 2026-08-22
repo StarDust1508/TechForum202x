@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { resolveApiUrl } from './runtimeEndpoint';
+import { fetchWithTimeout, resolveApiUrl } from './runtimeEndpoint';
 
 export interface AppContent {
   name: string; tagline: string; description: string; dateLabel: string; dateDetail: string;
@@ -29,7 +29,7 @@ export function useAppContent(): AppContent {
   const [content, setContent] = useState<AppContent>(cached);
   useEffect(() => {
     const controller = new AbortController();
-    fetch(resolveApiUrl('/app-content'), { signal: controller.signal })
+    fetchWithTimeout(resolveApiUrl('/app-content'), { signal: controller.signal })
       .then((r) => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
       .then((data) => { const next = { ...DEFAULT_APP_CONTENT, ...data }; setContent(next); try { localStorage.setItem(CACHE_KEY, JSON.stringify(next)); } catch { /* noop */ } })
       .catch(() => { /* last-known-good remains visible */ });

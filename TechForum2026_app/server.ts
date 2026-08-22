@@ -1161,9 +1161,21 @@ async function startServer(): Promise<void> {
     res.json({ ...toPublicUser(user), interestsCount: interestRows[0]?.count ?? 0, token: req.sessionID });
   });
 
-  // logout без rate-limit: один и тот же клиент может тыкнуть N раз — это
-  // легитимно и не нагружает БД (просто destroy сессии).
-  api.post('/auth/logout', (req, res) => {
+  // logout без rate-limit: повторный запрос легитимен. Сброс push-токена —
+  // best effort: временная ошибка БД не должна оставлять пользователя в сессии.
+  api.post('/auth/logout', async (req, res) => {
+    const userId = getSessionUserId(req);
+    const pushToken = typeof req.body?.pushToken === 'string' ? req.body.pushToken.trim() : '';
+    if (userId && pushToken.length >= 8 && pushToken.length <= 4096) {
+      try {
+        await db.delete(pushTokens).where(and(
+          eq(pushTokens.userId, userId),
+          eq(pushTokens.token, pushToken),
+        ));
+      } catch (error) {
+        console.warn('[push] failed to remove token during logout', error);
+      }
+    }
     req.session.destroy(() => {
       res.clearCookie('connect.sid');
       res.json({ ok: true });
@@ -3063,6 +3075,22 @@ async function startServer(): Promise<void> {
       eq(pushTokens.token, tokenRaw),
     ));
     res.json({ ok: true });
+  });
+
+  // Проверяем именно токен текущего устройства, не раскрывая список токенов
+  // клиенту. Иначе второй телефон на той же ОС создаёт ложный статус «включено».
+  api.post('/me/push-token/status', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    if (token.length < 8 || token.length > 4096) {
+      res.status(400).json({ error: 'token_required' });
+      return;
+    }
+    const [row] = await db.select({ id: pushTokens.id }).from(pushTokens).where(and(
+      eq(pushTokens.userId, me),
+      eq(pushTokens.token, token),
+    )).limit(1);
+    res.json({ enabled: Boolean(row) });
   });
 
   api.get('/me/push-tokens', requireAuth, async (req, res) => {

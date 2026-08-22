@@ -4,7 +4,7 @@ import BrandLogo from '@/src/components/BrandLogo';
 import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon, KeyRound, TicketCheck } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@/src/lib/localAuth';
-import { resolveApiUrl, saveSessionToken, authFetch } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, saveSessionToken, authFetch, fetchWithTimeout } from '@/src/lib/runtimeEndpoint';
 import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
 import { Capacitor } from '@capacitor/core';
 
@@ -84,7 +84,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
     const identifier = method === 'email' ? form.email : form.phone;
 
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -133,7 +133,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
       onSuccess(data);
     } catch (err: any) {
       const rawMessage = String(err?.message || '');
-      const isNetworkError = /failed to fetch|networkerror|fetch|backend_invalid_response|unexpected token|load failed|cors|typeerror/i.test(rawMessage);
+      const isNetworkError = /failed to fetch|networkerror|fetch|backend_invalid_response|unexpected token|load failed|cors|typeerror|timeout|timed out|abort/i.test(rawMessage);
       if (!isLocalAuthFallbackEnabled()) {
         // BUG_FIX_CONTEXT: Раньше сообщение было общее «Нет соединения», но
         // у нас 5 разных причин (VPN, mixed-content, CORS, DNS, backend down).
@@ -519,7 +519,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                         setForgotLoading(true);
                         setForgotError('');
                         try {
-                          const res = await fetch(resolveApiUrl('/auth/forgot-password/verify'), {
+                          const res = await fetchWithTimeout(resolveApiUrl('/auth/forgot-password/verify'), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ token: resetCode.trim(), newPassword: resetPassword }),
@@ -589,7 +589,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                         setForgotLoading(true);
                         setForgotError('');
                         try {
-                          const res = await fetch(resolveApiUrl('/auth/forgot-password/start'), {
+                          const res = await fetchWithTimeout(resolveApiUrl('/auth/forgot-password/start'), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ email: forgotEmail.trim() }),

@@ -25,6 +25,17 @@ export type PushNotificationState = {
   reason?: 'web_unsupported' | 'service_not_configured' | 'permission_denied' | 'registration_missing' | 'check_failed';
 };
 
+export function getStoredPushToken(): string {
+  try { return localStorage.getItem(TOKEN_LS_KEY) || ''; } catch { return ''; }
+}
+
+export async function clearPushRegistrationLocally(): Promise<void> {
+  try { localStorage.removeItem(TOKEN_LS_KEY); } catch { /* noop */ }
+  if (isNative() && PUSH_SERVICE_CONFIGURED) {
+    try { await FirebaseMessaging.deleteToken(); } catch { /* already revoked */ }
+  }
+}
+
 /** Сверяет UI не с localStorage, а с разрешением ОС и регистрацией в БД. */
 export async function getPushNotificationState(): Promise<PushNotificationState> {
   if (!isNative()) return { available: false, enabled: false, permission: 'unavailable', reason: 'web_unsupported' };
@@ -35,10 +46,19 @@ export async function getPushNotificationState(): Promise<PushNotificationState>
     if (receive !== 'granted') {
       return { available: true, enabled: false, permission: receive, reason: receive === 'denied' ? 'permission_denied' : 'registration_missing' };
     }
-    const response = await authFetch(resolveApiUrl('/me/push-tokens'), { credentials: 'include' });
-    const rows = response.ok ? await response.json().catch(() => []) : [];
-    const platform = Capacitor.getPlatform();
-    const enabled = Array.isArray(rows) && rows.some((row) => row?.platform === platform);
+    const localToken = getStoredPushToken();
+    if (!localToken) {
+      return { available: true, enabled: false, permission: 'granted', reason: 'registration_missing' };
+    }
+    const response = await authFetch(resolveApiUrl('/me/push-token/status'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: localToken }),
+    });
+    if (!response.ok) throw new Error(`push_status_${response.status}`);
+    const result = await response.json().catch(() => null);
+    const enabled = result?.enabled === true;
     return { available: true, enabled, permission: 'granted', reason: enabled ? undefined : 'registration_missing' };
   } catch {
     return { available: true, enabled: false, permission: 'unavailable', reason: 'check_failed' };
@@ -113,20 +133,18 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
  * push'и предыдущего). В FCM сам токен переживает logout — удаляем только
  * сервер-side связку user→token.
  */
-export async function unregisterPushNotifications(): Promise<void> {
-  let token: string | null = null;
-  try { token = localStorage.getItem(TOKEN_LS_KEY); } catch { /* noop */ }
-  if (!token) return;
+export async function unregisterPushNotifications(): Promise<boolean> {
+  const token = getStoredPushToken();
+  if (!token) return true;
   try {
-    await authFetch(resolveApiUrl(`/me/push-token?token=${encodeURIComponent(token)}`), {
+    const response = await authFetch(resolveApiUrl(`/me/push-token?token=${encodeURIComponent(token)}`), {
       method: 'DELETE',
       credentials: 'include',
     });
-  } catch { /* offline — token истечёт server-side через GC */ }
-  try { localStorage.removeItem(TOKEN_LS_KEY); } catch { /* noop */ }
-  if (isNative() && PUSH_SERVICE_CONFIGURED) {
-    try { await FirebaseMessaging.deleteToken(); } catch { /* already revoked */ }
-  }
+    if (!response.ok) return false;
+  } catch { return false; }
+  await clearPushRegistrationLocally();
+  return true;
 }
 
 /**

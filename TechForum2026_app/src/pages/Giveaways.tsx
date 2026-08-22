@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, ExternalLink, Gift, Laptop, MailCheck, Send, Trophy } from 'lucide-react';
 import { motion } from 'motion/react';
 import BackButton from '@/src/components/BackButton';
-import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+import { fetchWithTimeout, resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 interface Giveaway { id: string; item: string; description?: string | null; condition?: string | null; endTime?: string | null; featured?: boolean; }
 
@@ -18,11 +18,11 @@ export default function Giveaways() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(resolveApiUrl('/giveaways')).then((r) => r.ok ? r.json() : []).then((items) => {
+    fetchWithTimeout(resolveApiUrl('/giveaways')).then((r) => r.ok ? r.json() : []).then((items) => {
       if (cancelled) return;
       const current = Array.isArray(items) && items.find((item) => item.id === CANONICAL.id);
       if (current) setGiveaway({ ...CANONICAL, ...current });
-    });
+    }).catch(() => { /* canonical card remains visible offline */ });
     return () => { cancelled = true; };
   }, []);
 
