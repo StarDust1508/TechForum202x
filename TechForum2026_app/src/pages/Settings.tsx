@@ -14,16 +14,17 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff, Send, Moon, Sun,
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff, Send, Moon, Sun, Trash2,
 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
+import BrandLogo from '@/src/components/BrandLogo';
 import { hapticSelection } from '@/src/lib/haptics';
 import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
 import { cn } from '@/src/lib/utils';
 
-type Section = 'notifications' | 'telegram' | 'terms' | 'privacy' | 'about';
+type Section = 'notifications' | 'telegram' | 'terms' | 'privacy' | 'about' | 'account';
 
 const TERMS_TEXT = `Используя приложение ТехнологИИ Права 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
 
@@ -40,22 +41,22 @@ const TERMS_TEXT = `Используя приложение ТехнологИИ
 const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
 — ФИО, контактный email, телефон;
 — фото профиля (если загружено);
-— ваша активность в приложении (регистрации на сессии, переписка с другими участниками — содержимое сообщений шифруется на сервере при хранении);
+— ваша активность в приложении (регистрации на сессии и переписка с другими участниками);
 — технические данные устройства (модель, ОС, IP-адрес) — для диагностики и защиты от злоупотреблений.
 
 Цели обработки: предоставление функционала приложения, отправка уведомлений о форуме, статистика для организатора (анонимизированная).
 
-Срок хранения: пока действует ваш аккаунт + 6 месяцев после удаления (юридический архив).
+Срок хранения: пока действует аккаунт. При удалении аккаунта связанные персональные данные и пользовательский контент удаляются; обязательные технические записи могут сохраняться только в пределах сроков, установленных законом.
 
 Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
 
 Вы можете в любой момент:
-— скачать копию своих данных (запрос через pravotechhub@mail.ru);
+— скачать копию своих данных (запрос через info@tech-pravo.ru);
 — удалить аккаунт через профиль (необратимо).
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.8.0';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -368,6 +369,30 @@ function TelegramLinkPage() {
   );
 }
 
+function AccountPage() {
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const remove = async () => {
+    if (!confirmed || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await authFetch(resolveApiUrl('/auth/me'), {
+        method: 'DELETE', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmation: 'DELETE' }),
+      });
+      if (!r.ok) throw new Error(`delete_failed_${r.status}`);
+      localStorage.clear(); sessionStorage.clear(); window.location.reload();
+    } catch { setError('Не удалось удалить аккаунт. Проверьте соединение и попробуйте ещё раз.'); setBusy(false); }
+  };
+  return <div className="space-y-5">
+    <div className="rounded-2xl border border-rose-400/30 bg-rose-400/[0.06] p-5"><h3 className="font-display text-[16px] font-semibold text-rose-300">Удаление необратимо</h3><p className="mt-2 text-[13px] leading-relaxed text-foreground/65">Будут удалены профиль, контакты, регистрации на сессии, сообщения и загруженные данные, кроме сведений, которые организатор обязан сохранять по закону.</p></div>
+    <label className="flex items-start gap-3 rounded-2xl border border-border bg-card p-4"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-1 h-4 w-4 accent-rose-400" /><span className="text-[13px] leading-relaxed text-foreground/75">Я понимаю последствия и хочу полностью удалить аккаунт.</span></label>
+    {error && <p className="text-[12px] text-rose-300">{error}</p>}
+    <button type="button" disabled={!confirmed || busy} onClick={() => void remove()} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-400/45 py-4 text-[14px] font-bold text-rose-300 disabled:opacity-35">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />}Удалить аккаунт</button>
+  </div>;
+}
+
 export default function Settings() {
   const [section, setSectionRaw] = useState<Section | null>(null);
   const [theme, setThemeState] = useState<Theme>(getTheme());
@@ -407,6 +432,7 @@ export default function Settings() {
     { key: 'telegram', icon: Send, label: 'Привязка Telegram', sub: 'Для безопасного сброса пароля' },
     { key: 'terms', icon: FileText, label: 'Условия использования', sub: 'Правила форума' },
     { key: 'privacy', icon: ShieldCheck, label: 'Согласие на обработку ПД', sub: '152-ФЗ' },
+    { key: 'account', icon: Trash2, label: 'Управление аккаунтом', sub: 'Полное удаление данных' },
     { key: 'about', icon: Info, label: 'О приложении', sub: `Версия ${APP_VERSION}` },
   ];
 
@@ -489,6 +515,7 @@ export default function Settings() {
                 {section === 'terms' && 'Условия использования'}
                 {section === 'privacy' && 'Согласие на обработку ПД'}
                 {section === 'about' && 'О приложении'}
+                {section === 'account' && 'Управление аккаунтом'}
               </h2>
               <span className="flex-1" />
               <button
@@ -514,10 +541,11 @@ export default function Settings() {
                   {PRIVACY_TEXT}
                 </p>
               )}
+              {section === 'account' && <AccountPage />}
               {section === 'about' && (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-primary/30 bg-foreground/[0.06] p-5 text-center">
-                    <p className="font-display text-[24px] font-semibold text-foreground">ТехнологИИ Права 2026</p>
+                    <p className="text-[17px]"><BrandLogo /></p>
                     <p className="font-mono text-[11px] uppercase tracking-widest text-primary mt-1">
                       Версия {APP_VERSION} · build {APP_BUILD}
                     </p>
@@ -527,7 +555,8 @@ export default function Settings() {
                     инструмент нетворкинга и личный кабинет участника.
                   </p>
                   <p className="text-[12px] text-foreground/40 leading-relaxed">
-                    Поддержка: pravotechhub@mail.ru<br />
+                    Поддержка: info@tech-pravo.ru<br />
+                    Telegram: @CEO_WYRM1 · @TechPravoAI<br />
                     Сайт: tech-pravo.ru
                   </p>
                 </div>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="2732" y2="2732"><stop stop-color="#10182b"/><stop offset="1" stop-color="#050813"/></linearGradient>
+    <radialGradient id="a"><stop stop-color="#49eaf2" stop-opacity=".16"/><stop offset="1" stop-color="#49eaf2" stop-opacity="0"/></radialGradient>
+    <radialGradient id="b"><stop stop-color="#f42aa8" stop-opacity=".14"/><stop offset="1" stop-color="#f42aa8" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#bg)"/><circle cx="610" cy="620" r="1020" fill="url(#a)"/><circle cx="2250" cy="2170" r="960" fill="url(#b)"/>
+  <g transform="translate(854 730) scale(2)">
+    <g fill="#49eaf2"><path d="M76 84h360v64H288v228l-32 16-32-16V148H76z"/><path d="M76 166h72v164l78 42-48 52-102-50z"/><path d="M436 166h-72v164l-78 42 48 52 102-50z"/></g>
+    <g fill="#f42aa8"><path d="M166 230l54-46v172l-54 20z"/><path d="M346 230l-54-46v172l54 20z"/></g>
+  </g>
+  <text x="1366" y="1860" text-anchor="middle" fill="#49eaf2" font-family="Arial, sans-serif" font-size="118" font-weight="900" letter-spacing="-6">ТЕХНОЛОГ<tspan fill="#f42aa8">ИИ</tspan> ПРАВА</text>
+  <text x="1366" y="1975" text-anchor="middle" fill="#8debf0" font-family="Arial, sans-serif" font-size="45" font-weight="600" letter-spacing="15">25–26 СЕНТЯБРЯ · МОСКВА</text>
+</svg>

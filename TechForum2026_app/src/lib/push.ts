@@ -1,28 +1,21 @@
 // FILE: src/lib/push.ts
-// Round 5: Тонкая обёртка над @capacitor/push-notifications с silent fallback
-// на web. Регистрирует устройство в FCM (Android), получает token, шлёт
+// Единая обёртка над Firebase Messaging с silent fallback на web.
+// На Android и iOS получает именно FCM token и шлёт
 // его на бэк (POST /me/push-token).
 //
-// Реальная отправка push'ей с бэка ещё не настроена (нужен FCM project +
-// service-account JSON в env). Сейчас работает infrastructure: токен
-// сохраняется в push_tokens. После настройки FCM credentials worker
-// сможет рассылать без правок клиента.
+// Реальная регистрация включается только когда в нативных проектах есть
+// Firebase-конфиги. Это предотвращает native crash неполной сборки.
 
 import { resolveApiUrl, authFetch } from './runtimeEndpoint';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
-// FCM ещё НЕ настроен (нет google-services.json). Нативный
-// PushNotifications.register() без Firebase-конфига падает НАТИВНО — JS
-// try/catch это не ловит, приложение вылетает. Пока флаг false: не зовём
-// register(), тумблер работает как локальный preference (запрос permission
-// без краша). Когда добавите Firebase service-account + google-services.json —
-// поставьте true, и пойдёт реальная FCM-регистрация без правок клиента.
-const FCM_CONFIGURED = false;
+const FCM_CONFIGURED = String(import.meta.env.VITE_PUSH_CONFIGURED || '').toLowerCase() === 'true';
 
 function isNative(): boolean {
-  const Capacitor: any = (window as any).Capacitor;
-  return !!(Capacitor && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform());
+  return Capacitor.isNativePlatform();
 }
 
 /**
@@ -38,14 +31,9 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     return false;
   }
   try {
-    // Dynamic import — will throw if plugin not installed
-    const mod = await import('@capacitor/push-notifications').catch(() => null);
-    if (!mod?.PushNotifications) return false;
-    const { PushNotifications } = mod;
-
     let perm;
     try {
-      perm = await PushNotifications.checkPermissions();
+      perm = await FirebaseMessaging.checkPermissions();
     } catch {
       // Plugin installed but FCM not configured (no google-services.json)
       console.warn('[Push] checkPermissions failed — FCM likely not configured');
@@ -55,7 +43,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     let granted = perm.receive === 'granted';
     if (!granted) {
       try {
-        const req = await PushNotifications.requestPermissions();
+        const req = await FirebaseMessaging.requestPermissions();
         granted = req.receive === 'granted';
       } catch {
         console.warn('[Push] requestPermissions failed');
@@ -64,64 +52,29 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     }
     if (!granted) return false;
 
-    // FCM не настроен — НЕ зовём native register() (падает). Сохраняем как
-    // локальный preference: разрешение получено, токен отправим когда включат FCM.
+    // FCM не настроен — НЕ зовём native getToken() и не изображаем
+    // успешную подписку: UI честно сообщает, что сервис пока недоступен.
     if (!FCM_CONFIGURED) {
       console.info('[Push] permission granted; native FCM register skipped (FCM not configured)');
-      return true;
+      return false;
     }
 
-    return await new Promise<boolean>((resolve) => {
-      // Установка listener'ов до register() — Capacitor docs.
-      const listenerHandles: Array<Promise<{ remove: () => Promise<void> }>> = [];
-      let registered = false;
-      let timeout: number;
-
-      listenerHandles.push(
-        PushNotifications.addListener('registration', async (token) => {
-          if (registered) return;
-          registered = true;
-          window.clearTimeout(timeout);
-          try {
-            const r = await authFetch(resolveApiUrl('/me/push-token'), {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                token: token.value,
-                platform: 'fcm',
-                deviceLabel: deviceLabel ?? null,
-              }),
-            });
-            if (r.ok) {
-              try { localStorage.setItem(TOKEN_LS_KEY, token.value); } catch { /* noop */ }
-              resolve(true);
-            } else {
-              resolve(false);
-            }
-          } catch {
-            resolve(false);
-          }
-        }),
-      );
-      listenerHandles.push(
-        PushNotifications.addListener('registrationError', (err) => {
-          if (registered) return;
-          registered = true;
-          window.clearTimeout(timeout);
-          console.warn('[Push] registrationError:', err);
-          resolve(false);
-        }),
-      );
-      // Safety timeout 10c.
-      timeout = window.setTimeout(() => {
-        if (!registered) { registered = true; resolve(false); }
-      }, 10_000);
-
-      PushNotifications.register().catch(() => {
-        if (!registered) { registered = true; resolve(false); }
-      });
+    const token = (await FirebaseMessaging.getToken()).token;
+    if (!token) return false;
+    const platform = Capacitor.getPlatform();
+    const r = await authFetch(resolveApiUrl('/me/push-token'), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token,
+        platform: platform === 'ios' ? 'ios' : 'android',
+        deviceLabel: deviceLabel ?? null,
+      }),
     });
+    if (!r.ok) return false;
+    try { localStorage.setItem(TOKEN_LS_KEY, token); } catch { /* noop */ }
+    return true;
   } catch (e) {
     console.warn('[Push] registerPushNotifications error:', e);
     return false;
@@ -144,6 +97,9 @@ export async function unregisterPushNotifications(): Promise<void> {
     });
   } catch { /* offline — token истечёт server-side через GC */ }
   try { localStorage.removeItem(TOKEN_LS_KEY); } catch { /* noop */ }
+  if (isNative() && FCM_CONFIGURED) {
+    try { await FirebaseMessaging.deleteToken(); } catch { /* already revoked */ }
+  }
 }
 
 /**
@@ -157,11 +113,8 @@ export async function attachPushListeners(
 ): Promise<void> {
   if (!isNative()) return;
   try {
-    const mod = await import('@capacitor/push-notifications').catch(() => null);
-    if (!mod?.PushNotifications) return;
-    const { PushNotifications } = mod;
     if (onForegroundMessage) {
-      void PushNotifications.addListener('pushNotificationReceived', (n) => {
+      void FirebaseMessaging.addListener('notificationReceived', ({ notification: n }) => {
         onForegroundMessage({
           title: n.title,
           body: n.body,
@@ -170,8 +123,8 @@ export async function attachPushListeners(
       });
     }
     if (onActionPerformed) {
-      void PushNotifications.addListener('pushNotificationActionPerformed', (a) => {
-        onActionPerformed((a.notification?.data ?? {}) as Record<string, unknown>);
+      void FirebaseMessaging.addListener('notificationActionPerformed', (a) => {
+        onActionPerformed((a.notification.data ?? {}) as Record<string, unknown>);
       });
     }
   } catch { /* plugin not installed or FCM not configured */ }

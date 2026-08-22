@@ -1,7 +1,7 @@
 {
   "name": "techforum2026",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.8.0",
   "type": "module",
   "engines": {
     "node": ">=22.12 <23"
@@ -16,17 +16,21 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "android:store": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease bundleRelease",
+    "ios:sync": "CAP_APP_ID=ru.techpravo.conference npx cap sync ios"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.1",
+    "@capacitor-firebase/messaging": "^8.4.0",
+    "@capacitor/android": "^8.5.0",
     "@capacitor/app": "^8.1.0",
     "@capacitor/camera": "^8.2.0",
-    "@capacitor/cli": "^8.3.1",
-    "@capacitor/core": "^8.3.1",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@capacitor/filesystem": "^8.1.2",
     "@capacitor/haptics": "^8.0.2",
-    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/ios": "^8.5.0",
+    "@capacitor/keyboard": "^8.0.5",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@capgo/capacitor-native-biometric": "^8.4.2",
@@ -40,7 +44,8 @@
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
     "express-session": "^1.19.0",
-    "firebase-admin": "^13.8.0",
+    "firebase": "^12.18.0",
+    "firebase-admin": "^14.3.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.1.1",

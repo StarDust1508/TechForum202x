@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
+import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 
 // Спикеры тянутся из API (GET /speakers), который живым синком отражает
 // опубликованных спикеров сайта — с фото. Новые спикеры появляются сами,
@@ -28,13 +29,10 @@ export default function Speakers() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(resolveApiUrl('/speakers'));
-        if (r.ok && !cancelled) {
-          const data = await r.json();
-          if (Array.isArray(data)) setSpeakers(data);
-        }
+        const result = await fetchCachedJson<ApiSpeaker[]>('/speakers');
+        if (!cancelled && Array.isArray(result.data)) setSpeakers(result.data);
       } catch {
-        /* offline — экран покажет пустое состояние */
+        /* первый запуск без сети — экран покажет пустое состояние */
       }
     })();
     return () => { cancelled = true; };

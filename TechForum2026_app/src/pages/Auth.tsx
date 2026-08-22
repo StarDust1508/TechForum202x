@@ -1,16 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon, KeyRound } from 'lucide-react';
+import BrandLogo from '@/src/components/BrandLogo';
+import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon, KeyRound, TicketCheck } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@/src/lib/localAuth';
 import { resolveApiUrl, saveSessionToken, authFetch } from '@/src/lib/runtimeEndpoint';
 import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
+import { Capacitor } from '@capacitor/core';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
+  onGuest: () => void;
 }
 
-export default function Auth({ onSuccess }: AuthProps) {
+function registrationContext(): { registrationPlatform: 'android' | 'ios' | 'web' | 'unknown'; registrationDevice: string } {
+  const nativePlatform = Capacitor.getPlatform();
+  const registrationPlatform = nativePlatform === 'android' || nativePlatform === 'ios'
+    ? nativePlatform
+    : nativePlatform === 'web' ? 'web' : 'unknown';
+  const registrationDevice = typeof navigator === 'undefined'
+    ? 'unknown'
+    : String(navigator.userAgent || navigator.platform || 'unknown').slice(0, 300);
+  return { registrationPlatform, registrationDevice };
+}
+
+export default function Auth({ onSuccess, onGuest }: AuthProps) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
@@ -74,11 +88,12 @@ export default function Auth({ onSuccess }: AuthProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(
-          method === 'phone'
-            ? { phone: identifier, password: form.password, name: form.name }
-            : { email: identifier, password: form.password, name: form.name }
-        ),
+        body: JSON.stringify({
+          ...(method === 'phone' ? { phone: identifier } : { email: identifier }),
+          password: form.password,
+          ...(mode === 'register' ? { name: form.name } : {}),
+          ...registrationContext(),
+        }),
       });
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
       const data = ct.includes('application/json') ? await res.json() : null;
@@ -187,12 +202,12 @@ export default function Auth({ onSuccess }: AuthProps) {
       <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: 'url(/hero-bg.jpg)',
+          backgroundImage: 'url(/brand/auth-hero-2026-v2.jpg)',
           backgroundSize: 'cover',
-          backgroundPosition: 'center 30%',
+          backgroundPosition: 'center center',
         }}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#0f1118] via-[#0f1118]/80 to-[#0f1118]/40" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#080b16] via-[#0b1020]/72 to-[#071323]/28" />
       <div
         className="relative z-10 flex flex-col justify-center px-7"
         style={{
@@ -205,23 +220,16 @@ export default function Auth({ onSuccess }: AuthProps) {
           initial={{ opacity: 0, y: -30, scale: 0.85 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.7, ease: [0.32, 0.72, 0, 1] }}
-          className="text-center mb-10 pt-2"
+          className="text-center mb-8 pt-2 w-full min-w-0"
         >
           <motion.h1
-            className="font-display font-extrabold"
-            style={{
-              fontSize: 'clamp(28px, 9vw, 44px)',
-              lineHeight: 1,
-              background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 40%, #00ffff 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 0 20px rgba(255,51,153,0.5)) drop-shadow(0 0 40px rgba(255,51,153,0.2))',
-            }}
+            className="w-full min-w-0 px-1"
+            style={{ fontSize: 'clamp(18px, 6.2vw, 34px)', lineHeight: 1 }}
             initial={{ letterSpacing: '0.08em' }}
             animate={{ letterSpacing: '0.03em' }}
             transition={{ duration: 1.2, ease: 'easeOut' }}
           >
-            ТехнологИИ Права
+            <BrandLogo className="mx-auto" />
           </motion.h1>
           <motion.p
             className="mt-3 text-[13px] uppercase tracking-[0.3em] text-accent font-semibold"
@@ -242,7 +250,7 @@ export default function Auth({ onSuccess }: AuthProps) {
             initial={false}
             animate={{ left: mode === 'login' ? 4 : 'calc(50% + 0px)' }}
             transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.6 }}
-            className="absolute top-1 bottom-1 w-[calc(50%-4px)] rounded-xl bg-primary/15 border border-primary/40"
+            className="absolute top-1 bottom-1 w-[calc(50%_-_4px)] rounded-xl bg-primary/15 border border-primary/40"
           />
           {(['login','register'] as const).map((m) => (
             <button
@@ -411,6 +419,21 @@ export default function Auth({ onSuccess }: AuthProps) {
               </>
             )}
           </button>
+
+          <button
+            type="button"
+            onClick={onGuest}
+            className="mt-3 w-full rounded-2xl border border-foreground/15 bg-background/45 py-3.5 text-[14px] font-semibold text-foreground/80 backdrop-blur-md active:scale-[0.98] transition-transform"
+          >
+            Посмотреть программу без входа
+          </button>
+          <p className="mt-2 text-center text-[10px] leading-relaxed text-foreground/45">
+            Программа, спикеры и информация доступны всем. Вход нужен для билета, чата и личных функций.
+          </p>
+          <div className="flex items-start justify-center gap-2 px-2 text-center text-[11px] leading-relaxed text-foreground/55">
+            <TicketCheck className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+            <span>Скачать может каждый. Билет появится только при входе по email, указанному при покупке.</span>
+          </div>
         </form>
         {/* BUG_FIX_CONTEXT: По требованию заказчика удалена нижняя ссылка
             "Нет аккаунта? Зарегистрироваться / Уже есть аккаунт? Войти".
@@ -537,9 +560,9 @@ export default function Auth({ onSuccess }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:pravotechhub@mail.ru"
+                        <a href="mailto:info@tech-pravo.ru"
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          pravotechhub@mail.ru
+                          info@tech-pravo.ru
                         </a>
                       </div>
                     </div>
@@ -596,9 +619,9 @@ export default function Auth({ onSuccess }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:pravotechhub@mail.ru"
+                        <a href="mailto:info@tech-pravo.ru"
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          pravotechhub@mail.ru
+                          info@tech-pravo.ru
                         </a>
                       </div>
                     </div>

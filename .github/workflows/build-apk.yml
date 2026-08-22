@@ -41,25 +41,21 @@ jobs:
       - name: Install npm deps
         run: npm ci --no-audit --no-fund
 
-      # GUARD: пока бэкенд по cleartext (нет HTTPS-домена), androidScheme обязан
-      # быть 'http' — иначе WebView origin https://localhost, fetch к http://72.56.38.62:3100
-      # блокируется как mixed content. Симптом — "Нет соединения с сервером" в APK.
-      # Когда переедем на HTTPS — удалить этот шаг. См. ARCHITECTURE.md §8.
-      - name: Guard — androidScheme must be 'http' until HTTPS migration
+      - name: Guard — production uses HTTPS only
         run: |
-          if grep -E "androidScheme:[[:space:]]*['\"]https['\"]" capacitor.config.ts; then
-            echo "::error::androidScheme is 'https' — это сломает APK (mixed content к http бэку). См. ARCHITECTURE.md §8."
+          if ! grep -E "androidScheme:[[:space:]]*['\"]https['\"]" capacitor.config.ts; then
+            echo "::error::androidScheme must be https"
             exit 1
           fi
-          echo "OK: androidScheme is 'http'"
+          echo "OK: androidScheme is https"
 
       - name: Write production frontend env
         run: |
           cat > .env.production <<EOF
           NODE_ENV=production
-          VITE_API_BASE_URL=http://72.56.38.62/api/v1
-          VITE_WS_BASE_URL=ws://72.56.38.62:3100
-          VITE_ENABLE_LOCAL_FALLBACK=true
+          VITE_API_BASE_URL=https://tech-pravo.ru/tfapi/v1
+          VITE_WS_BASE_URL=wss://tech-pravo.ru
+          VITE_ENABLE_LOCAL_FALLBACK=false
           EOF
 
       - name: Verify env file written
@@ -72,54 +68,34 @@ jobs:
       - name: Build Vite bundle (with explicit env)
         env:
           NODE_ENV: production
-          VITE_API_BASE_URL: http://72.56.38.62/api/v1
-          VITE_WS_BASE_URL: ws://72.56.38.62:3100
-          VITE_ENABLE_LOCAL_FALLBACK: 'true'
+          VITE_API_BASE_URL: https://tech-pravo.ru/tfapi/v1
+          VITE_WS_BASE_URL: wss://tech-pravo.ru
+          VITE_ENABLE_LOCAL_FALLBACK: 'false'
         run: |
           npx vite build --mode production
           echo "--- bundle env check ---"
-          if ! grep -rq "72.56.38.62" dist/assets/; then
+          if ! grep -rq "tech-pravo.ru/tfapi/v1" dist/assets/; then
             echo "::error::API URL not baked into bundle — VITE_API_BASE_URL не попал в build. APK не сможет достучаться до бэка."
             exit 1
           fi
-          grep -rl "72.56.38.62" dist/assets/ | head -3
+          grep -rl "tech-pravo.ru/tfapi/v1" dist/assets/ | head -3
 
       - name: Capacitor sync (Android)
         run: npx cap sync android
 
-      - name: Force cleartext in AndroidManifest
-        run: |
-          sed -i 's/android:usesCleartextTraffic="false"/android:usesCleartextTraffic="true"/g' android/app/src/main/AndroidManifest.xml
-          grep usesCleartextTraffic android/app/src/main/AndroidManifest.xml
-
-      # CRITICAL: Capacitor 8 при `cap sync` авто-генерирует
-      # android/app/src/debug/res/xml/network_security_config_debug.xml
-      # с domain-config только для localhost/10.0.2.2/devServer — БЕЗ нашего
-      # production-сервера. При assembleDebug этот файл ПЕРЕОПРЕДЕЛЯЕТ main
-      # NSC, и OkHttp ловит "Cleartext HTTP traffic to <ip> not permitted".
-      # Принудительно зеркалим main NSC в debug, чтобы permissive
-      # cleartextTrafficPermitted=true применялся и в debug-варианте.
-      - name: Force permissive NSC in debug build variant
-        run: |
-          mkdir -p android/app/src/debug/res/xml
-          cp android/app/src/main/res/xml/network_security_config.xml \
-             android/app/src/debug/res/xml/network_security_config_debug.xml
-          echo "--- debug NSC after override ---"
-          cat android/app/src/debug/res/xml/network_security_config_debug.xml
-
-      - name: Gradle assembleDebug
+      - name: Gradle assembleRelease
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --warning-mode=summary
+          ./gradlew assembleRelease --no-daemon --warning-mode=summary
 
       - name: Rename APK with version + commit
         id: meta
         run: |
           SHORT=$(git rev-parse --short HEAD)
           VERSION=$(node -p "require('./package.json').version")
-          OUT_NAME="TechForum2026-v${VERSION}-${SHORT}-debug.apk"
-          mv android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/${OUT_NAME}"
+          OUT_NAME="TechForum2026-v${VERSION}-${SHORT}.apk"
+          mv android/app/build/outputs/apk/release/app-release.apk "android/app/build/outputs/apk/release/${OUT_NAME}"
           echo "out_name=${OUT_NAME}" >> $GITHUB_OUTPUT
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "short=${SHORT}" >> $GITHUB_OUTPUT
@@ -128,7 +104,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.out_name }}
-          path: TechForum2026_app/android/app/build/outputs/apk/debug/${{ steps.meta.outputs.out_name }}
+          path: TechForum2026_app/android/app/build/outputs/apk/release/${{ steps.meta.outputs.out_name }}
           retention-days: 30
 
       - name: Create release on tag-style commits or manual dispatch
@@ -138,7 +114,7 @@ jobs:
           tag_name: build-${{ steps.meta.outputs.short }}
           name: APK build ${{ steps.meta.outputs.short }}
           body: |
-            Automated debug APK from commit ${{ github.sha }}
-            Backend endpoint: http://72.56.38.62/api/v1
-          files: TechForum2026_app/android/app/build/outputs/apk/debug/${{ steps.meta.outputs.out_name }}
+            Android APK from commit ${{ github.sha }}
+            Backend endpoint: https://tech-pravo.ru/tfapi/v1
+          files: TechForum2026_app/android/app/build/outputs/apk/release/${{ steps.meta.outputs.out_name }}
           fail_on_unmatched_files: true

@@ -36,6 +36,11 @@ const FALLBACKS: Record<string, unknown> = {
   '/days': DAYS,
 };
 
+/** Bundled last-known programme used only on a first offline launch. */
+export function getProgramFallback<T>(path: string): T | undefined {
+  return FALLBACKS[path] as T | undefined;
+}
+
 export interface ProgramFetchState<T> {
   data: T;
   loading: boolean;

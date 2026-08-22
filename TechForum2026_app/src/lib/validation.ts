@@ -45,18 +45,25 @@ const nameSchema = z.string().trim().min(1, 'Укажите имя').max(80);
 // пробелы, скобки, дефис; 5–19 значащих символов.
 const phoneSchema = z.string().trim().regex(/^\+?[0-9][0-9\s()\-]{4,18}$/, 'Некорректный телефон');
 
+const registrationPlatformSchema = z.enum(['android', 'ios', 'web', 'unknown']).optional();
+const registrationDeviceSchema = z.string().trim().max(300).optional();
+
 // Регистрация/вход: email ИЛИ телефон (хотя бы один из них).
 export const authRegisterSchema = z.object({
   email: emailSchema.optional(),
   phone: phoneSchema.optional(),
   password: passwordSchema,
   name: nameSchema,
+  registrationPlatform: registrationPlatformSchema,
+  registrationDevice: registrationDeviceSchema,
 }).refine((d) => !!(d.email || d.phone), { message: 'Укажите email или телефон', path: ['email'] });
 
 export const authLoginSchema = z.object({
   email: emailSchema.optional(),
   phone: phoneSchema.optional(),
   password: passwordSchema,
+  registrationPlatform: registrationPlatformSchema,
+  registrationDevice: registrationDeviceSchema,
 }).refine((d) => !!(d.email || d.phone), { message: 'Укажите email или телефон', path: ['email'] });
 
 export const authMePatchSchema = z.object({

@@ -2,9 +2,10 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Calendar, ChevronRight, Sparkles, Clock3, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
-import { SESSIONS, TRACKS, getDayById } from '../data';
+import { TRACKS } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
 import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
+import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 
 // Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
 // программы (id спикеров сохранены → связка работает для программных спикеров).
@@ -24,6 +25,7 @@ export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [speaker, setSpeaker] = useState<ApiSpeaker | null>(null);
+  const [speakerSessions, setSpeakerSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -31,10 +33,10 @@ export default function SpeakerDetail() {
     (async () => {
       setLoading(true);
       try {
-        const r = await fetch(resolveApiUrl('/speakers'));
-        if (r.ok && !cancelled) {
-          const data = await r.json();
-          setSpeaker(Array.isArray(data) ? (data.find((s: ApiSpeaker) => s.id === id) ?? null) : null);
+        const [speakerResult, sessionResult] = await Promise.all([fetchCachedJson<ApiSpeaker[]>('/speakers'), fetchCachedJson<any[]>('/sessions')]);
+        if (!cancelled) {
+          setSpeaker(Array.isArray(speakerResult.data) ? (speakerResult.data.find((s) => s.id === id) ?? null) : null);
+          setSpeakerSessions(Array.isArray(sessionResult.data) ? sessionResult.data.filter((session: any) => session.speakerIds?.includes(id)) : []);
         }
       } catch {
         /* offline */
@@ -70,7 +72,6 @@ export default function SpeakerDetail() {
     );
   }
 
-  const speakerSessions = SESSIONS.filter((s) => s.speakerIds.includes(speaker.id));
   const track = TRACKS.find((t) => t.id === speaker.trackId);
   const bioParagraphs = (speaker.bio || '').split('\n\n').filter(Boolean);
 
@@ -139,7 +140,6 @@ export default function SpeakerDetail() {
           </h2>
           <div className="space-y-3">
             {speakerSessions.map((s) => {
-              const day = getDayById(s.dayId);
               return (
                 <Link
                   key={s.id}
@@ -150,7 +150,7 @@ export default function SpeakerDetail() {
                   <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-foreground/40">
                     <span className="inline-flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-accent" strokeWidth={1.8} />
-                      {day?.label || ''} · {day?.weekday || ''}
+                      {s.day || ''}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Clock3 className="w-3 h-3 text-accent" strokeWidth={1.8} />

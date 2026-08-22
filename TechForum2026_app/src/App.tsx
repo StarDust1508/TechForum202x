@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
+import { LockKeyhole } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 // BUG_FIX_CONTEXT: Откатил lazy/Suspense — каждый chunk подгружался с
 // задержкой через Suspense fallback, юзер видел ре-рендер шрифта и
@@ -35,6 +36,24 @@ import { prefetchPublicData } from './lib/prefetch';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
+import BrandLogo from './components/BrandLogo';
+import BackButton from './components/BackButton';
+
+const GUEST_KEY = 'techforum_guest_mode';
+
+function GuestGate({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="min-h-full px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
+      <header className="flex items-center gap-3"><BackButton /><h1 className="font-display text-[24px] font-bold">Нужен вход</h1></header>
+      <section className="mt-10 rounded-3xl border border-primary/30 bg-card p-6 text-center">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/35 bg-primary/10"><LockKeyhole className="h-7 w-7 text-primary" /></div>
+        <h2 className="mt-5 font-display text-[19px] font-bold">Это личный раздел</h2>
+        <p className="mt-3 text-[13px] leading-relaxed text-foreground/55">Войдите с email, на который куплен билет. Публичная программа и карточки спикеров доступны без регистрации.</p>
+        <button type="button" onClick={onLogin} className="mt-6 w-full rounded-2xl bg-primary py-4 text-[15px] font-bold text-white active:scale-[0.98]">Войти</button>
+      </section>
+    </div>
+  );
+}
 
 
 // BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
@@ -112,6 +131,16 @@ function AppContent() {
       }
     })();
   }, []);
+
+  const enterGuestMode = () => {
+    try { localStorage.setItem(GUEST_KEY, '1'); } catch { /* storage unavailable */ }
+    setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
+  };
+
+  const leaveGuestMode = () => {
+    try { localStorage.removeItem(GUEST_KEY); } catch { /* storage unavailable */ }
+    setUser(null);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -197,6 +226,11 @@ function AppContent() {
             console.error('Local auth check failed', fallbackError);
           }
         }
+        if (isMounted) {
+          try {
+            if (localStorage.getItem(GUEST_KEY) === '1') setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
+          } catch { /* storage unavailable */ }
+        }
       } catch (error) {
         console.error('Auth check failed', error);
         if (isLocalAuthFallbackEnabled()) {
@@ -206,6 +240,11 @@ function AppContent() {
           } catch (fallbackError) {
             console.error('Local auth check failed', fallbackError);
           }
+        }
+        if (isMounted) {
+          try {
+            if (localStorage.getItem(GUEST_KEY) === '1') setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
+          } catch { /* storage unavailable */ }
         }
       } finally {
         const elapsed = Date.now() - startAt;
@@ -238,15 +277,15 @@ function AppContent() {
           className="absolute bg-cover bg-no-repeat"
           style={{
             inset: '-50px',
-            backgroundImage: 'url(/hero-bg.jpg)',
+            backgroundImage: 'url(/brand/auth-hero-2026-v2.jpg)',
             backgroundSize: 'cover',
-            backgroundPosition: 'center 30%',
+            backgroundPosition: 'center center',
           }}
         />
-        <div className="absolute bg-gradient-to-t from-[#0f1118] via-[#0f1118]/70 to-[#0f1118]/40" style={{ inset: '-50px' }} />
-        <div className="relative z-10 flex flex-col items-center gap-4 animate-pulse">
-          <img src="/icon-192.png" alt="ТехнологИИ Права" className="w-20 h-20 rounded-2xl shadow-neon-magenta" />
-          <h1 className="font-display text-2xl font-bold text-primary tracking-wider">ТехнологИИ Права</h1>
+        <div className="absolute bg-gradient-to-t from-[#080b16] via-[#0b1020]/68 to-[#071323]/22" style={{ inset: '-50px' }} />
+        <div className="relative z-10 flex flex-col items-center gap-4 animate-pulse px-8 text-center">
+          <h1 className="w-full text-[clamp(18px,7vw,28px)]"><BrandLogo /></h1>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-accent/75">25–26 сентября · Москва</p>
         </div>
       </div>
     );
@@ -259,15 +298,18 @@ function AppContent() {
     // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
-    <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
+    <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh' }}>
       <OfflineBanner />
-      <main className="w-full sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
+      <main className="w-full min-h-[100dvh] sm:min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto' }}>
         <div className="flex-1 overflow-y-auto scrollbar-hide relative">
           <div className="min-h-full">
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
-              <Auth onSuccess={setUser} />
-            ) : !user.interestsCount ? (
+              <Auth
+                onSuccess={(nextUser) => { try { localStorage.removeItem(GUEST_KEY); } catch { /* noop */ } setUser(nextUser); }}
+                onGuest={enterGuestMode}
+              />
+            ) : !user.isGuest && !user.interestsCount ? (
               // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
               // ИЛИ undefined (legacy юзеры из старых билдов без поля). Onboarding
               // вызывает onDone(count) ТОЛЬКО после успешного PUT /me/interests
@@ -293,20 +335,20 @@ function AppContent() {
                       <Route path="/schedule" element={<Schedule />} />
                       <Route path="/speakers" element={<Speakers />} />
                       <Route path="/map" element={<Map />} />
-                      <Route path="/chat" element={<Chat />} />
-                      <Route path="/profile" element={<Profile user={user} onUpdate={setUser} />} />
-                      <Route path="/ticket" element={<Ticket />} />
+                      <Route path="/chat" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Chat />} />
+                      <Route path="/profile" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Profile user={user} onUpdate={setUser} />} />
+                      <Route path="/ticket" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Ticket />} />
                       <Route path="/giveaways" element={<Giveaways />} />
                       <Route path="/partners" element={<Partners />} />
                       <Route path="/diagnostics" element={<Diagnostics />} />
                       <Route path="/about" element={<About />} />
                       <Route path="/my-records" element={<MyRecords />} />
                       <Route path="/faq" element={<Faq />} />
-                      <Route path="/settings" element={<Settings />} />
+                      <Route path="/settings" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Settings />} />
                       <Route path="/speakers/:id" element={<SpeakerDetail />} />
-                      <Route path="/users/:id" element={<UserProfile />} />
-                      <Route path="/my-card" element={<MyCard />} />
-                      <Route path="/attendees" element={<Attendees />} />
+                      <Route path="/users/:id" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <UserProfile />} />
+                      <Route path="/my-card" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <MyCard />} />
+                      <Route path="/attendees" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Attendees />} />
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </motion.div>

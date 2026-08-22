@@ -32,10 +32,9 @@
 
 import {
   User,
-  Newspaper,
   MessageCircle,
   Calendar,
-  Handshake,
+  CircleHelp,
   ShieldCheck,
   Mic,
   Info,
@@ -43,11 +42,11 @@ import {
   CalendarDays,
   MapPin,
   Settings,
-  Users,
   Send,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
+import BrandLogo from '@/src/components/BrandLogo';
 
 interface MenuItem {
   label: string;
@@ -62,13 +61,13 @@ const menuItems: MenuItem[] = [
   { label: 'Чат', icon: MessageCircle, to: '/chat' },
   { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
   { label: 'Спикеры', icon: Mic, to: '/speakers' },
-  { label: 'Новости', icon: Newspaper, to: '/feed' },
+  { label: 'TG Канал', icon: Send, href: 'https://t.me/TechPravoAI' },
   { label: 'Настройки', icon: Settings, to: '/settings' },
-  { label: 'Участники', icon: Users, to: '/attendees' },
+  { label: 'Маршрут', icon: MapPin, to: '/map' },
   { label: 'Розыгрыши', icon: Sparkles, to: '/giveaways' },
   { label: 'О форуме', icon: Info, to: '/about' },
-  { label: 'Партнёры', icon: Handshake, to: '/partners' },
-  { label: 'TG Бот', icon: Send, href: 'https://t.me/NeuroPravo_Bot' },
+  { label: 'Помощь', icon: CircleHelp, to: '/faq' },
+  { label: 'Связаться', icon: Send, href: 'https://t.me/CEO_WYRM1' },
 ];
 
 export default function Home() {
@@ -96,19 +95,7 @@ export default function Home() {
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
           }}
         >
-          <h1
-            className="font-display font-extrabold tracking-[0.01em]"
-            style={{
-              fontSize: 'clamp(27px, 8.6vw, 44px)',
-              lineHeight: 1.03,
-              background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              filter: 'drop-shadow(0 0 18px rgba(0,255,255,0.4)) drop-shadow(0 0 36px rgba(0,255,255,0.15))',
-            }}
-          >
-            ТехнологИИ Права
-          </h1>
+          <h1 className="w-full min-w-0 px-1" style={{ fontSize: 'clamp(18px, 6.1vw, 34px)' }}><BrandLogo className="mx-auto" /></h1>
 
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link

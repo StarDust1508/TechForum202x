@@ -1,17 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Разрешаем cleartext-трафик глобально через base-config. Раньше тут был
-  domain-config с явным <domain>72.56.38.62</domain>, но OkHttp (который
-  использует Capacitor 8 CapacitorHttp plugin для нативных запросов)
-  трактовал IP-адрес в domain-element неоднозначно и блокировал запрос
-  с ошибкой "Cleartext HTTP traffic to 72.56.38.62 not permitted" даже
-  при правильно указанном usesCleartextTraffic=true в манифесте.
-  Простой base-config без ограничений по доменам пускает cleartext к IP.
-  После переезда на HTTPS-домен этот файл можно удалить и убрать
-  android:networkSecurityConfig из AndroidManifest.
--->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

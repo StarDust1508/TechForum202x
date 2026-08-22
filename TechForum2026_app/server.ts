@@ -118,16 +118,35 @@ const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
-  tracks, halls, days, speakers, partners, sessionSpeakers, news, events,
+  tracks, halls, days, speakers, partners, sessionSpeakers, news, events, appContent,
   pushTokens, giveaways, giveawayEntries,
-  faq, contactExchanges, aiChatMessages,
+  faq, contactExchanges, aiChatMessages, userBlocks, contentReports,
 } = schemaModule;
 
-// Доменные данные программы (treki, halls, days, speakers, sessions, partners,
-// EVENT_META) — источник истины src/data.ts. Используются для AI-контекста
-// и .ics-генерации. БД содержит копию через src/db/seed.ts.
+const APP_CONTENT_ID = 'conference_2026';
+const DEFAULT_APP_CONTENT: Record<string, string> = {
+  name: 'ТехнологИИ Права 2026',
+  tagline: 'Два практических дня о том, как ИИ меняет юридическую работу и бизнес.',
+  description: 'Первый день — AI, агентные системы, продукты, данные и регулирование. Второй — БФЛ, цифровые доказательства, LegalTech, управление практикой и проверяемые сценарии применения ИИ.',
+  dateLabel: '25–26 сентября 2026', dateDetail: 'Пятница и суббота', city: 'Москва',
+  venueName: 'БЦ «Красные Ворота»', address: 'Садовая-Спасская улица, 21/1, Москва',
+  dayOneTitle: 'День 1 · AI и агенты', dayOneDescription: 'Агенты, продукты, данные, внедрение и регулирование',
+  dayTwoTitle: 'День 2 · БФЛ и ИИ', dayTwoDescription: 'Суды, доказательства, сделки, LegalTech и рост практики',
+  email: 'info@tech-pravo.ru', organizerTelegram: 'CEO_WYRM1', telegramChannel: 'TechPravoAI',
+  yandexMapUrl: 'https://yandex.ru/maps/?text=%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2021%2F1',
+  twoGisUrl: 'https://2gis.ru/moscow/search/%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2C%2021%2F1',
+  venueHelp: 'Точная схема этажей появится после подтверждения площадкой.',
+};
+
+async function readAppContent(): Promise<Record<string, string>> {
+  const row = (await db.select().from(appContent).where(eq(appContent.id, APP_CONTENT_ID)).limit(1))[0];
+  return { ...DEFAULT_APP_CONTENT, ...((row?.payload as Record<string, string> | null) ?? {}) };
+}
+
+// В data.ts остаются только метаданные события и справочник интересов.
+// Программа, спикеры, залы и партнёры во всех runtime-сценариях читаются из БД.
 const dataModule = await import('./src/data.js');
-const { TRACKS, HALLS, DAYS, SPEAKERS, SESSIONS, PARTNERS, EVENT_META, INTERESTS } = dataModule;
+const { HALLS, EVENT_META, INTERESTS } = dataModule;
 
 const icsModule = await import('./src/lib/ics.js');
 const { buildIcsCalendar, formatIcsDateTime } = icsModule;
@@ -762,8 +781,13 @@ async function startServer(): Promise<void> {
     res.json(payload);
   });
 
-  api.get('/ready', (_req, res) => {
-    res.json({ status: 'ready' });
+  api.get('/ready', async (_req, res) => {
+    try {
+      await pool.query('SELECT 1');
+      res.json({ status: 'ready', db: 'up' });
+    } catch {
+      res.status(503).json({ status: 'not_ready', db: 'down' });
+    }
   });
 
   // ========================================================================
@@ -776,41 +800,56 @@ async function startServer(): Promise<void> {
   // снимок программы (TRACKS, SESSIONS, SPEAKERS, EVENT_META) как system-context.
   // Gemini ест ~6KB этого контекста легко (input до 1M токенов). Function-calling
   // не используем — простой prompt-injection даёт 95% эффекта.
-  // Кэшируем event-context. Данные программы статичны до перезапуска
-  // сервиса; нет смысла пересобирать ~5KB строки на каждый AI-запрос.
-  let eventContextCache: string | null = null;
-  function buildEventContext(): string {
-    if (eventContextCache !== null) return eventContextCache;
+  // Кэш 60 секунд: правка программы в CMS попадает в ассистента без релиза APK.
+  let eventContextCache: { value: string; expiresAt: number } | null = null;
+  async function buildEventContext(): Promise<string> {
+    if (eventContextCache && eventContextCache.expiresAt > Date.now()) return eventContextCache.value;
+    const [dayRows, trackRows, hallRows, speakerRows, sessionRows, links, partnerRows] = await Promise.all([
+      db.select().from(days), db.select().from(tracks), db.select().from(halls),
+      db.select().from(speakers), db.select().from(sessionsEvent),
+      db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder), db.select().from(partners),
+    ]);
+    const speakerById = new Map(speakerRows.map((s) => [s.id, s]));
+    const speakersBySession = new Map<string, string[]>();
+    for (const link of links) {
+      const values = speakersBySession.get(link.sessionId) ?? [];
+      values.push(speakerById.get(link.speakerId)?.name ?? link.speakerId);
+      speakersBySession.set(link.sessionId, values);
+    }
+    const dayById = new Map(dayRows.map((d) => [d.id, d]));
+    const hallById = new Map(hallRows.map((h) => [h.id, h]));
     const lines: string[] = [];
     lines.push(`# КОНФЕРЕНЦИЯ: ${EVENT_META.name}`);
     lines.push(`Локация: ${EVENT_META.location}, ${EVENT_META.city}`);
     lines.push(`Организатор: ${EVENT_META.organizer} (${EVENT_META.organizerEmail})`);
     lines.push('');
     lines.push('## ДНИ:');
-    for (const d of DAYS) lines.push(`- ${d.id}: ${d.label} ${d.weekday} (${d.date})`);
+    for (const d of dayRows) lines.push(`- ${d.id}: ${d.label} ${d.weekday} (${d.date})`);
     lines.push('');
     lines.push('## ТРЕКИ:');
-    for (const t of TRACKS) lines.push(`- ${t.id}: ${t.name}`);
+    for (const t of trackRows) lines.push(`- ${t.id}: ${t.name}`);
     lines.push('');
     lines.push('## ЗАЛЫ:');
-    for (const h of HALLS) lines.push(`- ${h.id}: ${h.name} (вместимость ${h.capacity})`);
+    for (const h of hallRows) lines.push(`- ${h.id}: ${h.name} (вместимость ${h.capacity})`);
     lines.push('');
     lines.push('## СПИКЕРЫ:');
-    for (const sp of SPEAKERS) {
+    for (const sp of speakerRows) {
       lines.push(`- ${sp.name} | ${sp.role}, ${sp.company} | трек: ${sp.trackId} | тема: ${sp.topic ?? '—'}`);
     }
     lines.push('');
     lines.push('## ПРОГРАММА:');
-    for (const s of SESSIONS) {
-      const day = DAYS.find(d => d.id === s.dayId)?.label ?? s.dayId;
-      const speakerNames = s.speakerIds.map((id: string) => SPEAKERS.find(x => x.id === id)?.name ?? id).join(', ') || '—';
-      lines.push(`- [${day} ${s.startTime}-${s.endTime}] ${s.format.toUpperCase()} «${s.title}» в ${s.location}, трек: ${s.trackId ?? '—'}, спикеры: ${speakerNames}`);
+    for (const s of sessionRows) {
+      const day = dayById.get(s.dayId)?.label ?? s.dayId;
+      const speakerNames = speakersBySession.get(s.id)?.join(', ') || '—';
+      const location = s.hallId ? hallById.get(s.hallId)?.name ?? 'Зал уточняется' : 'Зал уточняется';
+      lines.push(`- [${day} ${s.startTime}-${s.endTime}] ${s.format.toUpperCase()} «${s.title}» в ${location}, трек: ${s.trackId ?? '—'}, спикеры: ${speakerNames}`);
     }
     lines.push('');
     lines.push('## ПАРТНЁРЫ:');
-    for (const p of PARTNERS) lines.push(`- ${p.name} (${p.tier}): ${p.description}`);
-    eventContextCache = lines.join('\n');
-    return eventContextCache;
+    for (const p of partnerRows) lines.push(`- ${p.name} (${p.tier}): ${p.description}`);
+    const value = lines.join('\n');
+    eventContextCache = { value, expiresAt: Date.now() + 60_000 };
+    return value;
   }
 
   function buildSystemInstruction(): string {
@@ -865,7 +904,7 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const eventContext = buildEventContext();
+    const eventContext = await buildEventContext();
     const systemPrompt = [
       buildSystemInstruction(),
       '',
@@ -997,7 +1036,7 @@ async function startServer(): Promise<void> {
   // ========================================================================
 
   api.post('/auth/register', authRateLimit, validateBody(authRegisterSchema), async (req, res) => {
-    const { email, phone, password, name } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
+    const { email, phone, password, name, registrationPlatform, registrationDevice } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
 
     // Идентификатор — email ИЛИ телефон. Для телефона генерим внутренний
     // синтетический email (колонка users.email NOT NULL UNIQUE), реальный
@@ -1028,6 +1067,8 @@ async function startServer(): Promise<void> {
         id,
         email: storedEmail,
         phone: normPhone || null,
+        registrationPlatform: registrationPlatform || 'unknown',
+        registrationDevice: registrationDevice || null,
         passwordHash,
         name,
         avatar,
@@ -1084,7 +1125,7 @@ async function startServer(): Promise<void> {
   }
 
   api.post('/auth/login', authRateLimit, validateBody(authLoginSchema), async (req, res) => {
-    const { email, phone, password } = req.body as import('./src/lib/validation.js').AuthLoginBody;
+    const { email, phone, password, registrationPlatform, registrationDevice } = req.body as import('./src/lib/validation.js').AuthLoginBody;
 
     // Ключ для anti-bruteforce и поиска: телефон (нормализованный) ИЛИ email.
     const lockKey = phone ? normalizePhone(phone) : (email || '');
@@ -1104,6 +1145,13 @@ async function startServer(): Promise<void> {
       return;
     }
     clearAccountLock(lockKey);
+
+    if (registrationPlatform || registrationDevice) {
+      await db.update(users).set({
+        registrationPlatform: registrationPlatform || user.registrationPlatform || 'unknown',
+        registrationDevice: registrationDevice || user.registrationDevice || null,
+      }).where(eq(users.id, user.id));
+    }
 
     req.session.userId = user.id;
     const interestRows = await db
@@ -1183,6 +1231,21 @@ async function startServer(): Promise<void> {
     // Include interestsCount so frontend doesn't lose it and redirect to onboarding
     const interestRows = await db.select({ count: count() }).from(userInterests).where(eq(userInterests.userId, user.id));
     res.json({ ...toPublicUser(updated), interestsCount: interestRows[0]?.count ?? 0 });
+  });
+
+  // App Store 5.1.1(v): удаление именно аккаунта, а не выход/деактивация.
+  // Повторное подтверждение в теле защищает от случайного нажатия и CSRF.
+  api.delete('/auth/me', requireAuth, async (req, res) => {
+    if (String(req.body?.confirmation || '') !== 'DELETE') {
+      res.status(400).json({ error: 'confirmation_required' }); return;
+    }
+    const userId = getSessionUserId(req)!;
+    const removed = await db.delete(users).where(eq(users.id, userId)).returning({ id: users.id });
+    if (!removed[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    req.session.destroy(() => {
+      res.clearCookie('connect.sid');
+      res.json({ ok: true });
+    });
   });
 
   // ========================================================================
@@ -1477,6 +1540,18 @@ async function startServer(): Promise<void> {
     const rows = await db.select().from(users).orderBy(desc(users.createdAt));
     const ic = await db.select({ uid: userInterests.userId, c: count() }).from(userInterests).groupBy(userInterests.userId);
     const icmap = new Map(ic.map((r) => [r.uid, Number(r.c)]));
+    const tokenRows = await db.select().from(pushTokens).orderBy(desc(pushTokens.createdAt));
+    const devicesByUser = new Map<string, Array<{ platform: string; deviceLabel: string | null; createdAt: Date; lastSeenAt: Date | null }>>();
+    for (const token of tokenRows) {
+      const devices = devicesByUser.get(token.userId) || [];
+      devices.push({
+        platform: token.platform,
+        deviceLabel: token.deviceLabel,
+        createdAt: token.createdAt,
+        lastSeenAt: token.lastSeenAt,
+      });
+      devicesByUser.set(token.userId, devices);
+    }
     res.json(rows.map((u) => ({
       id: u.id,
       name: u.name,
@@ -1488,7 +1563,43 @@ async function startServer(): Promise<void> {
       lastSeenAt: u.lastSeenAt,
       createdAt: u.createdAt,
       interestsCount: icmap.get(u.id) ?? 0,
+      registrationPlatform: u.registrationPlatform,
+      registrationDevice: u.registrationDevice,
+      devices: devicesByUser.get(u.id) || [],
     })));
+  });
+
+  // Жалобы из личного чата — рабочая очередь модератора для App Review 1.2.
+  api.get('/internal/moderation/reports', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const result = await pool.query(
+      `SELECT report.id, report.reporter_id AS "reporterId",
+              reporter.name AS "reporterName", reporter.email AS "reporterEmail",
+              report.reported_user_id AS "reportedUserId",
+              reported.name AS "reportedUserName", reported.email AS "reportedUserEmail",
+              report.message_id AS "messageId", report.reason, report.status,
+              report.created_at AS "createdAt"
+         FROM content_reports report
+         JOIN users reporter ON reporter.id = report.reporter_id
+         JOIN users reported ON reported.id = report.reported_user_id
+        ORDER BY CASE report.status WHEN 'new' THEN 0 WHEN 'reviewed' THEN 1 ELSE 2 END,
+                 report.created_at DESC`,
+    );
+    res.json(result.rows);
+  });
+
+  api.patch('/internal/moderation/reports/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const status = str(req.body?.status, 24);
+    if (!['new', 'reviewed', 'resolved', 'dismissed'].includes(status)) {
+      res.status(400).json({ error: 'invalid_status' }); return;
+    }
+    const result = await pool.query(
+      `UPDATE content_reports SET status = $1 WHERE id = $2 RETURNING id, status`,
+      [status, String(req.params.id)],
+    );
+    if (!result.rows[0]) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(result.rows[0]);
   });
 
   // ======================= APP CMS — ПРОГРАММА =======================
@@ -1516,6 +1627,53 @@ async function startServer(): Promise<void> {
       speakers: speakerRows.map((s) => ({ id: s.id, name: s.name, role: s.role, company: s.company })),
       sessions: sessRows.map((s) => ({ ...s, speakerIds: speakersBySession.get(s.id) ?? [] })),
     });
+  });
+
+  // Карточка события и контроль целостности: всё, что раньше было зашито в
+  // About/Map, теперь меняется из общей админки и вступает в силу сразу.
+  api.get('/internal/app-content', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    res.json(await readAppContent());
+  });
+
+  api.put('/internal/app-content', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const current = await readAppContent();
+    const next: Record<string, string> = { ...current };
+    for (const key of Object.keys(DEFAULT_APP_CONTENT)) {
+      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, key)) next[key] = str((req.body as Record<string, unknown>)[key], 4000);
+    }
+    if (!next.name || !next.dateLabel || !next.venueName || !next.address) {
+      res.status(400).json({ error: 'name_date_venue_address_required' }); return;
+    }
+    await db.insert(appContent).values({ id: APP_CONTENT_ID, payload: next, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: appContent.id, set: { payload: next, updatedAt: new Date() } });
+    res.json(next);
+  });
+
+  api.get('/internal/content-health', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
+      db.select().from(tracks), db.select().from(halls), db.select().from(days),
+      db.select().from(speakers), db.select().from(sessionsEvent), db.select().from(sessionSpeakers),
+    ]);
+    const dayIds = new Set(dayRows.map((x) => x.id));
+    const speakerIds = new Set(speakerRows.map((x) => x.id));
+    const issues: string[] = [];
+    for (const s of sessRows) {
+      if (!dayIds.has(s.dayId)) issues.push(`Сессия «${s.title}» ссылается на отсутствующий день`);
+      if (!/^\d{2}:\d{2}$/.test(s.startTime) || !/^\d{2}:\d{2}$/.test(s.endTime)) issues.push(`Проверьте время сессии «${s.title}»`);
+      if (s.startTime && s.endTime && s.startTime >= s.endTime) issues.push(`Время окончания раньше начала: «${s.title}»`);
+    }
+    for (const l of linkRows) if (!speakerIds.has(l.speakerId)) issues.push(`В программе есть отсутствующий спикер ${l.speakerId}`);
+    res.json({ ok: issues.length === 0, issues, counts: { tracks: trackRows.length, halls: hallRows.length, days: dayRows.length, speakers: speakerRows.length, sessions: sessRows.length } });
+  });
+
+  api.post('/internal/speakers/sync', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    await syncSpeakersFromSite();
+    const rows = await db.select({ id: speakers.id }).from(speakers);
+    res.json({ ok: true, speakers: rows.length, syncedAt: new Date().toISOString() });
   });
 
   api.post('/internal/sessions', cmsRateLimit, async (req, res) => {
@@ -2103,6 +2261,33 @@ async function startServer(): Promise<void> {
     return true;
   }
 
+  const objectionablePattern = /(порн|наркот|убью|сдохни|нацист|terror|porn)/iu;
+
+  api.post('/moderation/report', requireAuth, writeRateLimit, async (req, res) => {
+    const reporterId = getSessionUserId(req)!;
+    const reportedUserId = str(req.body?.reportedUserId, 64);
+    const reason = str(req.body?.reason, 1000);
+    const messageId = str(req.body?.messageId, 64);
+    if (!reportedUserId || reportedUserId === reporterId || !reason) { res.status(400).json({ error: 'invalid_report' }); return; }
+    if (!await findUserById(reportedUserId)) { res.status(404).json({ error: 'user_not_found' }); return; }
+    await db.insert(contentReports).values({ id: crypto.randomUUID(), reporterId, reportedUserId, messageId, reason });
+    res.status(201).json({ ok: true });
+  });
+
+  api.put('/moderation/blocks/:userId', requireAuth, async (req, res) => {
+    const blockerId = getSessionUserId(req)!;
+    const blockedId = String(req.params.userId);
+    if (blockedId === blockerId || !await findUserById(blockedId)) { res.status(400).json({ error: 'invalid_user' }); return; }
+    await db.insert(userBlocks).values({ blockerId, blockedId }).onConflictDoNothing();
+    res.json({ ok: true });
+  });
+
+  api.delete('/moderation/blocks/:userId', requireAuth, async (req, res) => {
+    const blockerId = getSessionUserId(req)!;
+    await db.delete(userBlocks).where(and(eq(userBlocks.blockerId, blockerId), eq(userBlocks.blockedId, String(req.params.userId))));
+    res.json({ ok: true });
+  });
+
   api.post('/messages', requireAuth, writeRateLimit, validateBody(dmSendSchema), async (req, res) => {
     const fromUserId = getSessionUserId(req)!;
     const { toUserId, text, mediaUrl, mediaType, replyToId, forwardedFromUserId } = req.body as import('./src/lib/validation.js').DmSendBody;
@@ -2110,6 +2295,15 @@ async function startServer(): Promise<void> {
     if (toUserId === fromUserId) {
       res.status(400).json({ error: 'cannot_message_self' });
       return;
+    }
+    const blocked = await db.select({ blockerId: userBlocks.blockerId }).from(userBlocks)
+      .where(or(
+        and(eq(userBlocks.blockerId, fromUserId), eq(userBlocks.blockedId, toUserId)),
+        and(eq(userBlocks.blockerId, toUserId), eq(userBlocks.blockedId, fromUserId)),
+      )).limit(1);
+    if (blocked[0]) { res.status(403).json({ error: 'conversation_blocked' }); return; }
+    if (text && (objectionablePattern.test(text) || (text.match(/https?:\/\//gi)?.length ?? 0) > 3)) {
+      res.status(422).json({ error: 'objectionable_content' }); return;
     }
     if (!noteReceiver(toUserId)) {
       res.status(429).json({ error: 'receiver_rate_limited' });
@@ -2711,6 +2905,11 @@ async function startServer(): Promise<void> {
     res.json(rows);
   });
 
+  api.get('/app-content', async (_req, res) => {
+    res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=86400');
+    res.json(await readAppContent());
+  });
+
   api.get('/halls', async (_req, res) => {
     const rows = await db.select().from(halls);
     res.json(rows);
@@ -2781,6 +2980,21 @@ async function startServer(): Promise<void> {
         day: dayById.get(s.dayId)?.label ?? '',
       };
     }));
+  });
+
+  // Полная очистка каталога участников приложения. Отдельный подтверждающий
+  // заголовок защищает от случайного нажатия/повторного вызова из CMS.
+  api.delete('/internal/app-users', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    if (String(req.header('x-confirm-delete') || '') !== 'DELETE_ALL_APP_USERS') {
+      res.status(409).json({ error: 'confirmation_required' });
+      return;
+    }
+    const removed = await db.transaction(async (tx) => {
+      const rows = await tx.delete(users).returning({ id: users.id });
+      return rows.length;
+    });
+    res.json({ ok: true, removed });
   });
 
   api.get('/partners', async (_req, res) => {
@@ -2881,6 +3095,13 @@ async function startServer(): Promise<void> {
   });
 
   api.post('/giveaways/:id/join', requireAuth, writeRateLimit, async (req, res) => {
+    if (req.params.id === 'ai-lawyers-2026-macbook-air') {
+      res.status(409).json({
+        error: 'complete_research_on_site',
+        url: 'https://tech-pravo.ru/ai-dlya-yuristov',
+      });
+      return;
+    }
     const me = getSessionUserId(req)!;
     const id = String(req.params.id);
     const g = (await db.select().from(giveaways).where(eq(giveaways.id, id)).limit(1))[0];
@@ -2912,40 +3133,50 @@ async function startServer(): Promise<void> {
   // Используется на splash + (будет) для переключателя «Другое событие».
   // Сейчас — один default 'techforum-2026'.
   api.get('/events', async (_req, res) => {
-    const rows = await db.select().from(events).where(eq(events.isActive, true));
-    res.json(rows.map((e) => ({
-      id: e.id,
-      slug: e.slug,
-      name: e.name,
-      location: e.location,
-      city: e.city,
-      timezone: e.timezone,
-      organizer: e.organizer,
-      url: e.url,
-      startsAt: e.startsAt,
-      endsAt: e.endsAt,
-    })));
+    try {
+      const rows = await db.select().from(events).where(eq(events.isActive, true));
+      res.json(rows.map((e) => ({
+        id: e.id,
+        slug: e.slug,
+        name: e.name,
+        location: e.location,
+        city: e.city,
+        timezone: e.timezone,
+        organizer: e.organizer,
+        url: e.url,
+        startsAt: e.startsAt,
+        endsAt: e.endsAt,
+      })));
+    } catch (error) {
+      log.error('events', 'list failed', { err: String(error) });
+      res.status(503).json({ error: 'events_unavailable' });
+    }
   });
 
   api.get('/events/:slug', async (req, res) => {
-    const slug = String(req.params.slug);
-    const row = (await db.select().from(events).where(eq(events.slug, slug)).limit(1))[0];
-    if (!row) {
-      res.status(404).json({ error: 'event_not_found' });
-      return;
+    try {
+      const slug = String(req.params.slug);
+      const row = (await db.select().from(events).where(eq(events.slug, slug)).limit(1))[0];
+      if (!row) {
+        res.status(404).json({ error: 'event_not_found' });
+        return;
+      }
+      res.json({
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        location: row.location,
+        city: row.city,
+        timezone: row.timezone,
+        organizer: row.organizer,
+        url: row.url,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+      });
+    } catch (error) {
+      log.error('events', 'detail failed', { err: String(error), slug: String(req.params.slug) });
+      res.status(503).json({ error: 'events_unavailable' });
     }
-    res.json({
-      id: row.id,
-      slug: row.slug,
-      name: row.name,
-      location: row.location,
-      city: row.city,
-      timezone: row.timezone,
-      organizer: row.organizer,
-      url: row.url,
-      startsAt: row.startsAt,
-      endsAt: row.endsAt,
-    });
   });
 
   api.get('/news', async (_req, res) => {
@@ -3072,32 +3303,35 @@ async function startServer(): Promise<void> {
   // BUG_FIX_CONTEXT: ICS для одной сессии — анонимный, не требует auth.
   // Полезно когда юзер делится ссылкой "добавить эту сессию" со знакомым.
   //
-  // TECH_DEBT (audit P0.4): этот хендлер и /sessions/calendar читают сессии
-  // из data.ts (`SESSIONS.find(...)`), а регистрации — из БД. Если data.ts
-  // и БД рассинхронизированы (программу правили без re-seed), юзер увидит
-  // старую информацию. Долгосрочный фикс — JOIN из sessionsEvent + speakers
-  // + halls + days. НЕ сделано в текущем рефакторинге, чтобы не сломать
-  // .ics-формат, который уже работает на проде.
-  api.get('/sessions/:id/calendar', (req, res) => {
+  api.get('/sessions/:id/calendar', async (req, res) => {
     const sessionId = String(req.params.id);
-    const sess = SESSIONS.find(s => s.id === sessionId);
+    const sess = (await db.select().from(sessionsEvent).where(eq(sessionsEvent.id, sessionId)).limit(1))[0];
     if (!sess) {
       res.status(404).json({ error: 'session_not_found' });
       return;
     }
-    const day = DAYS.find(d => d.id === sess.dayId);
+    const [day] = await db.select().from(days).where(eq(days.id, sess.dayId)).limit(1);
     if (!day) {
       res.status(500).json({ error: 'day_resolution_failed' });
       return;
     }
+    const [hall, track, links] = await Promise.all([
+      sess.hallId ? db.select().from(halls).where(eq(halls.id, sess.hallId)).limit(1) : Promise.resolve([]),
+      sess.trackId ? db.select().from(tracks).where(eq(tracks.id, sess.trackId)).limit(1) : Promise.resolve([]),
+      db.select({ name: speakers.name }).from(sessionSpeakers)
+        .innerJoin(speakers, eq(sessionSpeakers.speakerId, speakers.id))
+        .where(eq(sessionSpeakers.sessionId, sess.id)).orderBy(sessionSpeakers.sortOrder),
+    ]);
+    const speakerNames = links.map((row) => row.name).join(', ') || '—';
+    const location = hall[0]?.name || 'Зал уточняется';
     const ics = buildIcsCalendar([
       {
         uid: `session-${sess.id}@techforum2026`,
         dtstart: formatIcsDateTime(day.date, sess.startTime),
         dtend: formatIcsDateTime(day.date, sess.endTime),
         summary: `${sess.title} — ${EVENT_META.name}`,
-        description: `${sess.description}\n\nСпикеры: ${sess.speakerName}\nТрек: ${sess.track}`,
-        location: `${sess.location}, ${EVENT_META.location}, ${EVENT_META.city}`,
+        description: `${sess.description}\n\nСпикеры: ${speakerNames}\nТрек: ${track[0]?.name || '—'}`,
+        location: `${location}, ${EVENT_META.location}, ${EVENT_META.city}`,
         organizer: { name: EVENT_META.organizer, email: EVENT_META.organizerEmail },
         url: EVENT_META.url,
       },
@@ -3116,23 +3350,38 @@ async function startServer(): Promise<void> {
       return;
     }
     const regs = await db.select().from(registrations).where(eq(registrations.userId, userId));
-    const registeredIds = new Set(regs.map(r => r.sessionId));
-    const userSessions = SESSIONS.filter(s => registeredIds.has(s.id));
-
-    if (userSessions.length === 0) {
+    const registeredIds = regs.map(r => r.sessionId);
+    if (registeredIds.length === 0) {
       res.status(404).json({ error: 'no_registered_sessions' });
       return;
     }
-
+    const [userSessions, dayRows, hallRows, trackRows, links] = await Promise.all([
+      db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, registeredIds)),
+      db.select().from(days), db.select().from(halls), db.select().from(tracks),
+      db.select({ sessionId: sessionSpeakers.sessionId, name: speakers.name })
+        .from(sessionSpeakers).innerJoin(speakers, eq(sessionSpeakers.speakerId, speakers.id))
+        .where(inArray(sessionSpeakers.sessionId, registeredIds)).orderBy(sessionSpeakers.sortOrder),
+    ]);
+    const dayById = new Map(dayRows.map((row) => [row.id, row]));
+    const hallById = new Map(hallRows.map((row) => [row.id, row]));
+    const trackById = new Map(trackRows.map((row) => [row.id, row]));
+    const speakersBySession = new Map<string, string[]>();
+    for (const link of links) {
+      const values = speakersBySession.get(link.sessionId) ?? [];
+      values.push(link.name);
+      speakersBySession.set(link.sessionId, values);
+    }
     const events = userSessions.map(s => {
-      const day = DAYS.find(d => d.id === s.dayId)!;
+      const day = dayById.get(s.dayId);
+      if (!day) throw new Error(`day_resolution_failed:${s.dayId}`);
+      const location = s.hallId ? hallById.get(s.hallId)?.name || 'Зал уточняется' : 'Зал уточняется';
       return {
         uid: `session-${s.id}@techforum2026`,
         dtstart: formatIcsDateTime(day.date, s.startTime),
         dtend: formatIcsDateTime(day.date, s.endTime),
         summary: `${s.title} — ${EVENT_META.name}`,
-        description: `${s.description}\n\nСпикеры: ${s.speakerName}\nТрек: ${s.track}`,
-        location: `${s.location}, ${EVENT_META.location}, ${EVENT_META.city}`,
+        description: `${s.description}\n\nСпикеры: ${speakersBySession.get(s.id)?.join(', ') || '—'}\nТрек: ${s.trackId ? trackById.get(s.trackId)?.name || '—' : '—'}`,
+        location: `${location}, ${EVENT_META.location}, ${EVENT_META.city}`,
         organizer: { name: EVENT_META.organizer, email: EVENT_META.organizerEmail },
         url: EVENT_META.url,
       };
@@ -3277,9 +3526,9 @@ async function startServer(): Promise<void> {
     }));
   });
 
-  // Возвращает payload-ы для QR-кода билета. Подпись HMAC-SHA256 от
-  // (userId|email|name|tier) с использованием SESSION_SECRET. Сканер на входе
-  // проверяет подпись и пускает.
+  // QR выдаётся только после серверной сверки email с канонической базой
+  // оплаченных билетов tech-pravo.ru. Регистрация в приложении сама по себе
+  // больше не создаёт право прохода.
   api.get('/ticket/me', requireAuth, async (req, res) => {
     const userId = getSessionUserId(req)!;
     const user = await findUserById(userId);
@@ -3289,21 +3538,41 @@ async function startServer(): Promise<void> {
       return;
     }
 
-    const tier = 'standard';
-    const eventId = 'techforum-2026';
-    const payload = `${eventId}|${user.id}|${user.email}|${user.name}|${tier}`;
-    const hmac = crypto.createHmac('sha256', ticketHmacSecret).update(payload).digest('hex').slice(0, 32);
-    const qrPayload = `${payload}|${hmac}`;
-
-    res.json({
-      eventId,
-      userId: user.id,
-      name: user.name,
-      email: user.email,
-      tier,
-      qrPayload,
-      issuedAt: new Date().toISOString(),
-    });
+    if (user.email.endsWith('@phone.tech-pravo.ru')) {
+      res.status(403).json({ error: 'purchase_email_required' });
+      return;
+    }
+    if (!internalBotSecret) {
+      res.status(503).json({ error: 'ticket_verification_unavailable' });
+      return;
+    }
+    const lookupUrl = String(process.env.TICKET_ACCESS_URL || 'https://tech-pravo.ru/api/tickets/internal/by-email').trim();
+    try {
+      const upstream = await fetch(lookupUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-internal-secret': internalBotSecret },
+        body: JSON.stringify({ email: user.email }),
+        signal: AbortSignal.timeout(12000),
+      });
+      const body = await upstream.text();
+      res.setHeader('Cache-Control', 'private, no-store');
+      if (!upstream.ok) {
+        res.status(upstream.status === 404 ? 404 : upstream.status === 403 ? 403 : 502)
+          .send(body || JSON.stringify({ error: 'ticket_verification_failed' }));
+        return;
+      }
+      const ticket = JSON.parse(body) as Record<string, unknown>;
+      res.json({
+        eventId: 'techforum-2026', userId: user.id,
+        name: ticket.name || user.name, email: user.email,
+        tier: ticket.tier || 'Билет конференции', status: ticket.status,
+        orderRef: ticket.orderRef, inventoryNumber: ticket.inventoryNumber,
+        qrPayload: ticket.ticketUrl, issuedAt: ticket.issuedAt,
+      });
+    } catch (error) {
+      log.error('ticket', 'canonical ticket lookup failed', { err: String(error) });
+      res.status(502).json({ error: 'ticket_verification_failed' });
+    }
   });
 
   api.use((_req, res) => {
@@ -3454,22 +3723,24 @@ async function startServer(): Promise<void> {
           const [hh, mm] = String(c.startTime).split(':').map((s) => parseInt(s, 10));
           const sessionStart = new Date(`${c.dayDate}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
           if (sessionStart >= lower && sessionStart <= upper) {
-            // Атомарно ставим флаг (если кто-то уже взял — UPDATE не вернёт row).
-            const updated = await db.update(registrations)
-              .set({ reminderSentAt: new Date() })
-              .where(and(
-                eq(registrations.userId, c.userId),
-                eq(registrations.sessionId, c.sessionId),
-                sql`${registrations.reminderSentAt} IS NULL`,
-              ))
-              .returning();
-            if (updated.length === 0) continue;
-            void sendPushToUser(c.userId, {
+            const delivered = await sendPushToUser(c.userId, {
               title: 'Через 15 минут',
               body: c.title,
               data: { type: 'session', sessionId: c.sessionId },
               priority: 'normal',
             }, db, pushTokens);
+            // Не выдаём недоставленное уведомление за отправленное. Пока FCM
+            // выключен или у пользователя нет живого токена, запись остаётся
+            // доступной для следующей попытки в пределах окна.
+            if (delivered > 0) {
+              await db.update(registrations)
+                .set({ reminderSentAt: new Date() })
+                .where(and(
+                  eq(registrations.userId, c.userId),
+                  eq(registrations.sessionId, c.sessionId),
+                  sql`${registrations.reminderSentAt} IS NULL`,
+                ));
+            }
           }
         }
       } catch (err) {
@@ -3529,7 +3800,10 @@ async function startServer(): Promise<void> {
         if (!fullName) continue;
         const matchId = idByName.get(fullName.toLowerCase());
         const id = matchId || ('ss_' + String(s.id || fullName).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
-        if (!matchId) keptSs.push(id);
+        // Сохраняем не только новые, но и уже известные ss_*: иначе следующий
+        // цикл ошибочно считает все совпавшие записи устаревшими и каскадно
+        // удаляет их связи с программой.
+        if (id.startsWith('ss_')) keptSs.push(id);
         const set = {
           name: fullName,
           role: String(s.position || 'Спикер').slice(0, 200),

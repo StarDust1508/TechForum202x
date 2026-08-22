@@ -56,6 +56,10 @@ export const users = pgTable(
     avatar: text('avatar').notNull().default(''),
     bio: text('bio').notNull().default(''),
     phone: text('phone'),
+    // Фиксируем ОС и устройство при регистрации/входе. Эти поля нужны общей
+    // админке, чтобы Android/iOS не смешивались в одну неизвестную аудиторию.
+    registrationPlatform: varchar('registration_platform', { length: 16 }).notNull().default('unknown'),
+    registrationDevice: text('registration_device'),
     role: text('role').notNull().default('Участник'),
     company: text('company').notNull().default(''),
     workplace: text('workplace').notNull().default(''),
@@ -332,6 +336,22 @@ export const dmPins = pgTable(
   }),
 );
 
+export const userBlocks = pgTable('user_blocks', {
+  blockerId: text('blocker_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  blockedId: text('blocked_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({ pk: primaryKey({ columns: [t.blockerId, t.blockedId] }) }));
+
+export const contentReports = pgTable('content_reports', {
+  id: text('id').primaryKey(),
+  reporterId: text('reporter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reportedUserId: text('reported_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  messageId: text('message_id'),
+  reason: text('reason').notNull(),
+  status: text('status').notNull().default('new'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ============================================================================
 // NOTES (личные заметки участника)
 // ============================================================================
@@ -367,19 +387,27 @@ export const news = pgTable('news', {
 
 export const events = pgTable('events', {
   id: text('id').primaryKey(),
-  slug: varchar('slug', { length: 128 }).notNull().unique(),
+  slug: text('slug').notNull().unique(),
   name: text('name').notNull(),
-  title: text('title').notNull(),
-  description: text('description'),
-  city: text('city'),
-  timezone: varchar('timezone', { length: 64 }),
-  organizer: text('organizer'),
+  location: text('location').notNull().default(''),
+  city: text('city').notNull().default(''),
+  timezone: text('timezone').notNull().default('Europe/Moscow'),
+  organizer: text('organizer').notNull().default(''),
+  organizerEmail: text('organizer_email'),
   url: text('url'),
-  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+  startsAt: timestamp('starts_at', { withTimezone: true }),
   endsAt: timestamp('ends_at', { withTimezone: true }),
-  location: text('location'),
+  hmacSecret: text('hmac_secret').notNull().default(''),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Редактируемая из общей админки карточка конференции. JSONB позволяет менять
+// текстовые блоки и ссылки без новой схемы и, главное, без новой сборки APK/IPA.
+export const appContent = pgTable('app_content', {
+  id: text('id').primaryKey(),
+  payload: jsonb('payload').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ============================================================================

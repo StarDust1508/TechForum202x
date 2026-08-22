@@ -29,8 +29,7 @@ interface PushPayload {
 }
 
 // Внутреннее состояние модуля — singleton.
-let admin: typeof import('firebase-admin') | null = null;
-let messaging: import('firebase-admin').messaging.Messaging | null = null;
+let messaging: import('firebase-admin/messaging').Messaging | null = null;
 let initialized = false;
 let disabled = false;
 
@@ -52,13 +51,10 @@ export function initFcm(): boolean {
     // Lazy import чтобы firebase-admin не загружался когда disabled
     // (cold-start time saving + меньше memory).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const adminModule = require('firebase-admin') as typeof import('firebase-admin');
-    admin = adminModule;
-    const credential = adminModule.credential.cert(saPath);
-    if (adminModule.apps.length === 0) {
-      adminModule.initializeApp({ credential });
-    }
-    messaging = adminModule.messaging();
+    const appModule = require('firebase-admin/app') as typeof import('firebase-admin/app');
+    const messagingModule = require('firebase-admin/messaging') as typeof import('firebase-admin/messaging');
+    const app = appModule.getApps()[0] ?? appModule.initializeApp({ credential: appModule.cert(saPath) });
+    messaging = messagingModule.getMessaging(app);
     log.info('fcm', 'initialized — push delivery is live');
     return true;
   } catch (err) {
@@ -175,5 +171,3 @@ export async function sendPushBatch(
 export function fcmStatus(): { initialized: boolean; disabled: boolean } {
   return { initialized, disabled };
 }
-
-void admin; // удерживаем ссылку чтобы tree-shaker не удалил require

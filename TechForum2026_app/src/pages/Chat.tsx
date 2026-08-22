@@ -5,7 +5,7 @@ import {
   ChevronRight, ChevronLeft, Mic,
   X, Play, Pause, Paperclip, Camera, Square, Volume2, VolumeX,
   Sparkles, MessageCircle,
-  Copy, Pencil, Trash2, Forward, Check, Download
+  Copy, Pencil, Trash2, Forward, Check, Download, ShieldAlert, Ban
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
 import WaveSurfer from 'wavesurfer.js';
@@ -849,6 +849,26 @@ export default function Chat() {
     { text: 'Топ спикеры', icon: '🎤' },
   ];
 
+  const reportContact = async () => {
+    if (!selectedContact) return;
+    const reason = window.prompt('Кратко опишите нарушение. Жалоба будет передана организатору.');
+    if (!reason?.trim()) return;
+    try {
+      const r = await authFetch(resolveApiUrl('/moderation/report'), { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reportedUserId: selectedContact, reason: reason.trim() }) });
+      if (!r.ok) throw new Error(String(r.status));
+      toast.show('Жалоба отправлена организатору');
+    } catch { toast.show('Не удалось отправить жалобу'); }
+  };
+
+  const blockContact = async () => {
+    if (!selectedContact || !window.confirm('Заблокировать этого пользователя? Он не сможет писать вам.')) return;
+    try {
+      const r = await authFetch(resolveApiUrl(`/moderation/blocks/${selectedContact}`), { method: 'PUT', credentials: 'include' });
+      if (!r.ok) throw new Error(String(r.status));
+      toast.show('Пользователь заблокирован'); selectContactWithHistory(null);
+    } catch { toast.show('Не удалось заблокировать пользователя'); }
+  };
+
   return (
     <div className="flex flex-col relative" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))', height: 'calc(100dvh - env(safe-area-inset-top, 0px))', overflow: 'hidden' }}>
       {/* Header */}
@@ -882,6 +902,8 @@ export default function Chat() {
                 return <span className={`text-[11px] leading-none transition-colors ${color}`}>{st.text || contact?.role || 'Участник'}</span>;
               })()}
             </button>
+            <button type="button" onClick={() => void reportContact()} aria-label="Пожаловаться" className="h-9 w-9 shrink-0 rounded-xl border border-border bg-card flex items-center justify-center text-amber-300"><ShieldAlert className="h-4 w-4" /></button>
+            <button type="button" onClick={() => void blockContact()} aria-label="Заблокировать" className="h-9 w-9 shrink-0 rounded-xl border border-border bg-card flex items-center justify-center text-rose-300"><Ban className="h-4 w-4" /></button>
           </div>
         ) : (
           <div className="px-5 pb-2.5 space-y-2.5 pt-0.5">
@@ -1132,8 +1154,8 @@ export default function Chat() {
             className="fixed inset-0 z-50 flex flex-col items-center justify-end bg-black/80 backdrop-blur-sm"
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 60px)' }}>
             <div className="flex flex-col items-center gap-5">
-              <div className="relative w-[340px] h-[340px] rounded-full overflow-hidden border-4 border-primary shadow-neon-magenta bg-black"
-                style={{ boxShadow: '0 0 40px rgba(255,51,153,0.4), 0 0 80px rgba(255,51,153,0.15)' }}>
+              <div className="relative rounded-full overflow-hidden border-4 border-primary shadow-neon-magenta bg-black"
+                style={{ width: 'min(340px, calc(100vw - 32px))', aspectRatio: '1 / 1', boxShadow: '0 0 40px rgba(255,51,153,0.4), 0 0 80px rgba(255,51,153,0.15)' }}>
                 <video ref={livePreviewRef} autoPlay muted playsInline className="w-full h-full object-cover scale-x-[-1]" />
                 <div className="absolute top-4 left-4 flex items-center gap-1.5 bg-red-500/90 px-2.5 py-1 rounded-full">
                   <div className="w-2.5 h-2.5 bg-white rounded-full animate-pulse" />

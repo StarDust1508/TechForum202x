@@ -21,6 +21,7 @@ TechForum2026_app/dist/
 TechForum2026_app/android/app/build/
 TechForum2026_app/android/build/
 TechForum2026_app/android/.gradle/
+TechForum2026_app/release/
 
 # Env (локальные секреты — не в репо)
 TechForum2026_app/.env
@@ -29,6 +30,10 @@ TechForum2026_app/.env.development
 TechForum2026_app/.env.production
 TechForum2026_app/.env.development.local
 TechForum2026_app/.env.production.local
+
+# Native cloud-service configuration is injected by CI/local release setup.
+TechForum2026_app/android/app/google-services.json
+TechForum2026_app/ios/App/App/GoogleService-Info.plist
 
 # APK-бинарники — на GitHub Releases, не в историю (раздувает .git)
 apk/*.apk

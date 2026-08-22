@@ -16,7 +16,7 @@
 // PREV_CHANGE_SUMMARY: [v3.0.0 - Полный рерайт под "Новости от спикеров".]
 // END_CHANGE_SUMMARY
 
-import { Clock, ChevronRight, MessageCircle } from 'lucide-react';
+import { Clock, ChevronRight, MessageCircle, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { getSpeakerById } from '../data';
@@ -116,6 +116,14 @@ export default function Feed() {
           );
         })}
       </ul>
+      {NEWS.length === 0 && (
+        <section className="rounded-3xl border border-accent/25 bg-card/90 p-6 text-center">
+          <Send className="mx-auto h-8 w-8 text-accent" />
+          <h2 className="mt-4 font-display text-lg">Новости — в TechPravoAI</h2>
+          <p className="mt-2 text-[13px] leading-6 text-foreground/55">Анонсы программы, новые спикеры и важные обновления публикуем в официальном Telegram-канале.</p>
+          <a href="https://t.me/TechPravoAI" target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex min-h-12 items-center justify-center rounded-2xl bg-accent px-5 font-bold text-background">Открыть канал</a>
+        </section>
+      )}
     </div>
   );
 }

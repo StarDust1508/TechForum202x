@@ -5,7 +5,7 @@ Mobile conference companion app with a React + Capacitor frontend and a Node.js 
 ## Stack
 
 - Frontend: React 19, Vite, React Router, Tailwind CSS
-- Mobile: Capacitor Android (`com.psy_lololo.conferenceapp`)
+- Mobile: Capacitor Android (`com.psy_lololo.conferenceapp`) and iOS (`ru.techpravo.conference`)
 - Backend: Express + `express-session` cookie auth
 - AI endpoint: `POST /api/v1/ai/chat` on backend
 - Storage model: in-memory backend state + optional localStorage fallback
@@ -47,7 +47,20 @@ npx cap sync android
 cd android && ./gradlew assembleDebug
 ```
 
+## Store release
+
+The current Android and iPhone release packages, checksums, and release status
+are documented in `release/CURRENT/README.md`.
+
+Android keeps the historical RuStore package ID. The iOS wrapper uses a
+separate App Store bundle ID and is synchronized with:
+
+```bash
+CAP_APP_ID=ru.techpravo.conference npx cap sync ios
+```
+
 ## Notes
 
-- iOS wrapper is not added in this repository (`ios/` is absent).
+- The iOS wrapper is present in `ios/App`. A signed archive still requires full
+  Xcode, an Apple Developer Team, and a provisioning profile.
 - Production requires `SESSION_SECRET` and external HTTPS termination (reverse proxy / LB).

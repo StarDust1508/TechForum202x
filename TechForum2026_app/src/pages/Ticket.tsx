@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2, Mail, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
@@ -26,7 +26,14 @@ export default function Ticket() {
       try {
         const res = await authFetch(resolveApiUrl('/ticket/me'), { credentials: 'include' });
         if (!res.ok) {
-          if (!cancelled) setError('Не удалось получить билет');
+          const body = await res.json().catch(() => ({}));
+          const code = String(body?.error || '');
+          const message = code === 'purchase_email_required'
+            ? 'Войдите по email, который был указан при покупке билета.'
+            : code === 'ticket_not_found_for_email'
+              ? 'На этой почте нет оплаченного билета.'
+              : 'Не удалось проверить билет. Попробуйте ещё раз позже.';
+          if (!cancelled) setError(message);
           return;
         }
         const data: TicketData = await res.json();
@@ -78,7 +85,10 @@ export default function Ticket() {
                   style={{ imageRendering: 'pixelated' }}
                 />
               ) : error ? (
-                <p className="text-[#0f1118] text-xs font-bold text-center px-4">{error}</p>
+                <div className="text-[#0f1118] text-center px-3">
+                  <Mail className="w-8 h-8 mx-auto mb-3" />
+                  <p className="text-xs font-bold leading-relaxed">{error}</p>
+                </div>
               ) : (
                 <Loader2 className="w-8 h-8 text-[#0f1118] animate-spin" />
               )}
@@ -95,6 +105,16 @@ export default function Ticket() {
           )}
         </div>
       </motion.div>
+      {error && (
+        <div className="mt-5 w-full max-w-[320px] rounded-2xl border border-border bg-card p-4 text-center">
+          <p className="text-[12px] leading-relaxed text-foreground/55">Скачивать приложение может каждый. QR-билет открывается только в аккаунте с почтой покупателя.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <a href="mailto:info@tech-pravo.ru" className="rounded-xl border border-accent/30 py-2.5 text-[11px] font-bold text-accent">Написать на email</a>
+            <a href="https://t.me/CEO_WYRM1" target="_blank" rel="noreferrer" className="rounded-xl bg-primary py-2.5 text-[11px] font-bold text-white inline-flex items-center justify-center gap-1.5"><Send className="w-3.5 h-3.5" />Telegram</a>
+          </div>
+          <a href="https://tech-pravo.ru/profile" target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[11px] text-foreground/45">Проверить покупку на сайте <ExternalLink className="w-3 h-3" /></a>
+        </div>
+      )}
       </div>
     </div>
   );

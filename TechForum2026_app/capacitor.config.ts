@@ -1,9 +1,20 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.psy_lololo.conferenceapp',
+  // Android обязан сохранить исторический package id для обновлений RuStore.
+  // Для первого iOS-релиза используем валидный bundle id через CAP_APP_ID.
+  appId: process.env.CAP_APP_ID || 'com.psy_lololo.conferenceapp',
   appName: 'ТехнологИИ Права',
   webDir: 'dist',
+  experimental: {
+    ios: {
+      spm: {
+        packageOptions: {
+          '@capacitor-firebase/messaging': { symlink: true },
+        },
+      },
+    },
+  },
   server: {
     // Бэкенд переведён на HTTPS: https://pravotech.pro/tfapi/v1 (nginx + Let's Encrypt).
     // WebView-контент отдаётся по https://localhost → mixed-content к HTTPS-API нет.
@@ -47,6 +58,17 @@ const config: CapacitorConfig = {
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,
+    },
+    Keyboard: {
+      // На iPhone body-resize сохраняет активное поле и кнопку над клавиатурой,
+      // не меняя единицы viewport у полноэкранных страниц.
+      resize: 'body',
+      style: 'DARK',
+      resizeOnFullScreen: true,
+      autoBackdropColor: 'dom',
+    },
+    FirebaseMessaging: {
+      presentationOptions: ['alert', 'badge', 'sound'],
     },
   },
 };

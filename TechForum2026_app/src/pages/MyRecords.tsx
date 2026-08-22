@@ -17,24 +17,53 @@
 // PREV_CHANGE_SUMMARY: [v1.0.0 - localStorage-only, без сортировки.]
 // END_CHANGE_SUMMARY
 
-import { useEffect, useState } from 'react';
-import { CalendarCheck2, Clock3, MapPin, Download } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarCheck2, Clock3, MapPin, Download, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { SESSIONS, DAYS, getDayById } from '../data';
 import BackButton from '@/src/components/BackButton';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
+import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
+import { buildIcsCalendar, formatIcsDateTime } from '@/src/lib/ics';
 
+interface Day { id: string; date: string; label: string; weekday: string; }
+interface Session { id: string; title: string; description: string; startTime: string; endTime: string; dayId: string; speakerName: string; location: string; track?: string; }
+
+const LOCAL_PLAN_KEY = 'techforum_local_plan';
 const LEGACY_LOCALSTORAGE_KEY = 'techforum_registrations';
 
-function readLegacyRegistrations(): string[] {
+function readLocalPlan(): string[] {
   try {
-    const raw = localStorage.getItem(LEGACY_LOCALSTORAGE_KEY);
+    const raw = localStorage.getItem(LOCAL_PLAN_KEY) || localStorage.getItem(LEGACY_LOCALSTORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : [];
   } catch {
     return [];
   }
+}
+
+function downloadCalendar(sessions: Session[], days: Day[], filename: string) {
+  const dayMap = new Map(days.map((day) => [day.id, day]));
+  const events = sessions.flatMap((session) => {
+    const day = dayMap.get(session.dayId);
+    if (!day) return [];
+    return [{
+      uid: `${session.id}@tech-pravo.ru`,
+      dtstart: formatIcsDateTime(day.date, session.startTime),
+      dtend: formatIcsDateTime(day.date, session.endTime),
+      summary: session.title,
+      description: [session.description, session.speakerName && session.speakerName !== '—' ? `Спикеры: ${session.speakerName}` : ''].filter(Boolean).join('\n'),
+      location: session.location || 'БЦ «Красные Ворота», Москва',
+      organizer: { name: 'ТехнологИИ Права', email: 'info@tech-pravo.ru' },
+      url: 'https://tech-pravo.ru/conference',
+    }];
+  });
+  const blob = new Blob([buildIcsCalendar(events, { name: 'Мой план — ТехнологИИ Права', timezone: 'Europe/Saratov' })], { type: 'text/calendar;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function timeToMinutes(hhmm: string): number {
@@ -44,34 +73,47 @@ function timeToMinutes(hhmm: string): number {
 
 export default function MyRecords() {
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [days, setDays] = useState<Day[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const [dayResult, sessionResult] = await Promise.all([
+        fetchCachedJson<Day[]>('/days'),
+        fetchCachedJson<Session[]>('/sessions'),
+      ]);
+      if (!cancelled) {
+        setDays(dayResult.data);
+        setSessions(sessionResult.data);
+      }
       try {
         const res = await authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (!cancelled && Array.isArray(data?.sessionIds)) {
             setRegisteredIds(data.sessionIds);
+            setLoading(false);
             return;
           }
         }
       } catch { /* offline — fall through to legacy */ }
-      if (!cancelled) setRegisteredIds(readLegacyRegistrations());
+      if (!cancelled) setRegisteredIds(readLocalPlan());
+      if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const registeredSessions = SESSIONS
+  const registeredSessions = useMemo(() => sessions
     .filter(s => registeredIds.includes(s.id))
     .sort((a, b) => {
       // sort by day, then by start time
-      const aDayIdx = DAYS.findIndex(d => d.id === a.dayId);
-      const bDayIdx = DAYS.findIndex(d => d.id === b.dayId);
+      const aDayIdx = days.findIndex(d => d.id === a.dayId);
+      const bDayIdx = days.findIndex(d => d.id === b.dayId);
       if (aDayIdx !== bDayIdx) return aDayIdx - bDayIdx;
       return timeToMinutes(a.startTime) - timeToMinutes(b.startTime);
-    });
+    }), [days, registeredIds, sessions]);
 
   // Группировка по дню для UI
   const byDay = registeredSessions.reduce<Record<string, typeof registeredSessions>>((acc, s) => {
@@ -93,7 +135,9 @@ export default function MyRecords() {
         >Мои записи</h1>
       </header>
 
-      {registeredSessions.length === 0 ? (
+      {loading ? (
+        <div className="py-20 text-center"><Loader2 className="w-7 h-7 animate-spin mx-auto text-accent" /><p className="mt-3 text-[12px] text-foreground/40">Загружаем ваш план…</p></div>
+      ) : registeredSessions.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-foreground/20 bg-card p-8 text-center">
           <CalendarCheck2 className="w-9 h-9 mx-auto text-foreground/55" />
           <p className="mt-3 text-foreground/75">Пока нет выбранных сессий в расписании.</p>
@@ -102,16 +146,7 @@ export default function MyRecords() {
         <>
           <button
             type="button"
-            onClick={async () => {
-              const r = await authFetch(resolveApiUrl('/sessions/calendar'), { credentials: 'include' });
-              if (!r.ok) return;
-              const blob = await r.blob();
-              const a = document.createElement('a');
-              a.href = URL.createObjectURL(blob);
-              a.download = 'techforum2026-my.ics';
-              a.click();
-              URL.revokeObjectURL(a.href);
-            }}
+            onClick={() => downloadCalendar(registeredSessions, days, 'tech-pravo-2026-my.ics')}
             className="flex items-center justify-center gap-2 bg-primary/10 border border-primary/30 text-primary py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
           >
             <Download className="w-4 h-4" />
@@ -120,7 +155,7 @@ export default function MyRecords() {
 
           <div className="space-y-6">
             {Object.entries(byDay).map(([dayId, list]) => {
-              const day = getDayById(dayId);
+              const day = days.find((item) => item.id === dayId);
               return (
                 <section key={dayId} className="space-y-3">
                   <h3 className="text-[11px] uppercase tracking-[0.22em] font-semibold text-foreground/55 px-1">
@@ -144,16 +179,7 @@ export default function MyRecords() {
                       )}
                       <button
                         type="button"
-                        onClick={async () => {
-                          const r = await authFetch(resolveApiUrl(`/sessions/${session.id}/calendar`), { credentials: 'include' });
-                          if (!r.ok) return;
-                          const blob = await r.blob();
-                          const a = document.createElement('a');
-                          a.href = URL.createObjectURL(blob);
-                          a.download = `techforum2026-${session.id}.ics`;
-                          a.click();
-                          URL.revokeObjectURL(a.href);
-                        }}
+                        onClick={() => downloadCalendar([session], days, `tech-pravo-2026-${session.id}.ics`)}
                         className="inline-flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary font-semibold uppercase tracking-widest"
                       >
                         <Download className="w-3.5 h-3.5" />

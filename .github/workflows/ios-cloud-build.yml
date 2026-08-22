@@ -1,0 +1,235 @@
+name: iPhone cloud build
+
+on:
+  push:
+    branches:
+      - feat/tehnologii-prava-rebrand
+      - codex/mobile-release-1.8.0
+    paths:
+      - 'TechForum2026_app/**'
+      - '.github/workflows/ios-cloud-build.yml'
+  workflow_dispatch:
+    inputs:
+      signed_ipa:
+        description: 'Build a signed App Store IPA (requires repository secrets)'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator-smoke:
+    name: Compile and launch on iPhone Simulator
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: TechForum2026_app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup latest stable Xcode on runner
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: TechForum2026_app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck and build production web bundle
+        env:
+          NODE_ENV: production
+          VITE_API_BASE_URL: https://tech-pravo.ru/tfapi/v1
+          VITE_WS_BASE_URL: wss://tech-pravo.ru/tfapi/v1
+          VITE_ENABLE_LOCAL_FALLBACK: 'false'
+          VITE_PUSH_CONFIGURED: 'false'
+        run: |
+          npm run lint
+          npm run build
+          grep -rq 'tech-pravo.ru/tfapi/v1' dist/assets/
+
+      - name: Prepare configuration-free native smoke build
+        run: |
+          # FirebaseMessaging on iOS requires a real GoogleService-Info.plist at
+          # native plugin load. The unsigned smoke build deliberately excludes
+          # that plugin and keeps push disabled; the signed job below requires
+          # the real configuration and tests the complete native graph.
+          node - <<'NODE'
+          const fs = require('fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          delete pkg.dependencies['@capacitor-firebase/messaging'];
+          delete pkg.dependencies.firebase;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          npm install --package-lock=false --ignore-scripts --no-audit --no-fund
+          CAP_APP_ID=ru.techpravo.conference npx cap sync ios
+
+      - name: Build for iPhone Simulator without signing
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios-simulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Launch app and capture proof screenshot
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
+          test -n "$UDID"
+          xcrun simctl boot "$UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP_PATH=$(find build/ios-simulator/Build/Products -type d -name 'App.app' | head -1)
+          test -d "$APP_PATH"
+          xcrun simctl install "$UDID" "$APP_PATH"
+          xcrun simctl launch "$UDID" ru.techpravo.conference
+          sleep 8
+          mkdir -p build/qa
+          xcrun simctl io "$UDID" screenshot build/qa/iphone-launch.png
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/qa/TechPravo-iPhone-Simulator.app.zip
+
+      - name: Upload simulator proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: TechPravo-iPhone-Simulator-${{ github.sha }}
+          path: |
+            TechForum2026_app/build/qa/TechPravo-iPhone-Simulator.app.zip
+            TechForum2026_app/build/qa/iphone-launch.png
+          retention-days: 14
+
+  signed-app-store-ipa:
+    name: Signed App Store IPA
+    if: github.event_name == 'workflow_dispatch' && inputs.signed_ipa
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: TechForum2026_app
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_PRIVATE_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY_BASE64 }}
+      IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup latest stable Xcode on runner
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: TechForum2026_app/package-lock.json
+
+      - name: Fail closed when Apple or Firebase signing data is missing
+        run: |
+          for name in APPLE_TEAM_ID APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_PRIVATE_KEY_BASE64 IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required repository secret $name is missing"
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies and build push-enabled bundle
+        env:
+          NODE_ENV: production
+          VITE_API_BASE_URL: https://tech-pravo.ru/tfapi/v1
+          VITE_WS_BASE_URL: wss://tech-pravo.ru/tfapi/v1
+          VITE_ENABLE_LOCAL_FALLBACK: 'false'
+          VITE_PUSH_CONFIGURED: 'true'
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run build
+          CAP_APP_ID=ru.techpravo.conference npx cap sync ios
+
+      - name: Add Firebase iOS configuration to the app target
+        run: |
+          printf '%s' "$IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64" | base64 --decode > ios/App/App/GoogleService-Info.plist
+          gem install xcodeproj --no-document
+          ruby <<'RUBY'
+          require 'xcodeproj'
+          project = Xcodeproj::Project.open('ios/App/App.xcodeproj')
+          target = project.targets.find { |item| item.name == 'App' }
+          group = project.main_group.find_subpath('App/App', true)
+          ref = group.files.find { |item| item.path == 'GoogleService-Info.plist' } || group.new_file('GoogleService-Info.plist')
+          target.resources_build_phase.add_file_reference(ref, true) unless target.resources_build_phase.files_references.include?(ref)
+          project.save
+          RUBY
+
+      - name: Configure App Store Connect API authentication
+        run: |
+          KEY_DIR="$RUNNER_TEMP/appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          printf '%s' "$APP_STORE_CONNECT_PRIVATE_KEY_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          echo "KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Archive signed iPhone app
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/TechPravo.xcarchive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
+            archive
+
+      - name: Export App Store IPA
+        run: |
+          cat > build/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath build/TechPravo.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" \
+            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
+            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
+
+      - name: Upload signed IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: TechPravo-iPhone-AppStore-1.8.0-25
+          path: TechForum2026_app/build/export/*.ipa
+          if-no-files-found: error
+          retention-days: 30

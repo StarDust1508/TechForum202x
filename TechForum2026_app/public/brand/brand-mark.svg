@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="40" x2="944" y2="984" gradientUnits="userSpaceOnUse"><stop stop-color="#10182b"/><stop offset="1" stop-color="#050813"/></linearGradient>
+    <radialGradient id="cyan" cx="0" cy="0" r="1" gradientTransform="translate(210 170) rotate(45) scale(660)"><stop stop-color="#49eaf2" stop-opacity=".14"/><stop offset="1" stop-color="#49eaf2" stop-opacity="0"/></radialGradient>
+    <radialGradient id="pink" cx="0" cy="0" r="1" gradientTransform="translate(850 850) rotate(-135) scale(600)"><stop stop-color="#f42aa8" stop-opacity=".12"/><stop offset="1" stop-color="#f42aa8" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#cyan)"/><rect width="1024" height="1024" fill="url(#pink)"/>
+  <g transform="scale(2)">
+    <g fill="#49eaf2"><path d="M76 84h360v64H288v228l-32 16-32-16V148H76z"/><path d="M76 166h72v164l78 42-48 52-102-50z"/><path d="M436 166h-72v164l-78 42 48 52 102-50z"/></g>
+    <g fill="#f42aa8"><path d="M166 230l54-46v172l-54 20z"/><path d="M346 230l-54-46v172l54 20z"/></g>
+  </g>
+</svg>
