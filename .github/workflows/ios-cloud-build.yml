@@ -90,6 +90,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Build unsigned package for a physical iPhone
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios-device \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          DEVICE_APP_PATH=$(find build/ios-device/Build/Products -type d -path '*Release-iphoneos/App.app' | head -1)
+          test -d "$DEVICE_APP_PATH"
+          mkdir -p build/qa/Payload
+          ditto "$DEVICE_APP_PATH" build/qa/Payload/App.app
+          (cd build/qa && zip -qry TechPravo-iPhone-Unsigned-1.8.0-25.ipa Payload)
+          rm -rf build/qa/Payload
+
       - name: Launch app and capture proof screenshot
         run: |
           UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.name | startswith("iPhone"))][0].udid')
@@ -111,6 +129,7 @@ jobs:
           name: TechPravo-iPhone-Simulator-${{ github.sha }}
           path: |
             TechForum2026_app/build/qa/TechPravo-iPhone-Simulator.app.zip
+            TechForum2026_app/build/qa/TechPravo-iPhone-Unsigned-1.8.0-25.ipa
             TechForum2026_app/build/qa/iphone-launch.png
           retention-days: 14
 
