@@ -12,10 +12,37 @@ import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
-const FCM_CONFIGURED = String(import.meta.env.VITE_PUSH_CONFIGURED || '').toLowerCase() === 'true';
+export const PUSH_SERVICE_CONFIGURED = String(import.meta.env.VITE_PUSH_CONFIGURED || '').toLowerCase() === 'true';
 
 function isNative(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+export type PushNotificationState = {
+  available: boolean;
+  enabled: boolean;
+  permission: 'granted' | 'denied' | 'prompt' | 'unavailable';
+  reason?: 'web_unsupported' | 'service_not_configured' | 'permission_denied' | 'registration_missing' | 'check_failed';
+};
+
+/** Сверяет UI не с localStorage, а с разрешением ОС и регистрацией в БД. */
+export async function getPushNotificationState(): Promise<PushNotificationState> {
+  if (!isNative()) return { available: false, enabled: false, permission: 'unavailable', reason: 'web_unsupported' };
+  if (!PUSH_SERVICE_CONFIGURED) return { available: false, enabled: false, permission: 'unavailable', reason: 'service_not_configured' };
+  try {
+    const permission = await FirebaseMessaging.checkPermissions();
+    const receive = permission.receive === 'granted' ? 'granted' : permission.receive === 'denied' ? 'denied' : 'prompt';
+    if (receive !== 'granted') {
+      return { available: true, enabled: false, permission: receive, reason: receive === 'denied' ? 'permission_denied' : 'registration_missing' };
+    }
+    const response = await authFetch(resolveApiUrl('/me/push-tokens'), { credentials: 'include' });
+    const rows = response.ok ? await response.json().catch(() => []) : [];
+    const platform = Capacitor.getPlatform();
+    const enabled = Array.isArray(rows) && rows.some((row) => row?.platform === platform);
+    return { available: true, enabled, permission: 'granted', reason: enabled ? undefined : 'registration_missing' };
+  } catch {
+    return { available: true, enabled: false, permission: 'unavailable', reason: 'check_failed' };
+  }
 }
 
 /**
@@ -54,7 +81,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
 
     // FCM не настроен — НЕ зовём native getToken() и не изображаем
     // успешную подписку: UI честно сообщает, что сервис пока недоступен.
-    if (!FCM_CONFIGURED) {
+    if (!PUSH_SERVICE_CONFIGURED) {
       console.info('[Push] permission granted; native FCM register skipped (FCM not configured)');
       return false;
     }
@@ -97,7 +124,7 @@ export async function unregisterPushNotifications(): Promise<void> {
     });
   } catch { /* offline — token истечёт server-side через GC */ }
   try { localStorage.removeItem(TOKEN_LS_KEY); } catch { /* noop */ }
-  if (isNative() && FCM_CONFIGURED) {
+  if (isNative() && PUSH_SERVICE_CONFIGURED) {
     try { await FirebaseMessaging.deleteToken(); } catch { /* already revoked */ }
   }
 }

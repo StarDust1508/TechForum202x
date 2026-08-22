@@ -19,7 +19,7 @@ import {
 import PageShell from '@/src/components/ui/PageShell';
 import BrandLogo from '@/src/components/BrandLogo';
 import { hapticSelection } from '@/src/lib/haptics';
-import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
+import { getPushNotificationState, registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
 import { cn } from '@/src/lib/utils';
@@ -56,7 +56,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.8.1';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -64,25 +64,35 @@ function NotificationsPage() {
   // Round 7: + privacy-toggle «Скрывать предпросмотр» — body push'а становится
   // generic «Новое сообщение» вместо реального текста (lock-screen не светит).
   const NOTIF_LS_KEY = 'techforum_notifications_enabled';
-  const [enabled, setEnabled] = useState<boolean>(() => {
-    try { return localStorage.getItem(NOTIF_LS_KEY) === '1'; } catch { return false; }
-  });
-  const [busy, setBusy] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [available, setAvailable] = useState(true);
+  const [busy, setBusy] = useState(true);
   const [hint, setHint] = useState<string | null>(null);
   const [previewHidden, setPreviewHidden] = useState<boolean>(false);
   const [previewBusy, setPreviewBusy] = useState(false);
 
-  // Подгружаем текущее значение pushPreviewHidden c бэка.
+  // Подгружаем фактическое разрешение ОС + регистрацию устройства в БД.
+  // localStorage больше не является источником истины для положения тумблера.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
+        const state = await getPushNotificationState();
+        if (!cancelled) {
+          setAvailable(state.available);
+          setEnabled(state.enabled);
+          try { localStorage.setItem(NOTIF_LS_KEY, state.enabled ? '1' : '0'); } catch { /* noop */ }
+          if (state.reason === 'service_not_configured') setHint('Push-сервис не настроен в этой сборке. Переключатель отключён, чтобы не показывать ложную подписку.');
+          else if (state.reason === 'permission_denied') setHint('Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.');
+          else if (state.reason === 'check_failed') setHint('Не удалось проверить push-сервис. Проверьте соединение и откройте экран повторно.');
+        }
         const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
         if (r.ok) {
           const me = await r.json();
           if (!cancelled) setPreviewHidden(!!me.pushPreviewHidden);
         }
       } catch { /* offline */ }
+      finally { if (!cancelled) setBusy(false); }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -107,7 +117,7 @@ function NotificationsPage() {
     }
   };
   const toggle = async () => {
-    if (busy) return;
+    if (busy || !available) return;
     setBusy(true);
     void hapticSelection();
     if (!enabled) {
@@ -118,7 +128,11 @@ function NotificationsPage() {
         try { localStorage.setItem(NOTIF_LS_KEY, '1'); } catch { /* noop */ }
         setHint('Подписка зарегистрирована на этом устройстве.');
       } else {
-        setHint('Разрешение на уведомления не получено или сервис недоступен. Откройте Настройки → Приложения → ТехнологИИ Права 2026 → Уведомления и включите вручную.');
+        const state = await getPushNotificationState();
+        setAvailable(state.available);
+        setHint(state.reason === 'permission_denied'
+          ? 'Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.'
+          : 'Устройство не удалось зарегистрировать для push. Проверьте соединение и попробуйте ещё раз.');
       }
     } else {
       // OFF: unregister
@@ -134,7 +148,7 @@ function NotificationsPage() {
       <button
         type="button"
         onClick={toggle}
-        disabled={busy}
+        disabled={busy || !available}
         className="w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-foreground/[0.06] px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
       >
         <div className="text-left">

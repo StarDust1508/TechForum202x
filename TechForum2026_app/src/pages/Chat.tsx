@@ -870,7 +870,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-col relative" style={{ minHeight: 'calc(100dvh - env(safe-area-inset-top, 0px))', height: 'calc(100dvh - env(safe-area-inset-top, 0px))', overflow: 'hidden' }}>
+    <div className="relative flex h-full min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden">
       {/* Header */}
       <header className="shrink-0 z-30 bg-background/90 backdrop-blur-xl border-b border-border"
         style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 4px)' }}>
@@ -939,8 +939,8 @@ export default function Chat() {
       </header>
 
       {/* Content — slightly lighter background for messages area with smooth gradient */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide min-h-0"
-        style={{ background: 'transparent' }}>
+      <div ref={scrollRef} className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain scrollbar-hide"
+        style={{ background: 'transparent', touchAction: 'pan-y' }}>
         <div className="p-5 pb-4">
           {activeTab === 'assistant' ? (
             <div className="flex flex-col gap-1.5">
@@ -1213,8 +1213,7 @@ export default function Chat() {
 
       {/* Input bar */}
       {!(activeTab === 'dm' && !selectedContact) && (
-        <div className="shrink-0 px-4 pt-2 bg-background/90 backdrop-blur-xl border-t border-border z-30"
-          style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)' }}>
+        <div className="chat-composer shrink-0 min-w-0 px-3 pt-2 bg-background/90 backdrop-blur-xl border-t border-border z-30">
           <AnimatePresence>
             {mediaPreview && (
               <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}
@@ -1312,10 +1311,10 @@ export default function Chat() {
               <button onClick={stopRecording} className="w-11 h-11 bg-green-500 rounded-xl flex items-center justify-center text-white shadow-lg shrink-0"><Square className="w-5 h-5 fill-current" /></button>
             </motion.div>
           ) : (
-            <div className="flex items-end gap-2">
+            <div className="flex min-w-0 items-end gap-2">
               <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleMediaUpload} />
               {/* Пилюля в стиле Telegram: скрепка + текст + тумблер голос/видео. Стикеров нет. */}
-              <div className="flex-1 flex items-end gap-0.5 rounded-[22px] border border-border bg-card pl-1.5 pr-1 py-1">
+              <div className="flex min-w-0 flex-1 items-end gap-0.5 rounded-[22px] border border-border bg-card pl-1.5 pr-1 py-1">
                 <button onClick={() => fileInputRef.current?.click()} aria-label="Прикрепить"
                   className="w-9 h-9 flex items-center justify-center text-muted-foreground hover:text-primary transition-colors active:scale-90 shrink-0 self-end">
                   <Paperclip className="w-[21px] h-[21px]" />
@@ -1329,7 +1328,7 @@ export default function Chat() {
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); activeTab === 'assistant' ? handleSend() : handleDmSend(); } }}
                   placeholder={activeTab === 'assistant' ? 'Спрашивай…' : 'Сообщение'}
                   rows={1}
-                  className="flex-1 bg-transparent border-0 px-1 py-2 text-[15px] leading-snug focus:outline-none text-foreground placeholder:text-muted-foreground resize-none min-h-[38px] max-h-32"
+                  className="min-w-0 flex-1 bg-transparent border-0 px-1 py-2 text-[16px] leading-snug focus:outline-none text-foreground placeholder:text-muted-foreground resize-none min-h-[38px] max-h-32"
                 />
                 {activeTab === 'dm' && !dmInput.trim() && (
                   <button onClick={() => setRecordMode(m => (m === 'audio' ? 'video' : 'audio'))}

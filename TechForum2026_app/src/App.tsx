@@ -107,6 +107,34 @@ function AppContent() {
   useHardwareBack();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const isChatRoute = location.pathname === '/chat';
+
+  // 100dvh и resize:body расходятся на iOS/Android при открытии клавиатуры.
+  // visualViewport — фактическая видимая область над клавиатурой; единая CSS
+  // переменная не даёт странице прыгать и исключает невидимый composer.
+  useEffect(() => {
+    let largestViewport = window.innerHeight;
+    const syncViewport = () => {
+      const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
+      if (!document.activeElement?.matches('input, textarea, [contenteditable="true"]')) {
+        largestViewport = Math.max(largestViewport, viewportHeight);
+      }
+      document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
+      document.documentElement.classList.toggle('keyboard-open', largestViewport - viewportHeight > 120);
+    };
+    syncViewport();
+    window.addEventListener('resize', syncViewport);
+    window.addEventListener('orientationchange', syncViewport);
+    window.visualViewport?.addEventListener('resize', syncViewport);
+    window.visualViewport?.addEventListener('scroll', syncViewport);
+    return () => {
+      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('orientationchange', syncViewport);
+      window.visualViewport?.removeEventListener('resize', syncViewport);
+      window.visualViewport?.removeEventListener('scroll', syncViewport);
+      document.documentElement.classList.remove('keyboard-open');
+    };
+  }, []);
 
   // BUG_FIX_CONTEXT: Samsung S25 / OnePlus 9R показывали системный status-bar
   // с дефолтным светлым иконками поверх тёмного фона приложения — иконки
@@ -125,7 +153,7 @@ function AppContent() {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
         StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
         StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
-        StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+        StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
       } catch {
         /* noop — плагин недоступен или web-окружение */
       }
@@ -272,7 +300,7 @@ function AppContent() {
     // просто прозрачный контейнер для минимального 1с ожидания. body::before
     // (CSS) красится мгновенно при загрузке стилей, никакого FOUC.
     return (
-      <div className="relative flex items-center justify-center overflow-hidden" style={{ minHeight: '100dvh', backgroundColor: '#0f1118' }}>
+      <div className="relative flex items-center justify-center overflow-hidden" style={{ height: 'var(--app-height, 100dvh)', backgroundColor: '#0f1118' }}>
         <div
           className="absolute bg-cover bg-no-repeat"
           style={{
@@ -298,11 +326,11 @@ function AppContent() {
     // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
-    <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh' }}>
+    <div className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
       <OfflineBanner />
-      <main className="w-full min-h-[100dvh] sm:min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto' }}>
-        <div className="flex-1 overflow-y-auto scrollbar-hide relative">
-          <div className="min-h-full">
+      <main className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]">
+        <div className={`flex-1 min-h-0 min-w-0 scrollbar-hide relative ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+          <div className={isChatRoute ? 'h-full min-h-0 min-w-0' : 'min-h-full min-w-0'}>
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
               <Auth
@@ -326,7 +354,7 @@ function AppContent() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
                     transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className="min-h-full"
+                    className={isChatRoute ? 'h-full min-h-0 min-w-0 overflow-hidden' : 'min-h-full min-w-0 overflow-x-hidden'}
                   >
                     <Routes location={location}>
                       <Route path="/" element={<Home />} />

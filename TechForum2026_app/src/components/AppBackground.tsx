@@ -38,10 +38,10 @@ export default function AppBackground({ children, className = '', style }: AppBa
   // прозрачная обёртка-маркер для совместимости импортов страниц.
   return (
     <div
-      className={`relative ${className}`}
-      style={{ minHeight: '100dvh', ...style }}
+      className={`relative h-full min-h-0 ${className}`}
+      style={style}
     >
-      <div className="relative z-10 flex flex-col" style={{ minHeight: '100dvh' }}>
+      <div className="relative z-10 flex h-full min-h-0 flex-col">
         {children}
       </div>
     </div>

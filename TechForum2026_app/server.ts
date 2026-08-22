@@ -1569,6 +1569,20 @@ async function startServer(): Promise<void> {
     })));
   });
 
+  api.get('/internal/push-status', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const service = fcmStatus();
+    const [totals] = await db.select({
+      devices: sql<number>`count(*)::int`,
+      users: sql<number>`count(distinct ${pushTokens.userId})::int`,
+    }).from(pushTokens);
+    res.json({
+      serviceConfigured: service.initialized && !service.disabled,
+      registeredDevices: Number(totals?.devices || 0),
+      registeredUsers: Number(totals?.users || 0),
+    });
+  });
+
   // Жалобы из личного чата — рабочая очередь модератора для App Review 1.2.
   api.get('/internal/moderation/reports', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;

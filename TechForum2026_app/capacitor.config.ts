@@ -4,7 +4,7 @@ const config: CapacitorConfig = {
   // Android обязан сохранить исторический package id для обновлений RuStore.
   // Для первого iOS-релиза используем валидный bundle id через CAP_APP_ID.
   appId: process.env.CAP_APP_ID || 'com.psy_lololo.conferenceapp',
-  appName: 'ТехнологИИ Права',
+  appName: 'TechPravo',
   webDir: 'dist',
   experimental: {
     ios: {
@@ -62,7 +62,7 @@ const config: CapacitorConfig = {
     Keyboard: {
       // На iPhone body-resize сохраняет активное поле и кнопку над клавиатурой,
       // не меняя единицы viewport у полноэкранных страниц.
-      resize: 'body',
+      resize: 'native',
       style: 'DARK',
       resizeOnFullScreen: true,
       autoBackdropColor: 'dom',
