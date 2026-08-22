@@ -4,19 +4,26 @@ interface BrandLogoProps {
   markOnly?: boolean;
 }
 
-/** Единый знак бренда «Т–ИИ архитектура» + адаптивный wordmark. */
+/** Единый знак бренда «палочки» + адаптивный wordmark. */
 export default function BrandLogo({ className = '', compact = false, markOnly = false }: BrandLogoProps) {
   return (
     <span className={`brand-logo ${compact ? 'brand-logo--compact' : ''} ${markOnly ? 'brand-logo--mark-only' : ''} ${className}`.trim()} aria-label="ТехнологИИ Права">
       <svg className="brand-logo__mark" viewBox="0 0 512 512" role="img" aria-hidden="true">
         <g fill="#49eaf2">
-          <path d="M76 84h360v64H288v228l-32 16-32-16V148H76z" />
-          <path d="M76 166h72v164l78 42-48 52-102-50z" />
-          <path d="M436 166h-72v164l-78 42 48 52 102-50z" />
+          <rect x="58" y="95" width="330" height="34" rx="17" />
+          <rect x="58" y="171" width="330" height="34" rx="17" />
+          <rect x="58" y="247" width="330" height="34" rx="17" />
+          <circle cx="86" cy="326" r="23" />
+          <circle cx="86" cy="402" r="23" />
+          <circle cx="86" cy="478" r="23" />
         </g>
         <g fill="#f42aa8">
-          <path d="M166 230l54-46v172l-54 20z" />
-          <path d="M346 230l-54-46v172l54 20z" />
+          <circle cx="426" cy="112" r="23" />
+          <circle cx="426" cy="188" r="23" />
+          <circle cx="426" cy="264" r="23" />
+          <rect x="124" y="309" width="330" height="34" rx="17" />
+          <rect x="124" y="385" width="330" height="34" rx="17" />
+          <rect x="124" y="461" width="330" height="34" rx="17" />
         </g>
       </svg>
       {!markOnly && (

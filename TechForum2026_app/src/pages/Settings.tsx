@@ -56,7 +56,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.2';
+const APP_VERSION = '1.8.3';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {

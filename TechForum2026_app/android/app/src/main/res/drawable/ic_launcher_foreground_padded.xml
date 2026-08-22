@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    BUG_FIX_CONTEXT: Adaptive-icon foreground PNG в mipmap-* содержит "TF"
-    монограмму, заполняющую почти всю площадь 108dp холста. На launcher-экране
+    BUG_FIX_CONTEXT: Adaptive-icon foreground PNG в mipmap-* содержит знак
+    «палочки», заполняющий почти всю площадь 108dp холста. На launcher-экране
     (особенно при круглой/squircle маске) лого выходило за safe-zone и
     обрезалось — выглядело "перетянутым". Inset 22dp = ~20% даёт лого больше
     воздуха, хорошо читается под любой маской (круг, squircle, тяг, капля).
