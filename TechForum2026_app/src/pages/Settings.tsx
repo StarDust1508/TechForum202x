@@ -56,7 +56,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.4';
+const APP_VERSION = '1.8.5';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -568,10 +568,17 @@ export default function Settings() {
                       Версия {APP_VERSION} · build {APP_BUILD}
                     </p>
                   </div>
-                  <p className="text-[13px] text-foreground/85 leading-relaxed">
-                    Приложение ТехнологИИ Права 2026 — официальный гид по программе форума,
-                    инструмент нетворкинга и личный кабинет участника.
-                  </p>
+                  <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                    <h3 className="font-display text-[17px] font-bold text-foreground">Весь форум — в одном маршруте</h3>
+                    <p className="text-[13px] text-foreground/75 leading-relaxed">ТехнологИИ Права объединяет юристов, предпринимателей и технологические команды, которые внедряют ИИ в реальную практику.</p>
+                    <ul className="space-y-2 text-[12px] leading-relaxed text-foreground/60">
+                      <li>• актуальная программа двух дней и личный план;</li>
+                      <li>• проверенные профили спикеров и темы выступлений;</li>
+                      <li>• электронный билет, навигация и новости форума;</li>
+                      <li>• нетворкинг и общение участников.</li>
+                    </ul>
+                  </div>
+                  <p className="text-[12px] text-foreground/50 leading-relaxed">Организатор — команда «ТехнологИИ Права». Москва, 25–26 сентября 2026 года, БЦ «Красные Ворота».</p>
                   <p className="text-[12px] text-foreground/40 leading-relaxed">
                     Поддержка: info@tech-pravo.ru<br />
                     Telegram: @CEO_WYRM1 · @TechPravoAI<br />

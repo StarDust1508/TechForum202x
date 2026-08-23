@@ -95,14 +95,17 @@ export default function Schedule() {
           const people = session.speakerIds.map((id) => speakerMap.get(id)).filter(Boolean) as Speaker[];
           const saved = registered.includes(session.id);
           const formatLabel = FORMAT_LABELS[session.format] || session.format;
-          const passive = BREAK_FORMATS.has(formatLabel) || people.length === 0;
+          // A session can be added to the personal plan even while its speaker
+          // card is still being published. Hiding the action when speakerIds
+          // were temporarily empty made real programme items look inactive.
+          const passive = BREAK_FORMATS.has(formatLabel);
           return <motion.article key={session.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * .025, .25) }} className={`relative overflow-hidden rounded-2xl border p-5 ${saved ? 'border-primary/40 bg-primary/[0.06]' : 'border-border bg-card'}`}>
             <div className="absolute left-0 inset-y-0 w-1" style={{ backgroundColor: color }} />
             <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-2 font-mono text-[12px] font-bold text-foreground/65"><Clock3 className="w-4 h-4" style={{ color }} />{session.startTime}–{session.endTime}</div><span className="rounded-md px-2 py-1 text-[9px] font-bold uppercase" style={{ color, backgroundColor: `${color}14` }}>{formatLabel}</span></div>
-            <h2 className="mt-4 font-display text-[15px] font-bold leading-snug text-foreground">{session.title}</h2>
+            <h2 className="mt-4 font-display text-[17px] font-bold leading-snug text-foreground">{session.title}</h2>
             {session.description && <p className="mt-2 text-[11px] leading-relaxed text-foreground/45">{session.description}</p>}
             {people.length > 0 && <div className="mt-4 space-y-2">{people.slice(0, 5).map((person) => <div key={person.id} className="flex items-center gap-3"><div className="w-9 h-9 overflow-hidden rounded-xl border" style={{ borderColor: `${color}55` }}>{person.avatarUrl ? <img src={resolveAssetUrl(person.avatarUrl)} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold" style={{ color }}>{person.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div>}</div><div className="min-w-0"><p className="text-[12px] font-bold truncate">{person.name}</p><p className="text-[10px] text-foreground/40 truncate">{person.company || person.role}</p></div></div>)}</div>}
-            <div className="mt-4 flex items-center justify-between"><div className="flex items-center gap-1.5 text-[10px] text-foreground/35"><MapPin className="w-3.5 h-3.5" />{session.location || 'Главный зал'}{people.length > 1 && <><Users className="w-3.5 h-3.5 ml-2" />{people.length} эксперта</>}</div>{!passive && <button onClick={() => toggle(session.id)} className={`rounded-xl px-4 py-2 text-[10px] font-bold inline-flex items-center gap-1.5 ${saved ? 'border border-primary/30 text-primary' : 'bg-primary text-white'}`}>{saved ? <Check className="w-3.5 h-3.5" /> : <Mic2 className="w-3.5 h-3.5" />}{saved ? 'В плане' : 'Добавить'}</button>}</div>
+            <div className="mt-4 flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-1.5 text-[11px] text-foreground/45"><MapPin className="w-3.5 h-3.5 shrink-0" /><span className="truncate">{session.location || 'Главный зал'}</span>{people.length > 1 && <><Users className="w-3.5 h-3.5 ml-2 shrink-0" />{people.length}</>}</div>{!passive && <button aria-pressed={saved} onClick={() => toggle(session.id)} className={`shrink-0 rounded-xl px-4 py-2.5 text-[11px] font-bold inline-flex items-center gap-1.5 ${saved ? 'border border-primary/40 bg-primary/10 text-primary' : 'bg-primary text-white shadow-[0_8px_24px_rgba(255,51,153,.18)]'}`}>{saved ? <Check className="w-3.5 h-3.5" /> : <CalendarPlus className="w-3.5 h-3.5" />}{saved ? 'В плане' : 'В мой план'}</button>}</div>
           </motion.article>;
         })}</div>
       </main>

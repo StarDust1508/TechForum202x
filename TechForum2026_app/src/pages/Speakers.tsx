@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
-import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 
 // Спикеры тянутся из API (GET /speakers), который живым синком отражает
@@ -19,6 +19,15 @@ interface ApiSpeaker {
   topic?: string | null;
   trackId: string;
 }
+
+const cleanField = (value?: string | null) => {
+  const normalized = (value || '').trim();
+  return normalized && normalized !== '—' && normalized !== '-' ? normalized : '';
+};
+const cleanTopic = (value?: string | null) => cleanField(value)
+  .replace(/^«|»$/g, '')
+  .replace(/^тема\s*:\s*/i, '')
+  .trim();
 
 export default function Speakers() {
   const [search, setSearch] = useState('');
@@ -40,7 +49,7 @@ export default function Speakers() {
 
   const filteredSpeakers = speakers.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.company.toLowerCase().includes(search.toLowerCase())
+    (s.company || '').toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -102,16 +111,16 @@ export default function Speakers() {
               {/* Иерархия: имя (крупно, переносится) → роль (приглушённо) → компания (акцент) */}
               <div className="flex-1 min-w-0 self-center">
                 <h3 className="text-[17px] font-bold text-foreground leading-snug">{speaker.name}</h3>
-                <p className="text-[12px] text-foreground/45 mt-1 leading-tight line-clamp-1">{speaker.role}</p>
-                <p className="text-[12px] text-primary/80 font-semibold mt-0.5 line-clamp-1">{speaker.company}</p>
+                {cleanField(speaker.role) && <p className="text-[13px] text-foreground/55 mt-1 leading-tight line-clamp-2">{cleanField(speaker.role)}</p>}
+                {cleanField(speaker.company) && <p className="text-[12px] text-primary/80 font-semibold mt-1 line-clamp-1">{cleanField(speaker.company)}</p>}
               </div>
               <ChevronRight className="w-5 h-5 text-foreground/25 shrink-0 self-center" />
             </div>
 
-            {speaker.topic && (
+            {cleanTopic(speaker.topic) && (
               <div className="mt-4 border-l-2 border-accent/50 pl-3.5">
                 <p className="text-[9px] text-accent/70 font-bold uppercase tracking-[0.15em] mb-1">Тема доклада</p>
-                <p className="text-[13px] text-foreground/75 leading-relaxed line-clamp-2">«{speaker.topic}»</p>
+                <p className="text-[14px] text-foreground/80 leading-relaxed line-clamp-3">«{cleanTopic(speaker.topic)}»</p>
               </div>
             )}
           </motion.div>

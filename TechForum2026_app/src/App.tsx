@@ -153,7 +153,10 @@ function AppContent() {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
         StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
         StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
-        StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {});
+        // WebView must start below the native status bar. Overlay mode was the
+        // root cause of headers colliding with the clock/notch on both iOS and
+        // edge-to-edge Android devices.
+        StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
       } catch {
         /* noop — плагин недоступен или web-окружение */
       }

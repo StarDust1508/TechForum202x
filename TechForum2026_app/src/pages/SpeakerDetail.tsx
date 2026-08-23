@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { TRACKS } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
-import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
+import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 
 // Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
@@ -20,6 +20,15 @@ interface ApiSpeaker {
   topic?: string | null;
   trackId: string;
 }
+
+const cleanField = (value?: string | null) => {
+  const normalized = (value || '').trim();
+  return normalized && normalized !== '—' && normalized !== '-' ? normalized : '';
+};
+const cleanTopic = (value?: string | null) => cleanField(value)
+  .replace(/^«|»$/g, '')
+  .replace(/^тема\s*:\s*/i, '')
+  .trim();
 
 export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
@@ -73,10 +82,11 @@ export default function SpeakerDetail() {
   }
 
   const track = TRACKS.find((t) => t.id === speaker.trackId);
-  const bioParagraphs = (speaker.bio || '').split('\n\n').filter(Boolean);
+  const bioParagraphs = cleanField(speaker.bio).split('\n\n').filter(Boolean);
+  const identity = [cleanField(speaker.role), cleanField(speaker.company)].filter(Boolean).join(' · ');
 
   return (
-    <PageShell kicker={track?.name || 'Спикер'} title={speaker.name} subtitle={`${speaker.role} · ${speaker.company}`}>
+    <PageShell kicker={track?.name || 'Спикер'} title={speaker.name} subtitle={identity || undefined}>
       {/* Hero — фото (или инициал) + базовые факты */}
       <motion.section
         initial={{ opacity: 0, y: 14 }}
@@ -109,27 +119,27 @@ export default function SpeakerDetail() {
       </motion.section>
 
       {/* Тема доклада на форуме — выделено */}
-      {speaker.topic && (
+      {cleanTopic(speaker.topic) && (
         <section className="rounded-2xl border border-primary/35 bg-card p-5 mb-6">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-4 h-4 text-primary" strokeWidth={1.8} />
             <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary/85">Тема на форуме</p>
           </div>
           <p className="font-display text-[18px] font-semibold text-foreground leading-snug">
-            «{speaker.topic}»
+            «{cleanTopic(speaker.topic)}»
           </p>
         </section>
       )}
 
       {/* Биография */}
-      <section className="mb-6">
+      {bioParagraphs.length > 0 && <section className="mb-6">
         <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary mb-3">Биография</h2>
         <div className="space-y-3 text-[14px] leading-relaxed text-foreground/85 font-sans">
           {bioParagraphs.map((p, i) => (
             <p key={i}>{p}</p>
           ))}
         </div>
-      </section>
+      </section>}
 
       {/* Сессии этого спикера на форуме */}
       {speakerSessions.length > 0 && (

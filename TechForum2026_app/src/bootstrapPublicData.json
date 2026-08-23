@@ -450,9 +450,11 @@
       "dayId": "d2",
       "trackId": "t_legaltech",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_f48cdc5a46c949c8"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Валентин Микляев",
       "track": "Legal Tech и сервисы",
       "day": "26 сентября"
     },
@@ -501,9 +503,11 @@
       "dayId": "d1",
       "trackId": "t_ai",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_6bf19f366a0946a3"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Александр Песенко",
       "track": "ИИ в юрбизнесе",
       "day": "25 сентября"
     },
@@ -518,9 +522,11 @@
       "dayId": "d1",
       "trackId": "t_legaltech",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_6aeebe5331b24151"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Чуйков Константин",
       "track": "Legal Tech и сервисы",
       "day": "25 сентября"
     },
@@ -535,9 +541,11 @@
       "dayId": "d1",
       "trackId": "t_automation",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_2ca3c80058474d95"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Черкасова Наталья Александровна",
       "track": "Автоматизация практики",
       "day": "25 сентября"
     },
@@ -552,9 +560,13 @@
       "dayId": "d1",
       "trackId": "t_ai",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_2dbc7f0156b646f8",
+        "ss_a776d64118de4b83",
+        "ss_0449ed9e0e974cd0"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Епуре Каролина Анатольевна",
       "track": "ИИ в юрбизнесе",
       "day": "25 сентября"
     },
@@ -605,9 +617,11 @@
       "dayId": "d1",
       "trackId": "t_data",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_53aae2ac5be14828"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Македошин Максим Александрович",
       "track": "Данные и безопасность",
       "day": "25 сентября"
     },
@@ -622,9 +636,11 @@
       "dayId": "d1",
       "trackId": "t_data",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_526b442be6fd43eb"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Ветрянкова Виктория Игоревна",
       "track": "Данные и безопасность",
       "day": "25 сентября"
     },
@@ -673,9 +689,13 @@
       "dayId": "d1",
       "trackId": "t_ai",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_0449ed9e0e974cd0",
+        "ss_6bf19f366a0946a3",
+        "ss_a776d64118de4b83"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Пеньков Валерий Павлович",
       "track": "ИИ в юрбизнесе",
       "day": "25 сентября"
     },
@@ -690,9 +710,12 @@
       "dayId": "d1",
       "trackId": "t_data",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_c8ee028de50d44f7",
+        "ss_53aae2ac5be14828"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Ярослав Авдиев",
       "track": "Данные и безопасность",
       "day": "25 сентября"
     },
@@ -707,9 +730,11 @@
       "dayId": "d1",
       "trackId": "t_growth",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_e19958df3cc840c8"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Антон Попов",
       "track": "Рост и масштабирование",
       "day": "25 сентября"
     },
@@ -758,9 +783,11 @@
       "dayId": "d2",
       "trackId": "t_bfl",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_1416c7afae614739"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Галичевский Игорь Николаевич",
       "track": "Банкротство физлиц",
       "day": "26 сентября"
     },
@@ -775,9 +802,11 @@
       "dayId": "d2",
       "trackId": "t_bfl",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_4805a2e9aa194ee2"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Малютин Александр Сергеевич",
       "track": "Банкротство физлиц",
       "day": "26 сентября"
     },
@@ -811,9 +840,12 @@
       "dayId": "d2",
       "trackId": "t_bfl",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_1416c7afae614739",
+        "ss_4805a2e9aa194ee2"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Галичевский Игорь Николаевич",
       "track": "Банкротство физлиц",
       "day": "26 сентября"
     },
@@ -828,9 +860,11 @@
       "dayId": "d2",
       "trackId": "t_automation",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_be18f70472674386"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Писаренко Николай Алексеевич",
       "track": "Автоматизация практики",
       "day": "26 сентября"
     },
@@ -881,9 +915,11 @@
       "dayId": "d2",
       "trackId": "t_growth",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_d66a8f9d80b24450"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Кононов Игорь",
       "track": "Рост и масштабирование",
       "day": "26 сентября"
     },
@@ -898,9 +934,11 @@
       "dayId": "d2",
       "trackId": "t_growth",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_342a441770254f52"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Воробьев Александр Сергеевич",
       "track": "Рост и масштабирование",
       "day": "26 сентября"
     },
@@ -915,9 +953,11 @@
       "dayId": "d2",
       "trackId": "t_growth",
       "status": "Soon",
-      "speakerIds": [],
+      "speakerIds": [
+        "ss_449be5f7f9924216"
+      ],
       "location": "Зал А",
-      "speakerName": "—",
+      "speakerName": "Масальский Мирослав Игоревич",
       "track": "Рост и масштабирование",
       "day": "26 сентября"
     },
