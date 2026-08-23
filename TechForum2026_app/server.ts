@@ -119,7 +119,7 @@ const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
   tracks, halls, days, speakers, partners, sessionSpeakers, news, events, appContent,
-  pushTokens, giveaways, giveawayEntries,
+  pushTokens, giveaways, giveawayEntries, contactPins,
   faq, contactExchanges, aiChatMessages, userBlocks, contentReports,
 } = schemaModule;
 
@@ -132,10 +132,20 @@ const DEFAULT_APP_CONTENT: Record<string, string> = {
   venueName: 'БЦ «Красные Ворота»', address: 'Садовая-Спасская улица, 21/1, Москва',
   dayOneTitle: 'День 1 · AI и агенты', dayOneDescription: 'Агенты, продукты, данные, внедрение и регулирование',
   dayTwoTitle: 'День 2 · БФЛ и ИИ', dayTwoDescription: 'Суды, доказательства, сделки, LegalTech и рост практики',
-  email: 'info@tech-pravo.ru', organizerTelegram: 'CEO_WYRM1', telegramChannel: 'TechPravoAI',
+  email: 'tickets@notify.tech-pravo.ru', organizerTelegram: 'CEO_WYRM1', telegramChannel: 'TechPravoAI',
   yandexMapUrl: 'https://yandex.ru/maps/?text=%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2021%2F1',
   twoGisUrl: 'https://2gis.ru/moscow/search/%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2C%2021%2F1',
   venueHelp: 'Точная схема этажей появится после подтверждения площадкой.',
+  researchIntro: 'Ответы используются в агрегированной аналитике. После короткой регистрации профессиональный материал открывается сразу; прохождение сохраняется и продолжается с того же места.',
+  researchConditions: 'Материал доступен после регистрации на выбранном лендинге. Условия сертификатов и проверяемого розыгрыша опубликованы там же; приложение не подменяет их отдельным описанием.',
+  researchLawyerTitle: 'ИИ в работе юристов',
+  researchLawyerDescription: '12 практических вопросов о сценариях применения ИИ, барьерах, инструментах и защите данных.',
+  researchLawyerMaterial: 'Профессиональный PDF: мировые практики, российский рынок и прикладные инструменты 2026.',
+  researchLawyerUrl: 'https://tech-pravo.ru/opros2',
+  researchManagerTitle: 'Практика и защита управляющего',
+  researchManagerDescription: 'Исследование рабочих процессов, рисков, судебных позиций и направлений автоматизации.',
+  researchManagerMaterial: 'Практический PDF: защита арбитражного управляющего, судебные позиции и рабочие ориентиры.',
+  researchManagerUrl: 'https://tech-pravo.ru/opros',
 };
 
 async function readAppContent(): Promise<Record<string, string>> {
@@ -146,13 +156,44 @@ async function readAppContent(): Promise<Record<string, string>> {
 // В data.ts остаются только метаданные события и справочник интересов.
 // Программа, спикеры, залы и партнёры во всех runtime-сценариях читаются из БД.
 const dataModule = await import('./src/data.js');
-const { HALLS, EVENT_META, INTERESTS } = dataModule;
+const { EVENT_META, INTERESTS } = dataModule;
 
 const icsModule = await import('./src/lib/ics.js');
 const { buildIcsCalendar, formatIcsDateTime } = icsModule;
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+type RegistrationPlatform = 'android' | 'ios' | 'web' | 'unknown';
+
+function registrationContextFromRequest(
+  req: Request,
+  preferredPlatform?: RegistrationPlatform,
+  preferredDevice?: string,
+): { registrationPlatform: RegistrationPlatform; registrationDevice: string | null } {
+  const userAgent = String(req.header('user-agent') || '').slice(0, 300);
+  const inferredPlatform: RegistrationPlatform = /android/i.test(userAgent)
+    ? 'android'
+    : /iphone|ipad|ios/i.test(userAgent)
+      ? 'ios'
+      : /mozilla|chrome|safari|firefox/i.test(userAgent)
+        ? 'web'
+        : 'unknown';
+  const androidModel = userAgent.match(/Android[^;)]*;\s*([^;)]+?)(?:\s+Build\/|;|\))/i)?.[1]?.trim();
+  const inferredDevice = inferredPlatform === 'android'
+    ? androidModel || 'Android'
+    : inferredPlatform === 'ios'
+      ? (/ipad/i.test(userAgent) ? 'iPad' : 'iPhone')
+      : null;
+  const device = String(preferredDevice || '').trim().slice(0, 300);
+
+  return {
+    registrationPlatform: preferredPlatform && preferredPlatform !== 'unknown'
+      ? preferredPlatform
+      : inferredPlatform,
+    registrationDevice: device || inferredDevice,
+  };
 }
 
 function hashPassword(password: string, salt?: string): string {
@@ -1037,6 +1078,7 @@ async function startServer(): Promise<void> {
 
   api.post('/auth/register', authRateLimit, validateBody(authRegisterSchema), async (req, res) => {
     const { email, phone, password, name, registrationPlatform, registrationDevice } = req.body as import('./src/lib/validation.js').AuthRegisterBody;
+    const registration = registrationContextFromRequest(req, registrationPlatform, registrationDevice);
 
     // Идентификатор — email ИЛИ телефон. Для телефона генерим внутренний
     // синтетический email (колонка users.email NOT NULL UNIQUE), реальный
@@ -1067,8 +1109,8 @@ async function startServer(): Promise<void> {
         id,
         email: storedEmail,
         phone: normPhone || null,
-        registrationPlatform: registrationPlatform || 'unknown',
-        registrationDevice: registrationDevice || null,
+        registrationPlatform: registration.registrationPlatform,
+        registrationDevice: registration.registrationDevice,
         passwordHash,
         name,
         avatar,
@@ -1126,6 +1168,7 @@ async function startServer(): Promise<void> {
 
   api.post('/auth/login', authRateLimit, validateBody(authLoginSchema), async (req, res) => {
     const { email, phone, password, registrationPlatform, registrationDevice } = req.body as import('./src/lib/validation.js').AuthLoginBody;
+    const registration = registrationContextFromRequest(req, registrationPlatform, registrationDevice);
 
     // Ключ для anti-bruteforce и поиска: телефон (нормализованный) ИЛИ email.
     const lockKey = phone ? normalizePhone(phone) : (email || '');
@@ -1146,10 +1189,12 @@ async function startServer(): Promise<void> {
     }
     clearAccountLock(lockKey);
 
-    if (registrationPlatform || registrationDevice) {
+    if (registration.registrationPlatform !== 'unknown' || registration.registrationDevice) {
       await db.update(users).set({
-        registrationPlatform: registrationPlatform || user.registrationPlatform || 'unknown',
-        registrationDevice: registrationDevice || user.registrationDevice || null,
+        registrationPlatform: registration.registrationPlatform !== 'unknown'
+          ? registration.registrationPlatform
+          : user.registrationPlatform || 'unknown',
+        registrationDevice: registration.registrationDevice || user.registrationDevice || null,
       }).where(eq(users.id, user.id));
     }
 
@@ -1297,16 +1342,9 @@ async function startServer(): Promise<void> {
     log.warn('telegram-link', 'INTERNAL_BOT_SECRET не задан — привязка Telegram и пуш кода сброса выключены (fail-closed).');
   }
 
-  // Короткоживущие link-токены. Telegram start-param ограничен 64 символами и
-  // алфавитом [A-Za-z0-9_-], поэтому храним КОРОТКИЙ случайный id в памяти, а не
-  // длинный самоподписанный блоб. Одноразовые, TTL 15 мин. Процесс techforum-api
-  // одноинстансный (pm2 fork) — карта живёт в нём; при рестарте юзер повторно
-  // жмёт «Привязать» (самовосстановление, не критично).
-  const tgLinkTokens = new Map<string, { userId: string; exp: number }>();
-  function sweepLinkTokens(): void {
-    const now = Date.now();
-    for (const [k, v] of tgLinkTokens) if (v.exp < now) tgLinkTokens.delete(k);
-  }
+  // Link-токен переживает restart PM2, но сырой секрет никогда не пишется в БД:
+  // сохраняем SHA-256, TTL 15 минут и consumed_at для атомарной одноразовости.
+  const telegramTokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
   function htmlEscape(s: string): string {
     return String(s).replace(/[<>&]/g, (c) => (c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'));
   }
@@ -1329,13 +1367,17 @@ async function startServer(): Promise<void> {
   }
 
   // Владелец (под своей сессией) выпускает одноразовую ссылку привязки.
-  api.post('/me/telegram/link-token', requireAuth, (req, res) => {
+  api.post('/me/telegram/link-token', requireAuth, async (req, res) => {
     const userId = getSessionUserId(req);
     if (!userId) { res.status(401).json({ error: 'Не авторизован' }); return; }
     if (!internalBotSecret) { res.status(503).json({ error: 'telegram_link_disabled' }); return; }
-    sweepLinkTokens();
     const id = crypto.randomBytes(18).toString('base64url'); // 24 симв. → 'tflink_'+id = 31 (< 64)
-    tgLinkTokens.set(id, { userId, exp: Date.now() + 15 * 60 * 1000 });
+    await pool.query('DELETE FROM telegram_link_tokens WHERE expires_at < now() OR consumed_at IS NOT NULL');
+    await pool.query(
+      `INSERT INTO telegram_link_tokens (token_hash, user_id, expires_at)
+       VALUES ($1, $2, now() + interval '15 minutes')`,
+      [telegramTokenHash(id), userId],
+    );
     res.json({ deepLink: `https://t.me/${botUsername}?start=tflink_${id}`, botUsername, ttlSeconds: 15 * 60 });
   });
 
@@ -1361,20 +1403,43 @@ async function startServer(): Promise<void> {
     const token = String(body.token || '');
     const telegramId = body.telegramId != null ? String(body.telegramId) : '';
     const username = body.username != null ? String(body.username) : '';
-    const rec = tgLinkTokens.get(token);
-    if (!rec || rec.exp < Date.now() || !telegramId) {
-      tgLinkTokens.delete(token);
-      res.status(400).json({ error: 'invalid_or_expired' });
-      return;
+    if (!token || !telegramId) { res.status(400).json({ error: 'invalid_or_expired' }); return; }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const consumed = await client.query<{ user_id: string }>(
+        `UPDATE telegram_link_tokens
+            SET consumed_at = now()
+          WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now()
+          RETURNING user_id`,
+        [telegramTokenHash(token)],
+      );
+      const userId = consumed.rows[0]?.user_id;
+      if (!userId) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ error: 'invalid_or_expired' });
+        return;
+      }
+      const updated = await client.query<{ name: string; email: string }>(
+        `UPDATE users SET telegram_id = $1, telegram_username = $2
+          WHERE id = $3 RETURNING name, email`,
+        [telegramId, username || null, userId],
+      );
+      if (!updated.rows[0]) {
+        await client.query('ROLLBACK');
+        res.status(404).json({ error: 'user_not_found' });
+        return;
+      }
+      await client.query('COMMIT');
+      log.info('telegram-link', 'bound', { userId, telegramId });
+      res.json({ ok: true, name: updated.rows[0].name, email: updated.rows[0].email });
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      log.error('telegram-link', 'bind failed', { err: String(err) });
+      res.status(500).json({ error: 'bind_failed' });
+    } finally {
+      client.release();
     }
-    tgLinkTokens.delete(token); // одноразово
-    const user = await findUserById(rec.userId);
-    if (!user) { res.status(404).json({ error: 'user_not_found' }); return; }
-    await db.update(users)
-      .set({ telegramId, telegramUsername: username || null })
-      .where(eq(users.id, user.id));
-    log.info('telegram-link', 'bound', { userId: user.id, telegramId });
-    res.json({ ok: true, name: user.name, email: user.email });
   });
 
   // ========================================================================
@@ -1676,6 +1741,129 @@ async function startServer(): Promise<void> {
       speakers: speakerRows.map((s) => ({ id: s.id, name: s.name, role: s.role, company: s.company })),
       sessions: sessRows.map((s) => ({ ...s, speakerIds: speakersBySession.get(s.id) ?? [] })),
     });
+  });
+
+  // Справочники программы тоже являются частью CMS. Раньше администратор мог
+  // менять только сессии, поэтому количество направлений и потоков оставалось
+  // фактически зашито в БД. Удаление подчиняется внешним ключам: если объект
+  // ещё используется, возвращаем понятный 409 вместо повреждения расписания.
+  function referenceId(prefix: string, value: unknown): string {
+    const preferred = str(value, 64)?.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    return preferred || `${prefix}_${crypto.randomBytes(6).toString('hex')}`;
+  }
+  function referenceConflict(res: express.Response, error: unknown): boolean {
+    if ((error as { code?: string })?.code !== '23503') return false;
+    res.status(409).json({ error: 'reference_in_use' });
+    return true;
+  }
+  function referenceDuplicate(res: express.Response, error: unknown): boolean {
+    if ((error as { code?: string })?.code !== '23505') return false;
+    res.status(409).json({ error: 'id_exists' });
+    return true;
+  }
+
+  api.post('/internal/tracks', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const name = str(req.body?.name, 120);
+    if (!name) { res.status(400).json({ error: 'name_required' }); return; }
+    const colorRaw = str(req.body?.color, 16) || '#22d3ee';
+    const color = /^#[0-9a-f]{6}$/i.test(colorRaw) ? colorRaw : '#22d3ee';
+    try {
+      const [row] = await db.insert(tracks).values({
+        id: referenceId('track', req.body?.id),
+        name,
+        shortLabel: str(req.body?.shortLabel, 24) || name.slice(0, 12),
+        color,
+      }).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      if (!referenceDuplicate(res, error)) throw error;
+    }
+  });
+  api.put('/internal/tracks/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const patch: Partial<typeof tracks.$inferInsert> = {};
+    if (req.body?.name !== undefined) { const value = str(req.body.name, 120); if (!value) { res.status(400).json({ error: 'name_required' }); return; } patch.name = value; }
+    if (req.body?.shortLabel !== undefined) { const value = str(req.body.shortLabel, 24); if (!value) { res.status(400).json({ error: 'shortLabel_required' }); return; } patch.shortLabel = value; }
+    if (req.body?.color !== undefined) { const value = str(req.body.color, 16); if (!value || !/^#[0-9a-f]{6}$/i.test(value)) { res.status(400).json({ error: 'invalid_color' }); return; } patch.color = value; }
+    const [row] = await db.update(tracks).set(patch).where(eq(tracks.id, String(req.params.id))).returning();
+    if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(row);
+  });
+  api.delete('/internal/tracks/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    try {
+      const [row] = await db.delete(tracks).where(eq(tracks.id, String(req.params.id))).returning({ id: tracks.id });
+      if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+      res.json({ ok: true });
+    } catch (error) {
+      if (!referenceConflict(res, error)) throw error;
+    }
+  });
+
+  api.post('/internal/halls', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const name = str(req.body?.name, 120);
+    const capacity = Number(req.body?.capacity);
+    if (!name) { res.status(400).json({ error: 'name_required' }); return; }
+    if (!Number.isInteger(capacity) || capacity < 0 || capacity > 100_000) { res.status(400).json({ error: 'invalid_capacity' }); return; }
+    try {
+      const [row] = await db.insert(halls).values({ id: referenceId('hall', req.body?.id), name, capacity }).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      if (!referenceDuplicate(res, error)) throw error;
+    }
+  });
+  api.put('/internal/halls/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const patch: Partial<typeof halls.$inferInsert> = {};
+    if (req.body?.name !== undefined) { const value = str(req.body.name, 120); if (!value) { res.status(400).json({ error: 'name_required' }); return; } patch.name = value; }
+    if (req.body?.capacity !== undefined) { const value = Number(req.body.capacity); if (!Number.isInteger(value) || value < 0 || value > 100_000) { res.status(400).json({ error: 'invalid_capacity' }); return; } patch.capacity = value; }
+    const [row] = await db.update(halls).set(patch).where(eq(halls.id, String(req.params.id))).returning();
+    if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(row);
+  });
+  api.delete('/internal/halls/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const [row] = await db.delete(halls).where(eq(halls.id, String(req.params.id))).returning({ id: halls.id });
+    if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json({ ok: true });
+  });
+
+  api.post('/internal/days', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const date = str(req.body?.date, 32), label = str(req.body?.label, 80), weekday = str(req.body?.weekday, 40);
+    if (!date || !label || !weekday) { res.status(400).json({ error: 'date_label_weekday_required' }); return; }
+    try {
+      const [row] = await db.insert(days).values({ id: referenceId('day', req.body?.id), date, label, weekday }).returning();
+      res.status(201).json(row);
+    } catch (error) {
+      if (!referenceDuplicate(res, error)) throw error;
+    }
+  });
+  api.put('/internal/days/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const patch: Partial<typeof days.$inferInsert> = {};
+    for (const key of ['date', 'label', 'weekday'] as const) {
+      if (req.body?.[key] !== undefined) {
+        const value = str(req.body[key], key === 'date' ? 32 : 80);
+        if (!value) { res.status(400).json({ error: `${key}_required` }); return; }
+        patch[key] = value;
+      }
+    }
+    const [row] = await db.update(days).set(patch).where(eq(days.id, String(req.params.id))).returning();
+    if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+    res.json(row);
+  });
+  api.delete('/internal/days/:id', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    try {
+      const [row] = await db.delete(days).where(eq(days.id, String(req.params.id))).returning({ id: days.id });
+      if (!row) { res.status(404).json({ error: 'not_found' }); return; }
+      res.json({ ok: true });
+    } catch (error) {
+      if (!referenceConflict(res, error)) throw error;
+    }
   });
 
   // Карточка события и контроль целостности: всё, что раньше было зашито в
@@ -2568,6 +2756,43 @@ async function startServer(): Promise<void> {
     res.json(rows.slice(0, 200).map((u) => ({ ...toPublicUser(u), online: userSockets.has(u.id) })));
   });
 
+  // Закреплённые контакты синхронизируются через БД, а не localStorage —
+  // пользователь видит одинаковый порядок на Android и iPhone.
+  api.get('/me/contact-pins', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const rows = await db.select({ contactUserId: contactPins.contactUserId })
+      .from(contactPins)
+      .where(eq(contactPins.userId, me))
+      .orderBy(contactPins.pinnedAt);
+    res.json({ contactUserIds: rows.map((row) => row.contactUserId) });
+  });
+
+  api.put('/me/contact-pins/:contactUserId', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const contactUserId = String(req.params.contactUserId || '').trim();
+    if (!contactUserId || contactUserId === me) {
+      res.status(400).json({ error: 'invalid_contact' });
+      return;
+    }
+    const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, contactUserId)).limit(1);
+    if (!target) { res.status(404).json({ error: 'user_not_found' }); return; }
+    await db.insert(contactPins).values({ userId: me, contactUserId }).onConflictDoUpdate({
+      target: [contactPins.userId, contactPins.contactUserId],
+      set: { pinnedAt: new Date() },
+    });
+    res.json({ ok: true, contactUserId });
+  });
+
+  api.delete('/me/contact-pins/:contactUserId', requireAuth, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const contactUserId = String(req.params.contactUserId || '').trim();
+    await db.delete(contactPins).where(and(
+      eq(contactPins.userId, me),
+      eq(contactPins.contactUserId, contactUserId),
+    ));
+    res.json({ ok: true, contactUserId });
+  });
+
   // GET /users/:id — публичный профиль участника. Возвращает поля, которые
   // другой юзер видит при тапе на иконку в чате: имя, роль, аватар, био.
   // Email/phone скрыты (audit #9 fix). Заблокированные private-юзеры
@@ -3129,6 +3354,35 @@ async function startServer(): Promise<void> {
     })));
   });
 
+  // Изолированная проверка доставки: отправляет уведомление только текущему
+  // пользователю. Администратору больше не нужно публиковать тестовую новость
+  // всем участникам, чтобы доказать работу FCM на одном телефоне.
+  api.post('/me/push-test', requireAuth, writeRateLimit, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const service = fcmStatus();
+    if (!service.initialized || service.disabled) {
+      res.status(503).json({ error: 'push_not_configured' });
+      return;
+    }
+    const [registered] = await db.select({ id: pushTokens.id }).from(pushTokens)
+      .where(eq(pushTokens.userId, me)).limit(1);
+    if (!registered) {
+      res.status(409).json({ error: 'device_not_registered' });
+      return;
+    }
+    const deliveredDevices = await sendPushToUser(me, {
+      title: 'ТехнологИИ Права',
+      body: 'Тестовое уведомление доставлено. Push работает на этом устройстве.',
+      data: { type: 'push_test' },
+      priority: 'high',
+    }, db, pushTokens);
+    if (deliveredDevices === 0) {
+      res.status(502).json({ error: 'push_delivery_failed', deliveredDevices: 0 });
+      return;
+    }
+    res.json({ ok: true, deliveredDevices });
+  });
+
   // ========================================================================
   // GIVEAWAYS — призы и заявки участников (Round 5)
   // ========================================================================
@@ -3313,7 +3567,9 @@ async function startServer(): Promise<void> {
     // Capacity check: считаем уже зарегистрированных + сравниваем с capacity зала.
     // hallId в sessions_event опционален (онлайн-формат), capacity тогда не лимитируем.
     if (sess.hallId) {
-      const hallMeta = HALLS.find((h: { id: string }) => h.id === sess.hallId);
+      // Вместимость берём из той же БД, которую редактирует администратор.
+      // Статический HALLS делал изменения в CMS визуальными, но не рабочими.
+      const hallMeta = (await db.select().from(halls).where(eq(halls.id, sess.hallId)).limit(1))[0];
       if (hallMeta && hallMeta.capacity > 0) {
         const cnt = await db
           .select({ c: sql<number>`count(*)::int` })
@@ -3326,10 +3582,9 @@ async function startServer(): Promise<void> {
       }
     }
 
-    // Conflict-warning: уже зарегистрирован на параллельную сессию?
-    // Возвращаем как warning (не блокируем — фронт показывает пользователю
-    // и подтверждает override). Это backward-compatible: фронт может игнорить
-    // поле conflicts, поведение API в успехе остаётся 200 + ok:true.
+    // Пересекающиеся выступления не должны молча попадать в личный план.
+    // Первый запрос возвращает 409 и полные данные конфликта. Повторный запрос
+    // с replaceConflicts=true атомарно заменяет конфликтующие регистрации.
     const myRegs = await db.select().from(registrations).where(eq(registrations.userId, userId));
     const conflicts: string[] = [];
     if (myRegs.length > 0) {
@@ -3344,11 +3599,36 @@ async function startServer(): Promise<void> {
       }
     }
 
-    await db.insert(registrations)
-      .values({ userId, sessionId })
-      .onConflictDoNothing();
+    const replaceConflicts = req.body?.replaceConflicts === true;
+    if (conflicts.length > 0 && !replaceConflicts) {
+      const conflictRows = await db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, conflicts));
+      res.status(409).json({
+        error: 'schedule_conflict',
+        sessionId,
+        conflicts: conflictRows.map((item) => ({
+          id: item.id,
+          title: item.title,
+          dayId: item.dayId,
+          startTime: item.startTime,
+          endTime: item.endTime,
+        })),
+      });
+      return;
+    }
 
-    res.json({ ok: true, sessionId, conflicts });
+    await db.transaction(async (tx) => {
+      if (replaceConflicts && conflicts.length > 0) {
+        await tx.delete(registrations).where(and(
+          eq(registrations.userId, userId),
+          inArray(registrations.sessionId, conflicts),
+        ));
+      }
+      await tx.insert(registrations)
+        .values({ userId, sessionId })
+        .onConflictDoNothing();
+    });
+
+    res.json({ ok: true, sessionId, replacedSessionIds: replaceConflicts ? conflicts : [] });
   });
 
   api.delete('/sessions/:id/register', requireAuth, async (req, res) => {
@@ -3754,7 +4034,10 @@ async function startServer(): Promise<void> {
   // не задан — disabled, sendPushToUser() становится no-op (но в БД
   // /me/push-token продолжает копить токены, чтобы при включении FCM
   // рассылка пошла на уже зарегистрированных юзеров).
-  initFcm();
+  await initFcm();
+
+  const eventTimeOffsetRaw = String(process.env.EVENT_TIMEZONE_OFFSET || '+03:00').trim();
+  const eventTimeOffset = /^[+-]\d{2}:\d{2}$/.test(eventTimeOffsetRaw) ? eventTimeOffsetRaw : '+03:00';
 
   // Cron: session reminders за 15 минут до начала. Каждую минуту проверяем
   // регистрации, окно: now + 14..16мин. Атомарный UPDATE ... RETURNING чтобы
@@ -3786,7 +4069,10 @@ async function startServer(): Promise<void> {
         for (const c of candidates) {
           // Парсим день+время в Date.
           const [hh, mm] = String(c.startTime).split(':').map((s) => parseInt(s, 10));
-          const sessionStart = new Date(`${c.dayDate}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00`);
+          // Дата и время программы заданы по Москве. Без явного смещения Node
+          // интерпретирует строку в часовом поясе сервера (часто UTC), из-за
+          // чего напоминание могло прийти на три часа позже.
+          const sessionStart = new Date(`${c.dayDate}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00${eventTimeOffset}`);
           if (sessionStart >= lower && sessionStart <= upper) {
             const delivered = await sendPushToUser(c.userId, {
               title: 'Через 15 минут',

@@ -121,7 +121,10 @@ function AppContent() {
       const type = String(data.type || '');
       if (type === 'news' && data.newsId) navigate(`/news/${encodeURIComponent(String(data.newsId))}`);
       else if (type === 'session' && data.sessionId) navigate(`/schedule?session=${encodeURIComponent(String(data.sessionId))}`);
-      else if (type === 'dm') navigate('/chat');
+      else if (type === 'dm') {
+        const from = String(data.from || '').trim();
+        navigate(from ? `/chat?dm=${encodeURIComponent(from)}` : '/chat');
+      }
     };
     void attachPushListeners(
       (notification) => {
@@ -360,7 +363,7 @@ function AppContent() {
     <div className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
       <OfflineBanner />
       <main className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]">
-        <div className={`flex-1 min-h-0 min-w-0 scrollbar-hide relative ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+        <div data-app-scroll-container className={`flex-1 min-h-0 min-w-0 scrollbar-hide relative ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className={isChatRoute ? 'h-full min-h-0 min-w-0' : 'min-h-full min-w-0'}>
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.

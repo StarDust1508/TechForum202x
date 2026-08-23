@@ -4,7 +4,7 @@ import {
   Send, Bot, User,
   ChevronRight, ChevronLeft, Mic,
   X, Play, Pause, Paperclip, Camera, Square, Volume2, VolumeX,
-  Sparkles, MessageCircle,
+  Sparkles, MessageCircle, Search, Pin, PinOff,
   Copy, Pencil, Trash2, Forward, Check, Download, ShieldAlert, Ban
 } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
@@ -26,6 +26,22 @@ interface ChatMessage {
     url: string;
   };
 }
+
+interface DmContact {
+  id: string;
+  name: string;
+  role: string;
+  company: string;
+  avatar: string;
+  online: boolean;
+  lastMsg: string;
+}
+
+const normalizeContactSearch = (value: string) => value
+  .toLocaleLowerCase('ru-RU')
+  .replace(/ё/g, 'е')
+  .replace(/[^a-zа-я0-9]+/gi, ' ')
+  .trim();
 
 /* ── Context menu for messages ── */
 interface ContextMenuState {
@@ -275,7 +291,10 @@ export default function Chat() {
   const [loading, setLoading] = useState(false);
 
   // DM state
-  const [dmContacts, setDmContacts] = useState<Array<{ id: string; name: string; role: string; avatar: string; online: boolean; lastMsg: string }>>([]);
+  const [dmContacts, setDmContacts] = useState<DmContact[]>([]);
+  const [contactSearch, setContactSearch] = useState('');
+  const [pinnedContactIds, setPinnedContactIds] = useState<string[]>([]);
+  const [contactActionId, setContactActionId] = useState<string | null>(null);
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [dmMessages, setDmMessages] = useState<Record<string, ChatMessage[]>>({});
   // Presence + typing («как в Telegram»). presence: online/last-seen по userId
@@ -328,6 +347,8 @@ export default function Chat() {
   const [editText, setEditText] = useState('');
   const [forwardingMsg, setForwardingMsg] = useState<ChatMessage | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const contactPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressContactClickRef = useRef(false);
 
   // Audio recording animation bars
   const [audioLevels, setAudioLevels] = useState<number[]>(Array(24).fill(0.15));
@@ -359,12 +380,15 @@ export default function Chat() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await authFetch(resolveApiUrl('/users/list'), { credentials: 'include' });
+        const [r, pinsResponse] = await Promise.all([
+          authFetch(resolveApiUrl('/users/list'), { credentials: 'include' }),
+          authFetch(resolveApiUrl('/me/contact-pins'), { credentials: 'include' }).catch(() => null),
+        ]);
         if (r.ok) {
           const data = await r.json();
           const contacts = data.map((u: any) => ({
             id: u.id, name: u.name, role: u.role || 'Участник',
-            avatar: u.avatar || '', online: !!u.online, lastMsg: ''
+            company: u.company || '', avatar: u.avatar || '', online: !!u.online, lastMsg: ''
           }));
           // Начальный снапшот presence из списка (дальше — live через WS).
           setPresence(() => {
@@ -379,10 +403,75 @@ export default function Chat() {
           await Promise.all(avatarUrls.map((url: string) => preloadImage(url)));
           setDmContacts(contacts);
         }
+        if (pinsResponse?.ok) {
+          const payload = await pinsResponse.json().catch(() => null);
+          if (Array.isArray(payload?.contactUserIds)) setPinnedContactIds(payload.contactUserIds.filter((id: unknown): id is string => typeof id === 'string'));
+        }
       } catch { /* offline */ }
       setLoadingDm(false);
     })();
   }, []);
+
+  useEffect(() => () => {
+    if (contactPressTimer.current) clearTimeout(contactPressTimer.current);
+  }, []);
+
+  const filteredContacts = useMemo(() => {
+    const query = normalizeContactSearch(contactSearch);
+    const words = query.split(' ').filter(Boolean);
+    return dmContacts
+      .filter((contact) => {
+        if (words.length === 0) return true;
+        const haystack = normalizeContactSearch(`${contact.name} ${contact.role} ${contact.company}`);
+        return words.every((word) => haystack.includes(word));
+      })
+      .sort((a, b) => {
+        const aPinned = pinnedContactIds.includes(a.id) ? 1 : 0;
+        const bPinned = pinnedContactIds.includes(b.id) ? 1 : 0;
+        return bPinned - aPinned || a.name.localeCompare(b.name, 'ru');
+      });
+  }, [contactSearch, dmContacts, pinnedContactIds]);
+
+  const beginContactPress = (contactId: string) => {
+    suppressContactClickRef.current = false;
+    if (contactPressTimer.current) clearTimeout(contactPressTimer.current);
+    contactPressTimer.current = setTimeout(() => {
+      suppressContactClickRef.current = true;
+      setContactActionId(contactId);
+    }, 520);
+  };
+
+  const endContactPress = () => {
+    if (contactPressTimer.current) clearTimeout(contactPressTimer.current);
+    contactPressTimer.current = null;
+  };
+
+  const openContact = (contactId: string) => {
+    if (suppressContactClickRef.current) {
+      suppressContactClickRef.current = false;
+      return;
+    }
+    selectContactWithHistory(contactId);
+  };
+
+  const toggleContactPin = async (contactId: string) => {
+    const wasPinned = pinnedContactIds.includes(contactId);
+    const previous = pinnedContactIds;
+    const next = wasPinned ? previous.filter((id) => id !== contactId) : [...previous, contactId];
+    setPinnedContactIds(next);
+    setContactActionId(null);
+    try {
+      const response = await authFetch(resolveApiUrl(`/me/contact-pins/${encodeURIComponent(contactId)}`), {
+        method: wasPinned ? 'DELETE' : 'PUT',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(`pin_${response.status}`);
+      toast.show(wasPinned ? 'Контакт откреплён' : 'Контакт закреплён');
+    } catch {
+      setPinnedContactIds(previous);
+      toast.show('Не удалось изменить закрепление');
+    }
+  };
 
   useEffect(() => {
     if (dmTarget && dmContacts.length > 0 && !selectedContact) {
@@ -934,6 +1023,21 @@ export default function Chat() {
                 <MessageCircle className="w-3.5 h-3.5" /> Личные
               </button>
             </div>
+            {activeTab === 'dm' && (
+              <label className="relative block">
+                <span className="sr-only">Поиск по контактам</span>
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/35" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={contactSearch}
+                  onChange={(event) => setContactSearch(event.target.value)}
+                  placeholder="Имя, компания или роль"
+                  autoComplete="off"
+                  className="min-h-11 w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-10 text-[16px] text-foreground outline-none placeholder:text-foreground/38 focus:border-primary/55 focus:ring-2 focus:ring-primary/15"
+                />
+                {contactSearch && <button type="button" onClick={() => setContactSearch('')} aria-label="Очистить поиск" className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-foreground/45"><X className="h-4 w-4" /></button>}
+              </label>
+            )}
           </div>
         )}
       </header>
@@ -1059,12 +1163,22 @@ export default function Chat() {
                   <p className="text-foreground/60 text-sm">Пока нет контактов</p>
                   <p className="text-muted-foreground text-xs">Найди участников в разделе «Участники»</p>
                 </div>
+              ) : filteredContacts.length === 0 ? (
+                <div className="flex flex-col items-center py-14 text-center">
+                  <Search className="h-9 w-9 text-foreground/25" />
+                  <p className="mt-3 text-[14px] font-semibold text-foreground/65">Контакт не найден</p>
+                  <p className="mt-1 text-[13px] text-foreground/45">Попробуйте имя, компанию или роль.</p>
+                </div>
               ) : (
-                dmContacts.map(c => {
+                filteredContacts.map(c => {
                   const cAvatar = c.avatar ? (c.avatar.startsWith('/uploads/') ? resolveAssetUrl(c.avatar) : c.avatar) : null;
+                  const pinned = pinnedContactIds.includes(c.id);
                   return (
-                  <button key={c.id} onClick={() => selectContactWithHistory(c.id)}
-                    className="w-full flex items-center gap-3 bg-card border border-border p-3.5 rounded-xl hover:border-primary/30 active:scale-[0.98] transition-all">
+                  <button key={c.id} onClick={() => openContact(c.id)}
+                    onPointerDown={() => beginContactPress(c.id)} onPointerUp={endContactPress} onPointerCancel={endContactPress} onPointerLeave={endContactPress}
+                    onContextMenu={(event) => { event.preventDefault(); endContactPress(); setContactActionId(c.id); }}
+                    aria-label={`${c.name}${pinned ? ', закреплён' : ''}. Удерживайте, чтобы изменить закрепление.`}
+                    className="w-full flex items-center gap-3 bg-card border border-border p-3.5 rounded-xl hover:border-primary/30 active:scale-[0.99] transition-[transform,border-color] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60">
                     <div className="relative shrink-0">
                       <div className="w-11 h-11 rounded-full bg-muted flex items-center justify-center text-foreground font-display font-bold text-sm overflow-hidden">
                         {cAvatar ? <img src={cAvatar} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : c.name.charAt(0)}
@@ -1074,8 +1188,8 @@ export default function Chat() {
                       )}
                     </div>
                     <div className="flex-1 text-left min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">{c.name}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{c.role}</p>
+                      <div className="flex items-center gap-1.5"><p className="text-sm font-semibold text-foreground truncate">{c.name}</p>{pinned && <Pin className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />}</div>
+                      <p className="text-[12px] text-muted-foreground truncate">{[c.role, c.company].filter(Boolean).join(' · ')}</p>
                     </div>
                     <ChevronRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   </button>
@@ -1196,6 +1310,23 @@ export default function Chat() {
             </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {contactActionId && (() => {
+          const actionContact = dmContacts.find((item) => item.id === contactActionId);
+          if (!actionContact) return null;
+          const pinned = pinnedContactIds.includes(actionContact.id);
+          return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[70] flex items-end justify-center bg-black/60 p-3 backdrop-blur-sm min-[480px]:items-center" onClick={() => setContactActionId(null)}>
+            <motion.section role="dialog" aria-modal="true" aria-labelledby="contact-action-title" initial={{ y: 28, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }} transition={{ duration: .2, ease: [0.32, .72, 0, 1] }} onClick={(event) => event.stopPropagation()} className="w-full max-w-sm rounded-3xl border border-border bg-background p-5 shadow-2xl" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-primary">Контакт</p>
+              <h2 id="contact-action-title" className="mt-1 font-display text-[19px] font-bold leading-snug">{actionContact.name}</h2>
+              <p className="mt-1 text-[13px] text-foreground/55">{[actionContact.role, actionContact.company].filter(Boolean).join(' · ')}</p>
+              <button type="button" onClick={() => void toggleContactPin(actionContact.id)} className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[14px] font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70">{pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}{pinned ? 'Открепить контакт' : 'Закрепить контакт'}</button>
+              <button type="button" onClick={() => setContactActionId(null)} className="mt-2 min-h-11 w-full rounded-xl border border-border px-4 text-[14px] font-semibold text-foreground/70">Отмена</button>
+            </motion.section>
+          </motion.div>;
+        })()}
       </AnimatePresence>
 
       {/* Context menu */}

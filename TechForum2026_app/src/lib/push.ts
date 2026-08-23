@@ -8,7 +8,7 @@
 
 import { resolveApiUrl, authFetch } from './runtimeEndpoint';
 import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
-import { FirebaseMessaging } from '@capacitor-firebase/messaging';
+import { FirebaseMessaging, Importance } from '@capacitor-firebase/messaging';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
@@ -78,6 +78,17 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     return false;
   }
   try {
+    if (Capacitor.getPlatform() === 'android') {
+      await FirebaseMessaging.createChannel({
+        id: 'techpravo_updates',
+        name: 'ТехнологИИ Права',
+        description: 'Программа форума, сообщения и важные объявления',
+        importance: Importance.High,
+        lights: true,
+        lightColor: '#00FFFF',
+        vibration: true,
+      });
+    }
     let perm;
     try {
       perm = await FirebaseMessaging.checkPermissions();

@@ -336,6 +336,21 @@ export const dmPins = pgTable(
   }),
 );
 
+// Закреплённые контакты — отдельная пользовательская настройка. Храним на
+// сервере, чтобы порядок диалогов не терялся после переустановки или смены ОС.
+export const contactPins = pgTable(
+  'contact_pins',
+  {
+    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    contactUserId: text('contact_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.contactUserId] }),
+    userIdx: index('contact_pins_user_idx').on(t.userId, t.pinnedAt),
+  }),
+);
+
 export const userBlocks = pgTable('user_blocks', {
   blockerId: text('blocker_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   blockedId: text('blocked_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

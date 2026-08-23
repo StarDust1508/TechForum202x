@@ -105,7 +105,7 @@ export default function Faq() {
           </p>
           <p className="mt-1 text-[12px] text-foreground/40">Не нашли ответ? Мы на связи.</p>
           <div className="mt-4 flex justify-center gap-2">
-            <a href="mailto:info@tech-pravo.ru" className="inline-flex items-center gap-1.5 rounded-xl border border-accent/25 bg-accent/[0.07] px-3 py-2 text-[11px] font-bold text-accent"><Mail className="w-3.5 h-3.5" /> Email</a>
+            <a href="mailto:tickets@notify.tech-pravo.ru" className="inline-flex items-center gap-1.5 rounded-xl border border-accent/25 bg-accent/[0.07] px-3 py-2 text-[11px] font-bold text-accent"><Mail className="w-3.5 h-3.5" /> Email</a>
             <a href="https://t.me/CEO_WYRM1" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-xl border border-primary/25 bg-primary/[0.07] px-3 py-2 text-[11px] font-bold text-primary"><Send className="w-3.5 h-3.5" /> Telegram</a>
           </div>
         </div>

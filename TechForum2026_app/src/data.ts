@@ -196,7 +196,7 @@ export const EVENT_META: EventMeta = {
   city: 'Москва',
   timezone: 'Europe/Moscow',
   organizer: 'Технологии права',
-  organizerEmail: 'info@tech-pravo.ru',
+  organizerEmail: 'tickets@notify.tech-pravo.ru',
   url: 'https://tech-pravo.ru',
 };
 

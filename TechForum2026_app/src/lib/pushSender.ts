@@ -5,7 +5,7 @@
 // Это позволяет деплоить инфру до настройки FCM проекта (DevOps task).
 //
 // Public API:
-//  - initFcm(): boolean — вызывается на startup сервера. Возвращает true
+//  - initFcm(): Promise<boolean> — вызывается на startup сервера. Возвращает true
 //    если credentials валидные. Безопасно вызывать несколько раз.
 //  - sendPushToUser(userId, payload): шлёт всем токенам юзера. Параллельно
 //    GC мёртвых токенов (invalid-registration → DELETE FROM push_tokens).
@@ -33,7 +33,7 @@ let messaging: import('firebase-admin/messaging').Messaging | null = null;
 let initialized = false;
 let disabled = false;
 
-export function initFcm(): boolean {
+export async function initFcm(): Promise<boolean> {
   if (initialized) return !disabled;
   initialized = true;
   const saPath = (process.env.FCM_SERVICE_ACCOUNT_PATH ?? '').trim();
@@ -48,11 +48,11 @@ export function initFcm(): boolean {
     return false;
   }
   try {
-    // Lazy import чтобы firebase-admin не загружался когда disabled
-    // (cold-start time saving + меньше memory).
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const appModule = require('firebase-admin/app') as typeof import('firebase-admin/app');
-    const messagingModule = require('firebase-admin/messaging') as typeof import('firebase-admin/messaging');
+    // Проект работает как ESM (`type: module`), поэтому CommonJS require здесь
+    // аварийно падал бы сразу после подключения реального ключа Firebase.
+    // Динамический import сохраняет ленивую загрузку SDK без этой несовместимости.
+    const appModule = await import('firebase-admin/app');
+    const messagingModule = await import('firebase-admin/messaging');
     const app = appModule.getApps()[0] ?? appModule.initializeApp({ credential: appModule.cert(saPath) });
     messaging = messagingModule.getMessaging(app);
     log.info('fcm', 'initialized — push delivery is live');
@@ -108,7 +108,14 @@ export async function sendPushToUser(
     token: t.token,
     notification: { title: payload.title, body: payload.body },
     data: payload.data ?? {},
-    android: { priority: (payload.priority ?? 'high') as 'high' | 'normal' },
+    android: {
+      priority: (payload.priority ?? 'high') as 'high' | 'normal',
+      notification: {
+        channelId: 'techpravo_updates',
+        icon: 'ic_stat_techpravo',
+        color: '#00FFFF',
+      },
+    },
   }));
 
   let successCount = 0;

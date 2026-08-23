@@ -1,7 +1,7 @@
 {
   "name": "techforum2026",
   "private": true,
-  "version": "1.8.6",
+  "version": "1.8.7",
   "type": "module",
   "engines": {
     "node": ">=22.12 <23"
@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "build:android": "VITE_BUILD_SHORT_SHA=$(git rev-parse --short HEAD) vite build --mode android",
+    "build:ios": "VITE_BUILD_SHORT_SHA=$(git rev-parse --short HEAD) vite build --mode ios",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
@@ -17,8 +19,8 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "android:store": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease bundleRelease",
-    "ios:sync": "CAP_APP_ID=ru.techpravo.conference npx cap sync ios"
+    "android:store": "npm run build:android && npx cap sync android && cd android && ./gradlew assembleRelease bundleRelease",
+    "ios:sync": "npm run build:ios && CAP_APP_ID=ru.techpravo.conference npx cap sync ios"
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.4.0",

@@ -54,7 +54,7 @@ function downloadCalendar(sessions: Session[], days: Day[], filename: string) {
       summary: session.title,
       description: [session.description, session.speakerName && session.speakerName !== '—' ? `Спикеры: ${session.speakerName}` : ''].filter(Boolean).join('\n'),
       location: session.location || 'БЦ «Красные Ворота», Москва',
-      organizer: { name: 'ТехнологИИ Права', email: 'info@tech-pravo.ru' },
+      organizer: { name: 'ТехнологИИ Права', email: 'tickets@notify.tech-pravo.ru' },
       url: 'https://tech-pravo.ru/conference',
     }];
   });

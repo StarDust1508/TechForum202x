@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Monochrome status-bar variant of the brand mark. Android applies the
+     notification tint, so the source must contain a single opaque color. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M58,53H388V87H58ZM58,129H388V163H58ZM58,205H388V239H58ZM124,267H454V301H124ZM124,343H454V377H124ZM124,419H454V453H124ZM86,261A23,23 0,1 0,86 307A23,23 0,1 0,86 261ZM86,337A23,23 0,1 0,86 383A23,23 0,1 0,86 337ZM86,413A23,23 0,1 0,86 459A23,23 0,1 0,86 413ZM426,47A23,23 0,1 0,426 93A23,23 0,1 0,426 47ZM426,123A23,23 0,1 0,426 169A23,23 0,1 0,426 123ZM426,199A23,23 0,1 0,426 245A23,23 0,1 0,426 199Z" />
+</vector>

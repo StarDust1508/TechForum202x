@@ -2,10 +2,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Calendar, ChevronRight, Sparkles, Clock3, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useState, useEffect } from 'react';
-import { TRACKS } from '../data';
 import PageShell from '@/src/components/ui/PageShell';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
-import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
+import { fetchCachedJson, readCachedPublicJson } from '@/src/lib/cachedPublicApi';
 
 // Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
 // программы (id спикеров сохранены → связка работает для программных спикеров).
@@ -21,6 +20,18 @@ interface ApiSpeaker {
   trackId: string;
 }
 
+interface ApiTrack { id: string; name: string; shortLabel: string; }
+interface ApiDay { id: string; label: string; weekday: string; }
+interface ApiSession {
+  id: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  dayId: string;
+  location: string;
+  speakerIds: string[];
+}
+
 const cleanField = (value?: string | null) => {
   const normalized = (value || '').trim();
   return normalized && normalized !== '—' && normalized !== '-' ? normalized : '';
@@ -30,22 +41,42 @@ const cleanTopic = (value?: string | null) => cleanField(value)
   .replace(/^тема\s*:\s*/i, '')
   .trim();
 
+const sessionCountLabel = (count: number) => {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'выступлений';
+  if (mod10 === 1) return 'выступление';
+  if (mod10 >= 2 && mod10 <= 4) return 'выступления';
+  return 'выступлений';
+};
+
 export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [speaker, setSpeaker] = useState<ApiSpeaker | null>(null);
-  const [speakerSessions, setSpeakerSessions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cachedSpeakers = readCachedPublicJson<ApiSpeaker[]>('/speakers') ?? [];
+  const cachedSessions = readCachedPublicJson<ApiSession[]>('/sessions') ?? [];
+  const [speaker, setSpeaker] = useState<ApiSpeaker | null>(() => cachedSpeakers.find((item) => item.id === id) ?? null);
+  const [speakerSessions, setSpeakerSessions] = useState<ApiSession[]>(() => cachedSessions.filter((item) => item.speakerIds?.includes(id || '')));
+  const [tracks, setTracks] = useState<ApiTrack[]>(() => readCachedPublicJson<ApiTrack[]>('/tracks') ?? []);
+  const [days, setDays] = useState<ApiDay[]>(() => readCachedPublicJson<ApiDay[]>('/days') ?? []);
+  const [loading, setLoading] = useState(cachedSpeakers.length === 0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [speakerResult, sessionResult] = await Promise.all([fetchCachedJson<ApiSpeaker[]>('/speakers'), fetchCachedJson<any[]>('/sessions')]);
+        const [speakerResult, sessionResult, trackResult, dayResult] = await Promise.all([
+          fetchCachedJson<ApiSpeaker[]>('/speakers'),
+          fetchCachedJson<ApiSession[]>('/sessions'),
+          fetchCachedJson<ApiTrack[]>('/tracks'),
+          fetchCachedJson<ApiDay[]>('/days'),
+        ]);
         if (!cancelled) {
           setSpeaker(Array.isArray(speakerResult.data) ? (speakerResult.data.find((s) => s.id === id) ?? null) : null);
-          setSpeakerSessions(Array.isArray(sessionResult.data) ? sessionResult.data.filter((session: any) => session.speakerIds?.includes(id)) : []);
+          setSpeakerSessions(Array.isArray(sessionResult.data) ? sessionResult.data.filter((session) => session.speakerIds?.includes(id || '')) : []);
+          setTracks(Array.isArray(trackResult.data) ? trackResult.data : []);
+          setDays(Array.isArray(dayResult.data) ? dayResult.data : []);
         }
       } catch {
         /* offline */
@@ -81,7 +112,12 @@ export default function SpeakerDetail() {
     );
   }
 
-  const track = TRACKS.find((t) => t.id === speaker.trackId);
+  const track = tracks.find((t) => t.id === speaker.trackId);
+  const dayIndex = new Map(days.map((day, index) => [day.id, index]));
+  const dayById = new Map(days.map((day) => [day.id, day]));
+  const orderedSessions = [...speakerSessions].sort((a, b) =>
+    (dayIndex.get(a.dayId) ?? 999) - (dayIndex.get(b.dayId) ?? 999)
+      || a.startTime.localeCompare(b.startTime));
   const bioParagraphs = cleanField(speaker.bio).split('\n\n').filter(Boolean);
   const identity = [cleanField(speaker.role), cleanField(speaker.company)].filter(Boolean).join(' · ');
 
@@ -109,11 +145,11 @@ export default function SpeakerDetail() {
           {track && (
             <p className="text-[14px] text-foreground/60">
               Трек:{' '}
-              <span className="text-foreground" style={{ color: track.color }}>{track.name}</span>
+              <span className="text-foreground">{track.name}</span>
             </p>
           )}
           <p className="text-[14px] text-foreground/60">
-            {speakerSessions.length} {speakerSessions.length === 1 ? 'выступление' : 'выступления'} на форуме
+            {speakerSessions.length} {sessionCountLabel(speakerSessions.length)} на форуме
           </p>
         </div>
       </motion.section>
@@ -149,7 +185,8 @@ export default function SpeakerDetail() {
             Выступления на форуме
           </h2>
           <div className="space-y-3">
-            {speakerSessions.map((s) => {
+            {orderedSessions.map((s) => {
+              const day = dayById.get(s.dayId);
               return (
                 <Link
                   key={s.id}
@@ -160,7 +197,7 @@ export default function SpeakerDetail() {
                   <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-[13px] text-foreground/60">
                     <span className="inline-flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-accent" strokeWidth={1.8} />
-                      {s.day || ''}
+                      {[day?.label, day?.weekday].filter(Boolean).join(' · ')}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <Clock3 className="w-3 h-3 text-accent" strokeWidth={1.8} />
@@ -172,7 +209,7 @@ export default function SpeakerDetail() {
                     </span>
                   </div>
                   <div className="mt-3 inline-flex min-h-8 items-center gap-1 text-[13px] font-semibold text-primary">
-                    Открыть в программе
+                    Показать это выступление в программе
                     <ChevronRight className="w-3 h-3" strokeWidth={1.8} />
                   </div>
                 </Link>

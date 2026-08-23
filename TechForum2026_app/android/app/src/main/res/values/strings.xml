@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">ТехнологИИ Права</string>
     <string name="title_activity_main">ТехнологИИ Права</string>
+    <string name="default_notification_channel_id">techpravo_updates</string>
 </resources>

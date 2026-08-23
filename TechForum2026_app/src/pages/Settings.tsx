@@ -19,7 +19,12 @@ import {
 import PageShell from '@/src/components/ui/PageShell';
 import BrandLogo from '@/src/components/BrandLogo';
 import { hapticSelection } from '@/src/lib/haptics';
-import { getPushNotificationState, registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
+import {
+  PUSH_SERVICE_CONFIGURED,
+  getPushNotificationState,
+  registerPushNotifications,
+  unregisterPushNotifications,
+} from '@/src/lib/push';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
 import { cn } from '@/src/lib/utils';
@@ -51,12 +56,12 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
 
 Вы можете в любой момент:
-— скачать копию своих данных (запрос через info@tech-pravo.ru);
+— скачать копию своих данных (запрос через tickets@notify.tech-pravo.ru);
 — удалить аккаунт через профиль (необратимо).
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.6';
+const APP_VERSION = '1.8.7';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -70,6 +75,7 @@ function NotificationsPage() {
   const [hint, setHint] = useState<string | null>(null);
   const [previewHidden, setPreviewHidden] = useState<boolean>(false);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
 
   // Подгружаем фактическое разрешение ОС + регистрацию устройства в БД.
   // localStorage больше не является источником истины для положения тумблера.
@@ -147,6 +153,28 @@ function NotificationsPage() {
     }
     setBusy(false);
   };
+
+  const sendTest = async () => {
+    if (testBusy || !enabled) return;
+    setTestBusy(true);
+    setHint(null);
+    try {
+      const response = await authFetch(resolveApiUrl('/me/push-test'), {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const result = await response.json().catch(() => null) as { deliveredDevices?: number; error?: string } | null;
+      if (!response.ok) throw new Error(result?.error || `push_test_${response.status}`);
+      setHint(`Тест отправлен на ${result?.deliveredDevices ?? 0} устройство. Сверните приложение и проверьте уведомление.`);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      setHint(code === 'push_not_configured'
+        ? 'Сервис доставки ещё не подключён на сервере.'
+        : 'Тест не доставлен. Проверьте разрешение телефона и повторите попытку.');
+    } finally {
+      setTestBusy(false);
+    }
+  };
   return (
     <div className="space-y-3">
       <button
@@ -193,6 +221,18 @@ function NotificationsPage() {
           новые сообщения, объявления оргкомитета. Отключение применяется
           мгновенно и не требует переустановки.
         </p>
+      )}
+
+      {enabled && (
+        <button
+          type="button"
+          onClick={() => void sendTest()}
+          disabled={testBusy}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/35 px-4 text-[14px] font-semibold text-primary transition-colors hover:bg-primary/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-60"
+        >
+          {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
+          Отправить тестовое уведомление
+        </button>
       )}
 
       {/* Round 7: privacy-toggle. Только если push-уведомления вообще включены —
@@ -292,8 +332,9 @@ function TelegramLinkPage() {
       const data = await r.json();
       const link = String(data?.deepLink || '');
       if (!link) { setError('Не удалось создать ссылку. Попробуйте позже.'); return; }
-      const w = window.open(link, '_blank', 'noopener,noreferrer');
-      if (!w) setManualLink(link); // всплывашка заблокирована — показываем ссылку вручную
+      // window.open после await часто блокируется WebView как popup. Сначала
+      // создаём устойчивую ссылку, затем пользователь открывает её явным тапом.
+      setManualLink(link);
     } catch {
       setError('Нет соединения с сервером');
     } finally {
@@ -362,26 +403,25 @@ function TelegramLinkPage() {
       ) : (
         <div className="space-y-4">
           {error && <p className="text-[13px] font-semibold text-rose-300 text-center">{error}</p>}
-          <button
+          {!manualLink ? <button
             type="button"
             disabled={busy}
             onClick={startLink}
             className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
           >
-            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : (<><Send className="w-4 h-4" strokeWidth={1.9} /> Привязать Telegram</>)}
-          </button>
-          {manualLink && (
+            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : (<><Send className="w-4 h-4" strokeWidth={1.9} /> Создать ссылку</>)}
+          </button> : (
             <a
               href={manualLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="block text-center text-[13px] text-accent underline"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-center text-[15px] font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
             >
-              Открыть @NeuroPravo_Bot вручную
+              <Send className="h-4 w-4" /> Открыть @NeuroPravo_Bot
             </a>
           )}
           <p className="text-[12px] text-foreground/45 text-center leading-relaxed">
-            Откроется бот в Telegram — нажмите «Start». Вернитесь сюда, статус обновится сам.
+            После открытия нажмите «Start» в боте и вернитесь сюда — статус обновится автоматически.
           </p>
         </div>
       )}
@@ -448,7 +488,9 @@ export default function Settings() {
   }, [section]);
 
   const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
-    { key: 'notifications', icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' },
+    ...(PUSH_SERVICE_CONFIGURED
+      ? [{ key: 'notifications' as const, icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' }]
+      : []),
     { key: 'telegram', icon: Send, label: 'Привязка Telegram', sub: 'Для безопасного сброса пароля' },
     { key: 'terms', icon: FileText, label: 'Условия использования', sub: 'Правила форума' },
     { key: 'privacy', icon: ShieldCheck, label: 'Согласие на обработку ПД', sub: '152-ФЗ' },
@@ -582,7 +624,7 @@ export default function Settings() {
                   </div>
                   <p className="text-[12px] text-foreground/50 leading-relaxed">Организатор — команда «ТехнологИИ Права». Москва, 25–26 сентября 2026 года, БЦ «Красные Ворота».</p>
                   <p className="text-[12px] text-foreground/40 leading-relaxed">
-                    Поддержка: info@tech-pravo.ru<br />
+                    Поддержка: tickets@notify.tech-pravo.ru<br />
                     Telegram: @CEO_WYRM1 · @TechPravoAI<br />
                     Сайт: tech-pravo.ru
                   </p>

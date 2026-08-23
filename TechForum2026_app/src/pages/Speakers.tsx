@@ -1,10 +1,9 @@
 import { Search, ChevronRight, RefreshCw, Users } from 'lucide-react';
-import { motion } from 'motion/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
-import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
+import { fetchCachedJson, readCachedPublicJson } from '@/src/lib/cachedPublicApi';
 
 // Спикеры тянутся из API (GET /speakers), который живым синком отражает
 // опубликованных спикеров сайта — с фото. Новые спикеры появляются сами,
@@ -30,9 +29,12 @@ const cleanTopic = (value?: string | null) => cleanField(value)
   .trim();
 
 export default function Speakers() {
-  const [search, setSearch] = useState('');
-  const [speakers, setSpeakers] = useState<ApiSpeaker[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialSpeakers = useMemo(() => readCachedPublicJson<ApiSpeaker[]>('/speakers') || [], []);
+  const [search, setSearch] = useState(() => {
+    try { return sessionStorage.getItem('tp_speakers_search') || ''; } catch { return ''; }
+  });
+  const [speakers, setSpeakers] = useState<ApiSpeaker[]>(initialSpeakers);
+  const [loading, setLoading] = useState(initialSpeakers.length === 0);
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
@@ -51,10 +53,59 @@ export default function Speakers() {
     return () => { cancelled = true; };
   }, []);
 
-  const filteredSpeakers = speakers.filter(s =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    (s.company || '').toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    try { sessionStorage.setItem('tp_speakers_search', search); } catch { /* noop */ }
+  }, [search]);
+
+  // Возврат из карточки восстанавливает ровно тот фрагмент списка, который
+  // пользователь только что смотрел. На обычном новом входе список начинается
+  // сверху, поэтому старое положение не «прилипает» навсегда.
+  useEffect(() => {
+    if (loading) return;
+    let shouldRestore = false;
+    let savedTop = 0;
+    let selectedSpeakerId = '';
+    try {
+      shouldRestore = sessionStorage.getItem('tp_speakers_restore') === '1';
+      savedTop = Number(sessionStorage.getItem('tp_speakers_scroll') || '0');
+      selectedSpeakerId = sessionStorage.getItem('tp_speakers_selected') || '';
+    } catch { /* noop */ }
+    if (!shouldRestore || !Number.isFinite(savedTop)) return;
+    let restoreTimer = 0;
+    const frame = requestAnimationFrame(() => {
+      restoreTimer = window.setTimeout(() => {
+        try { sessionStorage.removeItem('tp_speakers_restore'); } catch { /* noop */ }
+        const selectedCard = selectedSpeakerId
+          ? document.getElementById(`speaker-card-${selectedSpeakerId}`)
+          : null;
+        if (selectedCard) {
+          selectedCard.scrollIntoView({ block: 'center', behavior: 'auto' });
+          selectedCard.focus({ preventScroll: true });
+          return;
+        }
+        const scroller = document.querySelector<HTMLElement>('[data-app-scroll-container]');
+        if (scroller) scroller.scrollTop = savedTop;
+      }, 340);
+    });
+    return () => { cancelAnimationFrame(frame); window.clearTimeout(restoreTimer); };
+  }, [loading]);
+
+  const openSpeaker = (speakerId: string) => {
+    const scroller = document.querySelector<HTMLElement>('[data-app-scroll-container]');
+    try {
+      sessionStorage.setItem('tp_speakers_scroll', String(scroller?.scrollTop || 0));
+      sessionStorage.setItem('tp_speakers_selected', speakerId);
+      sessionStorage.setItem('tp_speakers_restore', '1');
+    } catch { /* noop */ }
+    navigate(`/speakers/${speakerId}`);
+  };
+
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredSpeakers = speakers.filter((speaker) => [speaker.name, speaker.role, speaker.company, speaker.topic]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+    .includes(normalizedSearch));
 
   return (
     <div className="relative mx-auto flex-1 w-full max-w-[44rem] space-y-5 px-4 min-[360px]:px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
@@ -103,15 +154,13 @@ export default function Speakers() {
       )}
 
       {!loading && !error && <div className="space-y-3">
-        {filteredSpeakers.map((speaker, idx) => (
-          <motion.button
+        {filteredSpeakers.map((speaker) => (
+          <button
             key={speaker.id}
+            id={`speaker-card-${speaker.id}`}
             type="button"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: Math.min(idx * 0.04, 0.4), ease: [0.32, 0.72, 0, 1] }}
-            onClick={() => navigate(`/speakers/${speaker.id}`)}
-            className="block w-full rounded-3xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 min-[380px]:p-5"
+            onClick={() => openSpeaker(speaker.id)}
+            className="block h-[252px] w-full overflow-hidden rounded-3xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 min-[380px]:p-5"
           >
             <div className="flex gap-4">
               {speaker.avatarUrl ? (
@@ -131,9 +180,9 @@ export default function Speakers() {
               )}
               {/* Иерархия: имя (крупно, переносится) → роль (приглушённо) → компания (акцент) */}
               <div className="flex-1 min-w-0 self-center">
-                <h3 className="text-[18px] font-bold leading-snug text-foreground [overflow-wrap:anywhere]">{speaker.name}</h3>
-                {cleanField(speaker.role) && <p className="mt-1 text-[14px] leading-snug text-foreground/75">{cleanField(speaker.role)}</p>}
-                {cleanField(speaker.company) && <p className="mt-1 text-[14px] font-semibold leading-snug text-primary/90">{cleanField(speaker.company)}</p>}
+                <h3 className="line-clamp-2 text-[18px] font-bold leading-snug text-foreground [overflow-wrap:anywhere]">{speaker.name}</h3>
+                {cleanField(speaker.role) && <p className="mt-1 line-clamp-2 text-[14px] leading-snug text-foreground/75">{cleanField(speaker.role)}</p>}
+                {cleanField(speaker.company) && <p className="mt-1 line-clamp-1 text-[14px] font-semibold leading-snug text-primary/90">{cleanField(speaker.company)}</p>}
               </div>
               <ChevronRight className="w-5 h-5 text-foreground/25 shrink-0 self-center" />
             </div>
@@ -141,10 +190,10 @@ export default function Speakers() {
             {cleanTopic(speaker.topic) && (
               <div className="mt-4 border-l-2 border-accent/50 pl-3.5">
                 <p className="mb-1 text-[12px] font-bold uppercase tracking-[0.1em] text-accent/80">Тема доклада</p>
-                <p className="text-[15px] leading-relaxed text-foreground/90">«{cleanTopic(speaker.topic)}»</p>
+                <p className="line-clamp-3 text-[15px] leading-relaxed text-foreground/90">«{cleanTopic(speaker.topic)}»</p>
               </div>
             )}
-          </motion.button>
+          </button>
         ))}
       </div>}
 

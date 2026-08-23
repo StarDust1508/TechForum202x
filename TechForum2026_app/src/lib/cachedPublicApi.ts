@@ -1,7 +1,10 @@
 import { resolveApiUrl } from './runtimeEndpoint';
 import bootstrap from '../bootstrapPublicData.json';
 
-const prefix = 'tp_public_cache_v3:';
+// v4 инвалидирует старый снимок, где было 29 спикеров и 33 сессии. Без смены
+// пространства ключей обновлённая сборка могла продолжать показывать старую
+// программу офлайн, пока первый сетевой запрос не завершится успешно.
+const prefix = 'tp_public_cache_v4:';
 
 const bundledByPath: Record<string, unknown> = {
   '/days': bootstrap.days,
@@ -10,6 +13,16 @@ const bundledByPath: Record<string, unknown> = {
   '/sessions': bootstrap.sessions,
   '/partners': bootstrap.partners,
 };
+
+/** Мгновенный снимок для экранов, которые не должны мигать skeleton-ом при возврате. */
+export function readCachedPublicJson<T>(path: string): T | undefined {
+  const key = `${prefix}${path}`;
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) || 'null') as { data?: T } | null;
+    if (cached?.data !== undefined) return cached.data;
+  } catch { /* corrupted cache */ }
+  return bundledByPath[path] as T | undefined;
+}
 
 export async function fetchCachedJson<T>(path: string): Promise<{ data: T; stale: boolean }> {
   const key = `${prefix}${path}`;
@@ -28,8 +41,8 @@ export async function fetchCachedJson<T>(path: string): Promise<{ data: T; stale
     return { data, stale: false };
   } catch (error) {
     try {
-      const cached = JSON.parse(localStorage.getItem(key) || 'null') as { data?: T } | null;
-      if (cached?.data !== undefined) return { data: cached.data, stale: true };
+      const cached = readCachedPublicJson<T>(path);
+      if (cached !== undefined) return { data: cached, stale: true };
     } catch { /* corrupted cache */ }
     const bundled = bundledByPath[path] as T | undefined;
     if (bundled !== undefined) return { data: bundled, stale: true };

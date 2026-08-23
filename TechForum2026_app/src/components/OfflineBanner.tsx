@@ -5,7 +5,7 @@
 //          плавно при потере связи, исчезает при восстановлении. Заменяет
 //          per-form ошибки "Failed to fetch" — юзер сразу видит источник
 //          проблемы, не проваливается в технические сообщения.
-// SCOPE: Только UI + подписка на window online/offline events.
+// SCOPE: UI + системный hint online/offline + проверка доступности API.
 // INPUT: Нет.
 // OUTPUT: JSX (fixed top), либо null если онлайн.
 // KEYWORDS: DOMAIN(6): UIChrome; CONCEPT(7): NetworkStatus; TECH(5): React
@@ -13,11 +13,10 @@
 // END_MODULE_CONTRACT
 //
 // START_RATIONALE:
-// Q: Почему navigator.onLine, а не периодический ping /health?
-// A: navigator.onLine надёжен на мобильных (Android/iOS) — событие
-//    срабатывает мгновенно при выключении WiFi/мобильных данных. Ping-based
-//    подход порождает false-positive при медленной сети + тратит трафик.
-//    На WebView Android navigator.onLine синхронен с системой.
+// Q: Почему одного navigator.onLine недостаточно?
+// A: Android WebView кратковременно сообщает offline при смене VPN-маршрута,
+//    хотя HTTPS API уже доступен. Поэтому системное событие — только сигнал
+//    перепроверить сеть. Баннер показывается после двух неуспешных API-проб.
 //
 // Q: Почему position fixed top, а не toast?
 // A: Toast исчезает по таймауту — юзер может пропустить. Persistent banner
@@ -30,48 +29,90 @@
 //                       AnimatePresence + safe-area-inset-top для notch.]
 // END_CHANGE_SUMMARY
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { WifiOff } from 'lucide-react';
+import { fetchWithTimeout, resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
 export default function OfflineBanner() {
-  const [online, setOnline] = useState<boolean>(() => {
-    if (typeof navigator === 'undefined') return true;
-    return navigator.onLine;
-  });
+  const [offline, setOffline] = useState(false);
+  const failuresRef = useRef(0);
+  const probeIdRef = useRef(0);
+
+  const verifyConnection = useCallback(async () => {
+    const probeId = ++probeIdRef.current;
+    try {
+      const response = await fetchWithTimeout(resolveApiUrl('/health'), {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'x-connectivity-probe': '1' },
+      }, 3_500);
+      if (probeId !== probeIdRef.current) return;
+      if (!response.ok) throw new Error(`health_${response.status}`);
+      failuresRef.current = 0;
+      setOffline(false);
+    } catch {
+      if (probeId !== probeIdRef.current) return;
+      failuresRef.current += 1;
+      // Не показываем ложную тревогу во время краткой перестройки VPN/DNS.
+      if (failuresRef.current >= 2) setOffline(true);
+    }
+  }, []);
 
   useEffect(() => {
-    const onOnline = () => setOnline(true);
-    const onOffline = () => setOnline(false);
+    let retryTimer: number | undefined;
+    let offlinePoll: number | undefined;
+    const clearRetry = () => {
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      retryTimer = undefined;
+    };
+    const probeWithConfirmation = () => {
+      clearRetry();
+      void verifyConnection();
+      retryTimer = window.setTimeout(() => { void verifyConnection(); }, 1_200);
+    };
+    const onOnline = () => {
+      // Успешный системный сигнал сразу убирает устаревший баннер; API-проба
+      // подтверждает состояние без визуальной задержки.
+      failuresRef.current = 0;
+      setOffline(false);
+      probeWithConfirmation();
+    };
+    const onOffline = () => probeWithConfirmation();
     window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
-    // Sync на mount — навигация / hot-reload могли пропустить event.
-    setOnline(navigator.onLine);
+    // На старте и при уже показанном баннере проверяем именно рабочий API.
+    void verifyConnection();
+    offlinePoll = window.setInterval(() => {
+      if (offline || !navigator.onLine) void verifyConnection();
+    }, 8_000);
     return () => {
+      clearRetry();
+      if (offlinePoll !== undefined) window.clearInterval(offlinePoll);
+      probeIdRef.current += 1;
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
     };
-  }, []);
+  }, [offline, verifyConnection]);
 
   return (
     <AnimatePresence>
-      {!online && (
+      {offline && (
         <motion.div
-          initial={{ y: -60, opacity: 0 }}
+          initial={{ y: -18, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -60, opacity: 0 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          className="fixed left-0 right-0 z-[100] bg-rose-500/95 backdrop-blur-md text-white shadow-[0_8px_28px_rgba(244,63,94,0.35)]"
+          exit={{ y: -12, opacity: 0 }}
+          transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+          className="pointer-events-none fixed left-3 right-3 z-[100] rounded-2xl border border-amber-300/30 bg-[#191711]/95 text-amber-50 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md"
           style={{
-            top: 0,
-            paddingTop: 'calc(env(safe-area-inset-top, 0px) + 10px)',
-            paddingBottom: 10,
+            top: 'calc(env(safe-area-inset-top, 0px) + 8px)',
           }}
-          role="alert"
+          role="status"
+          aria-live="polite"
         >
-          <div className="flex items-center justify-center gap-2 px-4 text-[14px] font-semibold tracking-[0.01em]">
-            <WifiOff className="w-[18px] h-[18px]" />
-            <span>Нет интернета — не все данные могут загрузиться</span>
+          <div className="flex min-h-11 items-center justify-center gap-2 px-4 py-2 text-[13px] font-semibold leading-snug">
+            <WifiOff className="h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>Связь с сервером прервана. Показываем сохранённые данные.</span>
           </div>
         </motion.div>
       )}

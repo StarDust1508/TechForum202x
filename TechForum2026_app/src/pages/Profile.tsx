@@ -29,12 +29,12 @@ interface ProfileProps {
 }
 
 const fields = [
-  { key: 'name', label: 'Имя', icon: User, type: 'text', placeholder: 'Иванов Иван Иванович' },
-  { key: 'email', label: 'Email', icon: Mail, type: 'email', placeholder: 'email@example.com' },
-  { key: 'phone', label: 'Телефон', icon: Phone, type: 'tel', placeholder: '+7 (999) 123-45-67' },
-  { key: 'company', label: 'Компания', icon: Building2, type: 'text', placeholder: 'ООО «Компания»' },
-  { key: 'workplace', label: 'Место работы', icon: Briefcase, type: 'text', placeholder: 'Должность / отдел' },
-  { key: 'education', label: 'Место учёбы', icon: GraduationCap, type: 'text', placeholder: 'Университет / курс' },
+  { key: 'name', label: 'Имя', icon: User, type: 'text', autoComplete: 'name', placeholder: 'Иванов Иван Иванович' },
+  { key: 'email', label: 'Email', icon: Mail, type: 'email', autoComplete: 'email', placeholder: 'email@example.com' },
+  { key: 'phone', label: 'Телефон', icon: Phone, type: 'tel', autoComplete: 'tel', placeholder: '+7 (999) 123-45-67' },
+  { key: 'company', label: 'Компания', icon: Building2, type: 'text', autoComplete: 'organization', placeholder: 'ООО «Компания»' },
+  { key: 'workplace', label: 'Место работы', icon: Briefcase, type: 'text', autoComplete: 'organization-title', placeholder: 'Должность / отдел' },
+  { key: 'education', label: 'Место учёбы', icon: GraduationCap, type: 'text', autoComplete: 'off', placeholder: 'Университет / курс' },
 ] as const;
 
 type FieldKey = (typeof fields)[number]['key'];
@@ -275,6 +275,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
           {/* Small "+" button to change avatar */}
           <button
             type="button"
+            aria-label="Изменить фотографию профиля"
             disabled={uploadingAvatar}
             onClick={() => fileInputRef.current?.click()}
             className="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-primary border-[3px] border-background flex items-center justify-center text-primary-foreground shadow-lg active:scale-90 transition-transform disabled:opacity-50 z-10"
@@ -304,17 +305,21 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
               transition={{ delay: i * 0.04 }}
               className="space-y-2"
             >
-              <label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
+              <label htmlFor={`profile-${field.key}`} className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
                 {field.label}
               </label>
               <div className="relative">
                 <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
                 <input
+                  id={`profile-${field.key}`}
+                  name={field.key}
                   type={field.type}
+                  autoComplete={field.autoComplete}
                   value={editForm[field.key]}
                   placeholder={field.placeholder}
                   onChange={e => handleFieldChange(field.key, e.target.value)}
-                  className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+                  className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-[16px] leading-6 text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+                  style={{ fontSize: '16px' }}
                 />
               </div>
             </motion.div>
@@ -330,7 +335,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
         className="space-y-2"
       >
         <div className="flex items-center justify-between">
-          <label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
+          <label htmlFor="profile-bio" className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
             О себе
           </label>
           {bioSaving && <span className="text-[9px] text-primary/60 animate-pulse">Сохраняю...</span>}
@@ -339,12 +344,15 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
         <div className="relative">
           <FileText className="absolute left-4 top-4 w-4 h-4 text-primary" />
           <textarea
+            id="profile-bio"
+            name="bio"
             value={bio}
             onChange={e => handleBioChange(e.target.value)}
             placeholder="Расскажите о себе — интересы, опыт, чем занимаетесь..."
             maxLength={500}
             rows={3}
-            className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors resize-y"
+            className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-[16px] leading-6 text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors resize-y"
+            style={{ fontSize: '16px' }}
           />
         </div>
         <p className="text-[9px] text-muted-foreground/40 text-right mr-1">{bio.length}/500</p>

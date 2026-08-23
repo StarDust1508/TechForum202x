@@ -7,6 +7,9 @@ export interface AppContent {
   dayOneTitle: string; dayOneDescription: string; dayTwoTitle: string; dayTwoDescription: string;
   email: string; organizerTelegram: string; telegramChannel: string;
   yandexMapUrl: string; twoGisUrl: string; venueHelp: string;
+  researchIntro: string; researchConditions: string;
+  researchLawyerTitle: string; researchLawyerDescription: string; researchLawyerMaterial: string; researchLawyerUrl: string;
+  researchManagerTitle: string; researchManagerDescription: string; researchManagerMaterial: string; researchManagerUrl: string;
 }
 
 export const DEFAULT_APP_CONTENT: AppContent = {
@@ -14,9 +17,19 @@ export const DEFAULT_APP_CONTENT: AppContent = {
   description: 'Первый день — AI, агентные системы, продукты, данные и регулирование. Второй — БФЛ, цифровые доказательства, LegalTech, управление практикой и проверяемые сценарии применения ИИ.',
   dateLabel: '25–26 сентября 2026', dateDetail: 'Пятница и суббота', city: 'Москва', venueName: 'БЦ «Красные Ворота»', address: 'Садовая-Спасская улица, 21/1, Москва',
   dayOneTitle: 'День 1 · AI и агенты', dayOneDescription: 'Агенты, продукты, данные, внедрение и регулирование', dayTwoTitle: 'День 2 · БФЛ и ИИ', dayTwoDescription: 'Суды, доказательства, сделки, LegalTech и рост практики',
-  email: 'info@tech-pravo.ru', organizerTelegram: 'CEO_WYRM1', telegramChannel: 'TechPravoAI',
+  email: 'tickets@notify.tech-pravo.ru', organizerTelegram: 'CEO_WYRM1', telegramChannel: 'TechPravoAI',
   yandexMapUrl: 'https://yandex.ru/maps/?text=%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2021%2F1',
   twoGisUrl: 'https://2gis.ru/moscow/search/%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2C%2021%2F1', venueHelp: 'Точная схема этажей появится после подтверждения площадкой.',
+  researchIntro: 'Ответы используются в агрегированной аналитике. После короткой регистрации профессиональный материал открывается сразу; прохождение сохраняется и продолжается с того же места.',
+  researchConditions: 'Материал доступен после регистрации на выбранном лендинге. Условия сертификатов и проверяемого розыгрыша опубликованы там же; приложение не подменяет их отдельным описанием.',
+  researchLawyerTitle: 'ИИ в работе юристов',
+  researchLawyerDescription: '12 практических вопросов о сценариях применения ИИ, барьерах, инструментах и защите данных.',
+  researchLawyerMaterial: 'Профессиональный PDF: мировые практики, российский рынок и прикладные инструменты 2026.',
+  researchLawyerUrl: 'https://tech-pravo.ru/opros2',
+  researchManagerTitle: 'Практика и защита управляющего',
+  researchManagerDescription: 'Исследование рабочих процессов, рисков, судебных позиций и направлений автоматизации.',
+  researchManagerMaterial: 'Практический PDF: защита арбитражного управляющего, судебные позиции и рабочие ориентиры.',
+  researchManagerUrl: 'https://tech-pravo.ru/opros',
 };
 
 const CACHE_KEY = 'tp_app_content_v1';

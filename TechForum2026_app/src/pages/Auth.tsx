@@ -560,9 +560,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:info@tech-pravo.ru"
+                        <a href="mailto:tickets@notify.tech-pravo.ru"
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          info@tech-pravo.ru
+                          tickets@notify.tech-pravo.ru
                         </a>
                       </div>
                     </div>
@@ -619,9 +619,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:info@tech-pravo.ru"
+                        <a href="mailto:tickets@notify.tech-pravo.ru"
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          info@tech-pravo.ru
+                          tickets@notify.tech-pravo.ru
                         </a>
                       </div>
                     </div>
