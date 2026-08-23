@@ -7,7 +7,7 @@
 // Firebase-конфиги. Это предотвращает native crash неполной сборки.
 
 import { resolveApiUrl, authFetch } from './runtimeEndpoint';
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, type PluginListenerHandle } from '@capacitor/core';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
@@ -155,22 +155,26 @@ export async function unregisterPushNotifications(): Promise<boolean> {
 export async function attachPushListeners(
   onForegroundMessage?: (notification: { title?: string; body?: string; data?: Record<string, unknown> }) => void,
   onActionPerformed?: (data: Record<string, unknown>) => void,
-): Promise<void> {
-  if (!isNative()) return;
+): Promise<() => void> {
+  if (!isNative() || !PUSH_SERVICE_CONFIGURED) return () => {};
+  const handles: PluginListenerHandle[] = [];
   try {
     if (onForegroundMessage) {
-      void FirebaseMessaging.addListener('notificationReceived', ({ notification: n }) => {
+      handles.push(await FirebaseMessaging.addListener('notificationReceived', ({ notification: n }) => {
         onForegroundMessage({
           title: n.title,
           body: n.body,
           data: (n.data ?? {}) as Record<string, unknown>,
         });
-      });
+      }));
     }
     if (onActionPerformed) {
-      void FirebaseMessaging.addListener('notificationActionPerformed', (a) => {
+      handles.push(await FirebaseMessaging.addListener('notificationActionPerformed', (a) => {
         onActionPerformed((a.notification.data ?? {}) as Record<string, unknown>);
-      });
+      }));
     }
   } catch { /* plugin not installed or FCM not configured */ }
+  return () => {
+    handles.forEach((handle) => { void handle.remove(); });
+  };
 }

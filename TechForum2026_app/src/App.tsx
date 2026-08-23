@@ -33,6 +33,7 @@ import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth
 import { resolveApiUrl, authFetch } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
 import { prefetchPublicData } from './lib/prefetch';
+import { attachPushListeners } from './lib/push';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
@@ -104,10 +105,37 @@ function useHardwareBack() {
 
 function AppContent() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const toast = useToast();
+  const showToast = toast.show;
   useHardwareBack();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const isChatRoute = location.pathname === '/chat';
+
+  useEffect(() => {
+    let active = true;
+    let detach = () => {};
+    const openPushTarget = (data: Record<string, unknown>) => {
+      if (!active) return;
+      const type = String(data.type || '');
+      if (type === 'news' && data.newsId) navigate(`/news/${encodeURIComponent(String(data.newsId))}`);
+      else if (type === 'session' && data.sessionId) navigate(`/schedule?session=${encodeURIComponent(String(data.sessionId))}`);
+      else if (type === 'dm') navigate('/chat');
+    };
+    void attachPushListeners(
+      (notification) => {
+        if (!active) return;
+        const text = [notification.title, notification.body].filter(Boolean).join(' · ');
+        if (text) showToast(text, 4500);
+      },
+      openPushTarget,
+    ).then((cleanup) => {
+      if (active) detach = cleanup;
+      else cleanup();
+    });
+    return () => { active = false; detach(); };
+  }, [navigate, showToast]);
 
   // 100dvh и resize:body расходятся на iOS/Android при открытии клавиатуры.
   // visualViewport — фактическая видимая область над клавиатурой; единая CSS
@@ -353,9 +381,9 @@ function AppContent() {
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={location.pathname}
-                    initial={{ opacity: 0, x: location.pathname === '/' ? 0 : 24 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
+                    initial={{ opacity: 0, y: location.pathname === '/' ? 0 : 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
                     transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
                     className={isChatRoute ? 'h-full min-h-0 min-w-0 overflow-hidden' : 'min-h-full min-w-0 overflow-x-hidden'}
                   >

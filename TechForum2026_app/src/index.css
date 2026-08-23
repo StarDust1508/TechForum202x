@@ -77,18 +77,30 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
-body, button, a, span, p, h1, h2, h3, h4, h5, h6, div, li, ul, header, section, article {
+button, a, [role="button"] {
   -webkit-user-select: none;
   -ms-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
 }
 
-input, textarea, [contenteditable="true"], [contenteditable=""] {
+input, textarea, select, [contenteditable="true"], [contenteditable=""] {
   -webkit-user-select: text;
   -ms-user-select: text;
   user-select: text;
   -webkit-touch-callout: default;
+}
+
+/* iOS увеличивает WebView при фокусе на поле со шрифтом меньше 16px. Это
+   системное правило защищает все формы, включая экраны, которые используют
+   собственную разметку вместо общего Input. Масштабирование страницы и
+   пользовательский pinch-to-zoom намеренно не запрещаем. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 body, #root {
@@ -310,4 +322,13 @@ h1, h2, h3, h4, h5, h6 {
   background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 255, 0.06) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: shimmer 3s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

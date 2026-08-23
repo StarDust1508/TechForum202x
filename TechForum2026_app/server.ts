@@ -57,7 +57,7 @@ import {
   pushTokenRegisterSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
-import { initFcm, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
+import { initFcm, sendPushBatch, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
 
 // Типизируем поле userId на сессии — убирает ad-hoc cast'ы по handler'ам.
 declare module 'express-session' {
@@ -1403,6 +1403,21 @@ async function startServer(): Promise<void> {
     return t ? t.slice(0, max) : null;
   }
   function bool(v: unknown): boolean { return v === true || v === 'true' || v === 1 || v === '1'; }
+  async function broadcastPublishedNews(item: { id: string; title: string; content?: string | null; body?: string | null }) {
+    const service = fcmStatus();
+    if (!service.initialized || service.disabled) {
+      return { configured: false, targetedUsers: 0, deliveredDevices: 0 };
+    }
+    const recipients = await db.selectDistinct({ userId: pushTokens.userId }).from(pushTokens);
+    const userIds = recipients.map((row) => row.userId).filter(Boolean);
+    const deliveredDevices = await sendPushBatch(userIds, {
+      title: item.title,
+      body: item.content || item.body || 'Откройте приложение, чтобы прочитать новость.',
+      data: { type: 'news', newsId: item.id },
+      priority: 'normal',
+    }, db, pushTokens);
+    return { configured: true, targetedUsers: userIds.length, deliveredDevices };
+  }
 
   // GET все новости (включая черновики) — для списка в админке.
   api.get('/internal/news', cmsRateLimit, async (req, res) => {
@@ -1432,7 +1447,10 @@ async function startServer(): Promise<void> {
       isPublished: b.isPublished === undefined ? true : bool(b.isPublished),
     };
     await db.insert(news).values(row);
-    res.status(201).json(row);
+    const pushDelivery = row.isPublished
+      ? await broadcastPublishedNews(row)
+      : { configured: fcmStatus().initialized && !fcmStatus().disabled, targetedUsers: 0, deliveredDevices: 0, skipped: true };
+    res.status(201).json({ ...row, pushDelivery });
   });
 
   // PUT обновить (частично — только переданные поля).
@@ -1440,6 +1458,7 @@ async function startServer(): Promise<void> {
     if (!cmsGuard(req, res)) return;
     const id = String(req.params.id);
     const b = (req.body ?? {}) as Record<string, unknown>;
+    const [before] = await db.select({ isPublished: news.isPublished }).from(news).where(eq(news.id, id)).limit(1);
     const patch: Record<string, unknown> = {};
     if (b.type !== undefined) patch.type = str(b.type, 32) || 'Новость';
     if (b.title !== undefined) { const t = str(b.title, 500); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
@@ -1455,7 +1474,11 @@ async function startServer(): Promise<void> {
     if (Object.keys(patch).length === 0) { res.status(400).json({ error: 'no_fields' }); return; }
     const upd = await db.update(news).set(patch).where(eq(news.id, id)).returning();
     if (!upd[0]) { res.status(404).json({ error: 'not_found' }); return; }
-    res.json(upd[0]);
+    const becamePublished = !before?.isPublished && Boolean(upd[0].isPublished);
+    const pushDelivery = becamePublished
+      ? await broadcastPublishedNews(upd[0])
+      : { configured: fcmStatus().initialized && !fcmStatus().disabled, targetedUsers: 0, deliveredDevices: 0, skipped: true };
+    res.json({ ...upd[0], pushDelivery });
   });
 
   // DELETE удалить.

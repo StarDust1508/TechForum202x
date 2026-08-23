@@ -72,7 +72,7 @@ export default function SpeakerDetail() {
           <button
             type="button"
             onClick={() => navigate('/speakers')}
-            className="text-primary text-[12px] font-semibold uppercase tracking-widest hover:underline"
+            className="min-h-11 rounded-xl px-4 text-[14px] font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
           >
             ← К списку спикеров
           </button>
@@ -92,27 +92,27 @@ export default function SpeakerDetail() {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-        className="rounded-3xl border border-primary/30 bg-gradient-to-br from-card to-card/50 p-6 mb-6 flex items-center gap-5"
+        className="mb-6 flex flex-col items-start gap-4 rounded-3xl border border-primary/30 bg-gradient-to-br from-card to-card/50 p-5 min-[360px]:flex-row min-[360px]:items-center"
       >
         {speaker.avatarUrl ? (
           <img
             src={resolveAssetUrl(speaker.avatarUrl)}
             alt={speaker.name}
-            className="w-20 h-20 rounded-2xl border border-primary/55 object-cover shrink-0 bg-background/80 shadow-[0_0_24px_rgba(255,51,153,0.25)]"
+            className="h-24 w-24 shrink-0 rounded-2xl border border-primary/55 bg-background/80 object-cover shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20"
           />
         ) : (
-          <div className="w-20 h-20 rounded-2xl border border-primary/55 bg-background/80 flex items-center justify-center text-primary font-display text-[32px] font-semibold shrink-0 shadow-[0_0_24px_rgba(255,51,153,0.25)]">
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-primary/55 bg-background/80 font-display text-[32px] font-semibold text-primary shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20">
             {speaker.avatarLetter}
           </div>
         )}
         <div className="flex-1 min-w-0 space-y-1">
           {track && (
-            <p className="text-[12px] text-foreground/40">
+            <p className="text-[14px] text-foreground/60">
               Трек:{' '}
               <span className="text-foreground" style={{ color: track.color }}>{track.name}</span>
             </p>
           )}
-          <p className="text-[12px] text-foreground/40">
+          <p className="text-[14px] text-foreground/60">
             {speakerSessions.length} {speakerSessions.length === 1 ? 'выступление' : 'выступления'} на форуме
           </p>
         </div>
@@ -120,12 +120,12 @@ export default function SpeakerDetail() {
 
       {/* Тема доклада на форуме — выделено */}
       {cleanTopic(speaker.topic) && (
-        <section className="rounded-2xl border border-primary/35 bg-card p-5 mb-6">
+        <section className="mb-7 rounded-3xl border border-primary/35 bg-card p-5">
           <div className="flex items-center gap-2 mb-2">
             <Sparkles className="w-4 h-4 text-primary" strokeWidth={1.8} />
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-primary/85">Тема на форуме</p>
+            <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-primary/90">Тема на форуме</p>
           </div>
-          <p className="font-display text-[18px] font-semibold text-foreground leading-snug">
+          <p className="font-display text-[19px] font-semibold leading-snug text-foreground">
             «{cleanTopic(speaker.topic)}»
           </p>
         </section>
@@ -133,8 +133,8 @@ export default function SpeakerDetail() {
 
       {/* Биография */}
       {bioParagraphs.length > 0 && <section className="mb-6">
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary mb-3">Биография</h2>
-        <div className="space-y-3 text-[14px] leading-relaxed text-foreground/85 font-sans">
+        <h2 className="mb-3 text-[13px] font-bold uppercase tracking-[0.14em] text-primary">Биография</h2>
+        <div className="space-y-4 font-sans text-base leading-[1.65] text-foreground/85">
           {bioParagraphs.map((p, i) => (
             <p key={i}>{p}</p>
           ))}
@@ -144,7 +144,7 @@ export default function SpeakerDetail() {
       {/* Сессии этого спикера на форуме */}
       {speakerSessions.length > 0 && (
         <section className="mb-2">
-          <h2 className="font-mono text-[10px] uppercase tracking-[0.28em] text-primary mb-3 flex items-center gap-2">
+          <h2 className="mb-3 flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.14em] text-primary">
             <Calendar className="w-3.5 h-3.5" strokeWidth={1.8} />
             Выступления на форуме
           </h2>
@@ -153,11 +153,11 @@ export default function SpeakerDetail() {
               return (
                 <Link
                   key={s.id}
-                  to="/schedule"
-                  className="block rounded-2xl border border-primary/22 bg-card p-4 hover:border-primary/55 active:scale-[0.99] transition-all"
+                  to={`/schedule?session=${encodeURIComponent(s.id)}`}
+                  className="block rounded-2xl border border-primary/25 bg-card p-4 transition-colors hover:border-primary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                 >
-                  <h3 className="font-display text-[15px] font-semibold text-foreground leading-tight">{s.title}</h3>
-                  <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-foreground/40">
+                  <h3 className="font-display text-base font-semibold leading-snug text-foreground">{s.title}</h3>
+                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-[13px] text-foreground/60">
                     <span className="inline-flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-accent" strokeWidth={1.8} />
                       {s.day || ''}
@@ -171,7 +171,7 @@ export default function SpeakerDetail() {
                       {s.location}
                     </span>
                   </div>
-                  <div className="mt-2 inline-flex items-center gap-1 text-[10px] text-primary uppercase tracking-widest">
+                  <div className="mt-3 inline-flex min-h-8 items-center gap-1 text-[13px] font-semibold text-primary">
                     Открыть в программе
                     <ChevronRight className="w-3 h-3" strokeWidth={1.8} />
                   </div>

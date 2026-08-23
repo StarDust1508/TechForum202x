@@ -314,7 +314,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
                   value={editForm[field.key]}
                   placeholder={field.placeholder}
                   onChange={e => handleFieldChange(field.key, e.target.value)}
-                  className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 outline-none transition-colors"
+                  className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
                 />
               </div>
             </motion.div>
@@ -344,7 +344,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
             placeholder="Расскажите о себе — интересы, опыт, чем занимаетесь..."
             maxLength={500}
             rows={3}
-            className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 outline-none transition-colors resize-none"
+            className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-base text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors resize-y"
           />
         </div>
         <p className="text-[9px] text-muted-foreground/40 text-right mr-1">{bio.length}/500</p>

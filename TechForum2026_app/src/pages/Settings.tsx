@@ -56,7 +56,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.5';
+const APP_VERSION = '1.8.6';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -82,7 +82,7 @@ function NotificationsPage() {
           setAvailable(state.available);
           setEnabled(state.enabled);
           try { localStorage.setItem(NOTIF_LS_KEY, state.enabled ? '1' : '0'); } catch { /* noop */ }
-          if (state.reason === 'service_not_configured') setHint('Push-сервис не настроен в этой сборке. Переключатель отключён, чтобы не показывать ложную подписку.');
+          if (state.reason === 'service_not_configured') setHint('Уведомления пока недоступны. Когда доставка будет готова, переключатель станет активным автоматически.');
           else if (state.reason === 'permission_denied') setHint('Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.');
           else if (state.reason === 'check_failed') setHint('Не удалось проверить push-сервис. Проверьте соединение и откройте экран повторно.');
         }
@@ -153,13 +153,14 @@ function NotificationsPage() {
         type="button"
         onClick={toggle}
         disabled={busy || !available}
-        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-foreground/[0.06] px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+        aria-pressed={enabled}
+        className="flex min-h-16 w-full items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-foreground/[0.06] px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-70"
       >
         <div className="text-left">
           <p className="font-display text-[15px] font-semibold text-foreground">
             Push-уведомления
           </p>
-          <p className="text-[12px] text-foreground/40 mt-0.5">
+          <p className="mt-1 text-[14px] text-foreground/60">
             Анонсы сессий, ответы на сообщения
           </p>
         </div>
@@ -182,12 +183,12 @@ function NotificationsPage() {
         )}
       </button>
       {hint && (
-        <p className="px-5 text-[11px] text-foreground/45 leading-relaxed">
+        <p aria-live="polite" className="px-5 text-[14px] leading-relaxed text-foreground/65">
           {hint}
         </p>
       )}
       {!hint && (
-        <p className="px-5 text-[11px] text-foreground/45 leading-relaxed">
+        <p className="px-5 text-[14px] leading-relaxed text-foreground/65">
           Включите чтобы получать важные оповещения форума: начало сессии,
           новые сообщения, объявления оргкомитета. Отключение применяется
           мгновенно и не требует переустановки.
@@ -201,7 +202,8 @@ function NotificationsPage() {
           type="button"
           onClick={togglePreviewHidden}
           disabled={previewBusy}
-          className="mt-4 w-full flex items-center justify-between gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
+          aria-pressed={previewHidden}
+          className="mt-4 flex min-h-16 w-full items-center justify-between gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-70"
         >
           <div className="flex items-start gap-3 text-left flex-1 min-w-0">
             <EyeOff className="w-4 h-4 mt-0.5 text-primary shrink-0" strokeWidth={1.6} />
@@ -209,7 +211,7 @@ function NotificationsPage() {
               <p className="font-display text-[14px] font-semibold text-foreground">
                 Скрывать предпросмотр
               </p>
-              <p className="text-[11px] text-foreground/40 mt-0.5 leading-relaxed">
+              <p className="mt-1 text-[14px] leading-relaxed text-foreground/60">
                 Текст сообщения не будет виден на заблокированном экране — только «Новое сообщение».
               </p>
             </div>
