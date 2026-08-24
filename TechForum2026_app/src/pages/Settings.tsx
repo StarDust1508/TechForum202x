@@ -12,6 +12,7 @@
 // push_tokens table и реальные подписки.
 
 import { useState, useEffect } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff, Send, Moon, Sun, Trash2,
@@ -61,7 +62,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.7';
+const APP_VERSION = '1.8.8';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -456,6 +457,9 @@ function AccountPage() {
 export default function Settings() {
   const [section, setSectionRaw] = useState<Section | null>(null);
   const [theme, setThemeState] = useState<Theme>(getTheme());
+  // Push is a release feature only on Android. Keep the entry unreachable on
+  // iOS even if a build is accidentally created with the Android env file.
+  const pushSettingsVisible = PUSH_SERVICE_CONFIGURED && Capacitor.getPlatform() === 'android';
   const changeTheme = (t: Theme) => { setTheme(t); setThemeState(t); void hapticSelection(); };
 
   // Integrate with browser history so swipe-back closes the sub-section
@@ -488,7 +492,7 @@ export default function Settings() {
   }, [section]);
 
   const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
-    ...(PUSH_SERVICE_CONFIGURED
+    ...(pushSettingsVisible
       ? [{ key: 'notifications' as const, icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' }]
       : []),
     { key: 'telegram', icon: Send, label: 'Привязка Telegram', sub: 'Для безопасного сброса пароля' },
@@ -591,7 +595,7 @@ export default function Settings() {
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
-              {section === 'notifications' && <NotificationsPage />}
+              {section === 'notifications' && pushSettingsVisible && <NotificationsPage />}
               {section === 'telegram' && <TelegramLinkPage />}
               {section === 'terms' && (
                 <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">

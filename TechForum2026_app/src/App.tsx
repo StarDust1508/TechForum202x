@@ -179,19 +179,32 @@ function AppContent() {
     if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
       return;
     }
+    let active = true;
     (async () => {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
-        StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-        StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
+        await StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+        await StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
         // WebView must start below the native status bar. Overlay mode was the
-        // root cause of headers colliding with the clock/notch on both iOS and
-        // edge-to-edge Android devices.
-        StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+        // root cause of headers colliding with the clock/notch. Android 15+
+        // enforces edge-to-edge and ignores overlay=false, so reserve the
+        // measured native inset in the app shell on those versions.
+        await StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+        const platform = typeof Capacitor.getPlatform === 'function' ? Capacitor.getPlatform() : '';
+        const androidMajor = Number(/Android\s+(\d+)/i.exec(navigator.userAgent)?.[1] || '0');
+        if (active && platform === 'android' && androidMajor >= 15) {
+          const info = await StatusBar.getInfo().catch(() => null);
+          const height = Math.max(0, Number(info?.height || 0));
+          document.documentElement.style.setProperty('--native-status-bar-inset', `${height}px`);
+        }
       } catch {
         /* noop — плагин недоступен или web-окружение */
       }
     })();
+    return () => {
+      active = false;
+      document.documentElement.style.setProperty('--native-status-bar-inset', '0px');
+    };
   }, []);
 
   const enterGuestMode = () => {
@@ -362,7 +375,10 @@ function AppContent() {
     // с центрированной "телефонной" рамкой 420×840.
     <div className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
       <OfflineBanner />
-      <main className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]">
+      <main
+        className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]"
+        style={{ paddingTop: 'var(--native-status-bar-inset, 0px)' }}
+      >
         <div data-app-scroll-container className={`flex-1 min-h-0 min-w-0 scrollbar-hide relative ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className={isChatRoute ? 'h-full min-h-0 min-w-0' : 'min-h-full min-w-0'}>
             {!user ? (
@@ -381,13 +397,13 @@ function AppContent() {
             ) : (
               // Все остальные разделы — единый фон Home (требование заказчика).
               <AppBackground>
-                <AnimatePresence mode="wait">
+                <AnimatePresence mode="wait" initial={false}>
                   <motion.div
                     key={location.pathname}
-                    initial={{ opacity: 0, y: location.pathname === '/' ? 0 : 8 }}
+                    initial={{ opacity: 0, y: location.pathname === '/' || location.pathname.startsWith('/speakers') ? 0 : 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                    transition={{ duration: location.pathname.startsWith('/speakers') ? 0.15 : 0.28, ease: [0.32, 0.72, 0, 1] }}
                     className={isChatRoute ? 'h-full min-h-0 min-w-0 overflow-hidden' : 'min-h-full min-w-0 overflow-x-hidden'}
                   >
                     <Routes location={location}>

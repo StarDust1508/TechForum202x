@@ -136,7 +136,10 @@ export const noteUpsertSchema = z.object({
 export const pushTokenRegisterSchema = z.object({
   token: z.string().min(1).max(512),
   platform: z.string().max(32).optional().default('unknown'),
-  deviceLabel: z.string().max(128).optional().default(''),
+  // Старые Android-сборки отправляли null, когда подпись устройства не
+  // задана. Принимать null безопасно: в БД поле и так nullable, а отказ 400
+  // не должен блокировать регистрацию корректного FCM-токена.
+  deviceLabel: z.string().max(128).nullable().optional().default(null),
 });
 
 export type ForgotPasswordStartBody = z.infer<typeof forgotPasswordStartSchema>;

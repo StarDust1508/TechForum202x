@@ -120,6 +120,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     const token = (await FirebaseMessaging.getToken()).token;
     if (!token) return false;
     const platform = Capacitor.getPlatform();
+    const normalizedDeviceLabel = deviceLabel?.trim();
     const r = await authFetch(resolveApiUrl('/me/push-token'), {
       method: 'POST',
       credentials: 'include',
@@ -127,7 +128,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
       body: JSON.stringify({
         token,
         platform: platform === 'ios' ? 'ios' : 'android',
-        deviceLabel: deviceLabel ?? null,
+        ...(normalizedDeviceLabel ? { deviceLabel: normalizedDeviceLabel } : {}),
       }),
     });
     if (!r.ok) return false;

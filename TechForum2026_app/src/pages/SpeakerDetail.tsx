@@ -135,6 +135,7 @@ export default function SpeakerDetail() {
             src={resolveAssetUrl(speaker.avatarUrl)}
             alt={speaker.name}
             className="h-24 w-24 shrink-0 rounded-2xl border border-primary/55 bg-background/80 object-cover shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20"
+            style={{ objectPosition: 'center 25%' }}
           />
         ) : (
           <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-primary/55 bg-background/80 font-display text-[32px] font-semibold text-primary shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20">

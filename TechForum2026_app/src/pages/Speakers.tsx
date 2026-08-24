@@ -1,5 +1,5 @@
 import { Search, ChevronRight, RefreshCw, Users } from 'lucide-react';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
@@ -37,6 +37,15 @@ export default function Speakers() {
   const [loading, setLoading] = useState(initialSpeakers.length === 0);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const restoreSnapshot = useRef<{ scrollTop: number } | null>((() => {
+    try {
+      if (sessionStorage.getItem('tp_speakers_restore') !== '1') return null;
+      const scrollTop = Number(sessionStorage.getItem('tp_speakers_scroll') || '0');
+      return Number.isFinite(scrollTop) ? { scrollTop } : null;
+    } catch {
+      return null;
+    }
+  })());
 
   useEffect(() => {
     let cancelled = false;
@@ -57,38 +66,22 @@ export default function Speakers() {
     try { sessionStorage.setItem('tp_speakers_search', search); } catch { /* noop */ }
   }, [search]);
 
-  // Возврат из карточки восстанавливает ровно тот фрагмент списка, который
-  // пользователь только что смотрел. На обычном новом входе список начинается
-  // сверху, поэтому старое положение не «прилипает» навсегда.
-  useEffect(() => {
-    if (loading) return;
-    let shouldRestore = false;
-    let savedTop = 0;
-    let selectedSpeakerId = '';
+  // Возврат из карточки должен быть атомарным: scrollTop выставляется в
+  // layout-фазе, до первого кадра браузера. Прежний requestAnimationFrame +
+  // setTimeout(340) сначала показывал верх списка, а затем заметно переносил
+  // пользователя к выбранному спикеру.
+  useLayoutEffect(() => {
+    if (loading || !restoreSnapshot.current) return;
+    const scroller = document.querySelector<HTMLElement>('[data-app-scroll-container]');
+    if (!scroller) return;
+    scroller.scrollTop = restoreSnapshot.current.scrollTop;
+    restoreSnapshot.current = null;
     try {
-      shouldRestore = sessionStorage.getItem('tp_speakers_restore') === '1';
-      savedTop = Number(sessionStorage.getItem('tp_speakers_scroll') || '0');
-      selectedSpeakerId = sessionStorage.getItem('tp_speakers_selected') || '';
+      sessionStorage.removeItem('tp_speakers_restore');
+      sessionStorage.removeItem('tp_speakers_scroll');
+      sessionStorage.removeItem('tp_speakers_selected');
     } catch { /* noop */ }
-    if (!shouldRestore || !Number.isFinite(savedTop)) return;
-    let restoreTimer = 0;
-    const frame = requestAnimationFrame(() => {
-      restoreTimer = window.setTimeout(() => {
-        try { sessionStorage.removeItem('tp_speakers_restore'); } catch { /* noop */ }
-        const selectedCard = selectedSpeakerId
-          ? document.getElementById(`speaker-card-${selectedSpeakerId}`)
-          : null;
-        if (selectedCard) {
-          selectedCard.scrollIntoView({ block: 'center', behavior: 'auto' });
-          selectedCard.focus({ preventScroll: true });
-          return;
-        }
-        const scroller = document.querySelector<HTMLElement>('[data-app-scroll-container]');
-        if (scroller) scroller.scrollTop = savedTop;
-      }, 340);
-    });
-    return () => { cancelAnimationFrame(frame); window.clearTimeout(restoreTimer); };
-  }, [loading]);
+  }, [loading, speakers.length]);
 
   const openSpeaker = (speakerId: string) => {
     const scroller = document.querySelector<HTMLElement>('[data-app-scroll-container]');
@@ -160,7 +153,7 @@ export default function Speakers() {
             id={`speaker-card-${speaker.id}`}
             type="button"
             onClick={() => openSpeaker(speaker.id)}
-            className="block h-[252px] w-full overflow-hidden rounded-3xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 min-[380px]:p-5"
+            className="block h-[252px] w-full overflow-hidden rounded-3xl border border-border bg-card p-4 text-left transition-[border-color,transform] duration-150 active:scale-[0.98] hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 motion-reduce:transition-none motion-reduce:active:scale-100 min-[380px]:p-5"
           >
             <div className="flex gap-4">
               {speaker.avatarUrl ? (
@@ -169,6 +162,7 @@ export default function Speakers() {
                   alt={speaker.name}
                   loading="lazy"
                   className="h-[72px] w-[72px] shrink-0 rounded-2xl border border-primary/25 bg-background object-cover"
+                  style={{ objectPosition: 'center 25%' }}
                 />
               ) : (
                 <div
