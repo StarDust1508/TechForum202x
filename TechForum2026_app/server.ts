@@ -57,7 +57,7 @@ import {
   pushTokenRegisterSchema,
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
-import { initFcm, sendPushBatch, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
+import { initFcm, sendPushBatch, sendPushToToken, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
 
 // Типизируем поле userId на сессии — убирает ad-hoc cast'ы по handler'ам.
 declare module 'express-session' {
@@ -136,15 +136,15 @@ const DEFAULT_APP_CONTENT: Record<string, string> = {
   yandexMapUrl: 'https://yandex.ru/maps/?text=%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2021%2F1',
   twoGisUrl: 'https://2gis.ru/moscow/search/%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%D1%8F-%D0%A1%D0%BF%D0%B0%D1%81%D1%81%D0%BA%D0%B0%D1%8F%2C%2021%2F1',
   venueHelp: 'Точная схема этажей появится после подтверждения площадкой.',
-  researchIntro: 'Ответы используются в агрегированной аналитике. После короткой регистрации профессиональный материал открывается сразу; прохождение сохраняется и продолжается с того же места.',
-  researchConditions: 'Материал доступен после регистрации на выбранном лендинге. Условия сертификатов и проверяемого розыгрыша опубликованы там же; приложение не подменяет их отдельным описанием.',
-  researchLawyerTitle: 'ИИ в работе юристов',
-  researchLawyerDescription: '12 практических вопросов о сценариях применения ИИ, барьерах, инструментах и защите данных.',
-  researchLawyerMaterial: 'Профессиональный PDF: мировые практики, российский рынок и прикладные инструменты 2026.',
+  researchIntro: 'Выберите своё направление и расскажите, как вы используете ИИ в работе. Ответы войдут в отраслевой отчёт 2026 года, а после регистрации откроется профессиональный материал.',
+  researchConditions: 'ФИО и контакты нужны только для отправки материала, сертификата и результатов исследования. В публичной аналитике ответы показываются без имён и контактных данных.',
+  researchLawyerTitle: 'ИИ в юридической практике',
+  researchLawyerDescription: 'Инструменты, частота использования, контроль результата, защита данных и барьеры внедрения в юридических командах.',
+  researchLawyerMaterial: 'Профессиональный PDF о мировых практиках, российском рынке и прикладных ИИ-инструментах 2026 года.',
   researchLawyerUrl: 'https://tech-pravo.ru/opros2',
-  researchManagerTitle: 'Практика и защита управляющего',
-  researchManagerDescription: 'Исследование рабочих процессов, рисков, судебных позиций и направлений автоматизации.',
-  researchManagerMaterial: 'Практический PDF: защита арбитражного управляющего, судебные позиции и рабочие ориентиры.',
+  researchManagerTitle: 'ИИ в работе арбитражного управляющего',
+  researchManagerDescription: 'Документы, коммуникации, безопасность и задачи, которые можно автоматизировать в процедурах банкротства.',
+  researchManagerMaterial: 'Практический PDF о защите арбитражного управляющего, судебных позициях и рабочих ориентирах.',
   researchManagerUrl: 'https://tech-pravo.ru/opros',
 };
 
@@ -225,6 +225,7 @@ type PublicUser = {
   birthday: string;
   isPrivate: boolean;
   pushPreviewHidden: boolean;
+  pushTestVerifiedAt: string | null;
   telegramLinked: boolean;
   telegramUsername: string | null;
   lastSeenAt: string | null;
@@ -245,6 +246,7 @@ function toPublicUser(row: typeof users.$inferSelect): PublicUser {
     birthday: (row as any).birthday ?? '',
     isPrivate: row.isPrivate,
     pushPreviewHidden: row.pushPreviewHidden ?? false,
+    pushTestVerifiedAt: row.pushTestVerifiedAt instanceof Date ? row.pushTestVerifiedAt.toISOString() : null,
     telegramLinked: !!(row as any).telegramId,
     telegramUsername: (row as any).telegramUsername ?? null,
     lastSeenAt: (row as any).lastSeenAt instanceof Date ? (row as any).lastSeenAt.toISOString() : ((row as any).lastSeenAt ?? null),
@@ -3354,33 +3356,78 @@ async function startServer(): Promise<void> {
     })));
   });
 
-  // Изолированная проверка доставки: отправляет уведомление только текущему
-  // пользователю. Администратору больше не нужно публиковать тестовую новость
-  // всем участникам, чтобы доказать работу FCM на одном телефоне.
+  // Изолированная проверка доставки на текущем устройстве. Ответ отдаётся до
+  // отправки, а сообщение уходит через 8 секунд: пользователь успевает свернуть
+  // приложение, и Android показывает системное уведомление вместо foreground-
+  // события внутри WebView.
   api.post('/me/push-test', requireAuth, writeRateLimit, async (req, res) => {
     const me = getSessionUserId(req)!;
+    const user = await findUserById(me);
+    if (user?.pushTestVerifiedAt) {
+      res.json({ ok: true, verified: true });
+      return;
+    }
     const service = fcmStatus();
     if (!service.initialized || service.disabled) {
       res.status(503).json({ error: 'push_not_configured' });
       return;
     }
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
     const [registered] = await db.select({ id: pushTokens.id }).from(pushTokens)
-      .where(eq(pushTokens.userId, me)).limit(1);
+      .where(and(eq(pushTokens.userId, me), eq(pushTokens.token, token))).limit(1);
     if (!registered) {
       res.status(409).json({ error: 'device_not_registered' });
       return;
     }
-    const deliveredDevices = await sendPushToUser(me, {
-      title: 'ТехнологИИ Права',
-      body: 'Тестовое уведомление доставлено. Push работает на этом устройстве.',
-      data: { type: 'push_test' },
-      priority: 'high',
-    }, db, pushTokens);
-    if (deliveredDevices === 0) {
-      res.status(502).json({ error: 'push_delivery_failed', deliveredDevices: 0 });
+    const expiresAt = Date.now() + 15 * 60_000;
+    const proofPayload = Buffer.from(`${me}|${expiresAt}|${crypto.randomUUID()}`).toString('base64url');
+    const proofSignature = crypto.createHmac('sha256', sessionSecret)
+      .update(proofPayload)
+      .digest('base64url');
+    const verification = `${proofPayload}.${proofSignature}`;
+    const timer = setTimeout(() => {
+      void sendPushToToken(token, {
+        title: 'Уведомления работают',
+        body: 'Нажмите на это сообщение, чтобы завершить проверку.',
+        data: { type: 'push_test', verification },
+        priority: 'high',
+      });
+    }, 8_000);
+    timer.unref?.();
+    res.status(202).json({ ok: true, scheduled: true, delaySeconds: 8 });
+  });
+
+  // Успех фиксируется только после нажатия системного уведомления. Одного
+  // принятия сообщения Firebase недостаточно: оно ещё не доказывает шторку.
+  api.post('/me/push-test/confirm', requireAuth, writeRateLimit, async (req, res) => {
+    const me = getSessionUserId(req)!;
+    const verification = typeof req.body?.verification === 'string' ? req.body.verification.trim() : '';
+    const [proofPayload, receivedSignature] = verification.split('.');
+    if (!proofPayload || !receivedSignature) {
+      res.status(400).json({ error: 'verification_required' });
       return;
     }
-    res.json({ ok: true, deliveredDevices });
+    const expectedSignature = crypto.createHmac('sha256', sessionSecret)
+      .update(proofPayload)
+      .digest('base64url');
+    const receivedBuffer = Buffer.from(receivedSignature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    if (
+      receivedBuffer.length !== expectedBuffer.length ||
+      !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+    ) {
+      res.status(403).json({ error: 'verification_invalid' });
+      return;
+    }
+    const [proofUserId, expiresRaw] = Buffer.from(proofPayload, 'base64url').toString('utf8').split('|');
+    const expiresAt = Number(expiresRaw);
+    if (proofUserId !== me || !Number.isFinite(expiresAt) || expiresAt < Date.now()) {
+      res.status(403).json({ error: 'verification_expired' });
+      return;
+    }
+    const verifiedAt = new Date();
+    await db.update(users).set({ pushTestVerifiedAt: verifiedAt }).where(eq(users.id, me));
+    res.json({ ok: true, verifiedAt: verifiedAt.toISOString() });
   });
 
   // ========================================================================

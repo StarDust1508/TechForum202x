@@ -151,6 +151,37 @@ export async function sendPushToUser(
 }
 
 /**
+ * Проверочное уведомление отправляется только на токен текущего устройства.
+ * В отличие от sendPushToUser это исключает ложный успех на втором телефоне
+ * того же аккаунта.
+ */
+export async function sendPushToToken(
+  token: string,
+  payload: PushPayload,
+): Promise<boolean> {
+  if (disabled || !messaging || !token) return false;
+  try {
+    await messaging.send({
+      token,
+      notification: { title: payload.title, body: payload.body },
+      data: payload.data ?? {},
+      android: {
+        priority: (payload.priority ?? 'high') as 'high' | 'normal',
+        notification: {
+          channelId: 'techpravo_updates',
+          icon: 'ic_stat_techpravo',
+          color: '#00FFFF',
+        },
+      },
+    });
+    return true;
+  } catch (err) {
+    log.error('fcm', `device test send failed: ${(err as Error).message}`);
+    return false;
+  }
+}
+
+/**
  * Broadcast — отправляет много push'ей разным юзерам (admin-рассылка).
  * Делит на чанки по 100 (FCM лимит — 500 за раз, берём с запасом).
  */

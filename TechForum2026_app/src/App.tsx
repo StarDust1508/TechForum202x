@@ -119,6 +119,21 @@ function AppContent() {
     const openPushTarget = (data: Record<string, unknown>) => {
       if (!active) return;
       const type = String(data.type || '');
+      if (type === 'push_test') {
+        const verification = String(data.verification || '').trim();
+        if (!verification) return;
+        void authFetch(resolveApiUrl('/me/push-test/confirm'), {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ verification }),
+        }).then((response) => {
+          if (!active || !response.ok) return;
+          window.dispatchEvent(new Event('techforum:push-test-verified'));
+          showToast('Проверка завершена. Уведомления работают.', 3500);
+        }).catch(() => {});
+        return;
+      }
       if (type === 'news' && data.newsId) navigate(`/news/${encodeURIComponent(String(data.newsId))}`);
       else if (type === 'session' && data.sessionId) navigate(`/schedule?session=${encodeURIComponent(String(data.sessionId))}`);
       else if (type === 'dm') {
@@ -129,6 +144,9 @@ function AppContent() {
     void attachPushListeners(
       (notification) => {
         if (!active) return;
+        // Проверочное сообщение должно быть доказано системной шторкой. Пока
+        // приложение открыто, не подменяем её внутренней плашкой.
+        if (String(notification.data?.type || '') === 'push_test') return;
         const text = [notification.title, notification.body].filter(Boolean).join(' · ');
         if (text) showToast(text, 4500);
       },

@@ -8,8 +8,8 @@
 // Все 4 экрана внутри — простые info-страницы. Условия / Соглашение —
 // полные тексты в комплект 152-ФЗ. О приложении — версия + ссылки.
 //
-// Уведомления — пока локальная toggle (без бэкенда push), Round 4 заведёт
-// push_tokens table и реальные подписки.
+// Уведомления синхронизируются с разрешением ОС и серверной регистрацией
+// устройства. Системная доставка подтверждается отдельным одноразовым тестом.
 
 import { useState, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -22,10 +22,12 @@ import BrandLogo from '@/src/components/BrandLogo';
 import { hapticSelection } from '@/src/lib/haptics';
 import {
   PUSH_SERVICE_CONFIGURED,
+  getStoredPushToken,
   getPushNotificationState,
   registerPushNotifications,
   unregisterPushNotifications,
 } from '@/src/lib/push';
+import { openNotificationSettings } from '@/src/lib/appSettings';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
 import { cn } from '@/src/lib/utils';
@@ -62,7 +64,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
 
-const APP_VERSION = '1.8.8';
+const APP_VERSION = '1.8.9';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -72,11 +74,14 @@ function NotificationsPage() {
   const NOTIF_LS_KEY = 'techforum_notifications_enabled';
   const [enabled, setEnabled] = useState(false);
   const [available, setAvailable] = useState(true);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [busy, setBusy] = useState(true);
   const [hint, setHint] = useState<string | null>(null);
   const [previewHidden, setPreviewHidden] = useState<boolean>(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [testBusy, setTestBusy] = useState(false);
+  const [testPending, setTestPending] = useState(false);
+  const [testVerified, setTestVerified] = useState(false);
 
   // Подгружаем фактическое разрешение ОС + регистрацию устройства в БД.
   // localStorage больше не является источником истины для положения тумблера.
@@ -88,6 +93,7 @@ function NotificationsPage() {
         if (!cancelled) {
           setAvailable(state.available);
           setEnabled(state.enabled);
+          setPermissionDenied(state.reason === 'permission_denied');
           try { localStorage.setItem(NOTIF_LS_KEY, state.enabled ? '1' : '0'); } catch { /* noop */ }
           if (state.reason === 'service_not_configured') setHint('Уведомления пока недоступны. Когда доставка будет готова, переключатель станет активным автоматически.');
           else if (state.reason === 'permission_denied') setHint('Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.');
@@ -96,12 +102,53 @@ function NotificationsPage() {
         const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
         if (r.ok) {
           const me = await r.json();
-          if (!cancelled) setPreviewHidden(!!me.pushPreviewHidden);
+          if (!cancelled) {
+            setPreviewHidden(!!me.pushPreviewHidden);
+            setTestVerified(Boolean(me.pushTestVerifiedAt));
+          }
         }
       } catch { /* offline */ }
       finally { if (!cancelled) setBusy(false); }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!testPending) return;
+    const timer = window.setTimeout(() => {
+      setTestPending(false);
+      setHint('Уведомление не подтверждено. Проверьте шторку телефона или запустите проверку ещё раз.');
+    }, 30_000);
+    return () => window.clearTimeout(timer);
+  }, [testPending]);
+
+  useEffect(() => {
+    const markVerified = () => {
+      setTestVerified(true);
+      setTestPending(false);
+      setHint('Проверка завершена. Системные уведомления включены.');
+    };
+    window.addEventListener('techforum:push-test-verified', markVerified);
+    return () => window.removeEventListener('techforum:push-test-verified', markVerified);
+  }, []);
+
+  useEffect(() => {
+    const refreshPermission = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const state = await getPushNotificationState();
+      setAvailable(state.available);
+      setEnabled(state.enabled);
+      setPermissionDenied(state.reason === 'permission_denied');
+      if (state.reason !== 'permission_denied') {
+        setHint((current) => current?.includes('запрещены в настройках') ? null : current);
+      }
+    };
+    window.addEventListener('focus', refreshPermission);
+    document.addEventListener('visibilitychange', refreshPermission);
+    return () => {
+      window.removeEventListener('focus', refreshPermission);
+      document.removeEventListener('visibilitychange', refreshPermission);
+    };
   }, []);
 
   const togglePreviewHidden = async () => {
@@ -137,6 +184,7 @@ function NotificationsPage() {
       } else {
         const state = await getPushNotificationState();
         setAvailable(state.available);
+        setPermissionDenied(state.reason === 'permission_denied');
         setHint(state.reason === 'permission_denied'
           ? 'Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.'
           : 'Устройство не удалось зарегистрировать для push. Проверьте соединение и попробуйте ещё раз.');
@@ -156,17 +204,27 @@ function NotificationsPage() {
   };
 
   const sendTest = async () => {
-    if (testBusy || !enabled) return;
+    if (testBusy || testPending || testVerified || !enabled) return;
     setTestBusy(true);
     setHint(null);
     try {
+      const token = getStoredPushToken();
+      if (!token) throw new Error('device_not_registered');
       const response = await authFetch(resolveApiUrl('/me/push-test'), {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
       });
-      const result = await response.json().catch(() => null) as { deliveredDevices?: number; error?: string } | null;
+      const result = await response.json().catch(() => null) as { verified?: boolean; scheduled?: boolean; error?: string } | null;
       if (!response.ok) throw new Error(result?.error || `push_test_${response.status}`);
-      setHint(`Тест отправлен на ${result?.deliveredDevices ?? 0} устройство. Сверните приложение и проверьте уведомление.`);
+      if (result?.verified) {
+        setTestVerified(true);
+        setHint('Проверка уже завершена. Системные уведомления включены.');
+      } else {
+        setTestPending(true);
+        setHint('Сверните приложение сейчас. Через 8 секунд уведомление появится в шторке — нажмите на него, чтобы завершить проверку.');
+      }
     } catch (error) {
       const code = error instanceof Error ? error.message : '';
       setHint(code === 'push_not_configured'
@@ -175,6 +233,11 @@ function NotificationsPage() {
     } finally {
       setTestBusy(false);
     }
+  };
+
+  const openSystemSettings = async () => {
+    const opened = await openNotificationSettings();
+    if (!opened) setHint('Не удалось открыть настройки автоматически. Откройте настройки TechPravo и разрешите уведомления.');
   };
   return (
     <div className="space-y-3">
@@ -212,27 +275,37 @@ function NotificationsPage() {
         )}
       </button>
       {hint && (
-        <p aria-live="polite" className="px-5 text-[14px] leading-relaxed text-foreground/65">
+        <p role="status" aria-live="polite" className="px-5 text-[14px] leading-relaxed text-foreground/70">
           {hint}
         </p>
       )}
       {!hint && (
         <p className="px-5 text-[14px] leading-relaxed text-foreground/65">
-          Включите чтобы получать важные оповещения форума: начало сессии,
-          новые сообщения, объявления оргкомитета. Отключение применяется
-          мгновенно и не требует переустановки.
+          Получайте напоминания о сессиях, новые сообщения и объявления
+          организаторов. Вы можете отключить их в любое время.
         </p>
       )}
 
-      {enabled && (
+      {!enabled && permissionDenied && (
+        <button
+          type="button"
+          onClick={() => void openSystemSettings()}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/[0.08] px-4 text-[14px] font-semibold text-primary transition-[background-color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 motion-reduce:transition-none motion-reduce:active:scale-100"
+        >
+          <Bell className="h-4 w-4" aria-hidden="true" />
+          Открыть настройки уведомлений
+        </button>
+      )}
+
+      {enabled && !testVerified && (
         <button
           type="button"
           onClick={() => void sendTest()}
-          disabled={testBusy}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/35 px-4 text-[14px] font-semibold text-primary transition-colors hover:bg-primary/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-60"
+          disabled={testBusy || testPending}
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/35 px-4 text-[14px] font-semibold text-primary transition-[background-color,transform] duration-150 active:scale-[0.96] hover:bg-primary/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-60 disabled:active:scale-100 motion-reduce:transition-none"
         >
           {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-          Отправить тестовое уведомление
+          {testPending ? 'Ожидаем нажатия уведомления' : 'Проверить уведомления'}
         </button>
       )}
 

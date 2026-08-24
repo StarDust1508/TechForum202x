@@ -67,6 +67,10 @@ export const users = pgTable(
     birthday: text('birthday').notNull().default(''),
     isPrivate: boolean('is_private').notNull().default(false),
     pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
+    // Заполняется только после того, как пользователь нажал системное Android-
+    // уведомление проверки. Это делает проверку одноразовой для аккаунта и не
+    // выдаёт принятие сообщения Firebase за фактическое появление в шторке.
+    pushTestVerifiedAt: timestamp('push_test_verified_at', { withTimezone: true }),
     // Telegram-привязка для безопасного сброса пароля: код сброса шлётся ТОЛЬКО
     // в привязанный чат владельца (см. server.ts forgot-password). telegram_id —
     // это chat_id приватного чата (== telegram user id). Привязку выпускает сам
