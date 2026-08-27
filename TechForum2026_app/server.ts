@@ -1668,6 +1668,7 @@ async function startServer(): Promise<void> {
       registrationPlatform: u.registrationPlatform,
       registrationDevice: u.registrationDevice,
       devices: devicesByUser.get(u.id) || [],
+      pushTestVerifiedAt: u.pushTestVerifiedAt,
     })));
   });
 
@@ -1678,10 +1679,14 @@ async function startServer(): Promise<void> {
       devices: sql<number>`count(*)::int`,
       users: sql<number>`count(distinct ${pushTokens.userId})::int`,
     }).from(pushTokens);
+    const [verificationTotals] = await db.select({
+      users: sql<number>`count(${users.pushTestVerifiedAt})::int`,
+    }).from(users);
     res.json({
       serviceConfigured: service.initialized && !service.disabled,
       registeredDevices: Number(totals?.devices || 0),
       registeredUsers: Number(totals?.users || 0),
+      verifiedUsers: Number(verificationTotals?.users || 0),
     });
   });
 
@@ -3391,9 +3396,12 @@ async function startServer(): Promise<void> {
         body: 'Нажмите на это сообщение, чтобы завершить проверку.',
         data: { type: 'push_test', verification },
         priority: 'high',
+      }, db, pushTokens).then((accepted) => {
+        log.info('fcm', accepted ? 'push test accepted by Firebase' : 'push test was not accepted by Firebase', { userId: me });
       });
     }, 8_000);
     timer.unref?.();
+    log.info('fcm', 'push test scheduled', { userId: me, delaySeconds: 8 });
     res.status(202).json({ ok: true, scheduled: true, delaySeconds: 8 });
   });
 
@@ -3427,6 +3435,7 @@ async function startServer(): Promise<void> {
     }
     const verifiedAt = new Date();
     await db.update(users).set({ pushTestVerifiedAt: verifiedAt }).where(eq(users.id, me));
+    log.info('fcm', 'push test confirmed from system notification', { userId: me });
     res.json({ ok: true, verifiedAt: verifiedAt.toISOString() });
   });
 

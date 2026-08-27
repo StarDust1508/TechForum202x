@@ -158,6 +158,8 @@ export async function sendPushToUser(
 export async function sendPushToToken(
   token: string,
   payload: PushPayload,
+  db: any,
+  pushTokens: any,
 ): Promise<boolean> {
   if (disabled || !messaging || !token) return false;
   try {
@@ -174,9 +176,23 @@ export async function sendPushToToken(
         },
       },
     });
+    log.info('fcm', 'device push accepted', { type: payload.data?.type || 'unknown' });
     return true;
   } catch (err) {
-    log.error('fcm', `device test send failed: ${(err as Error).message}`);
+    const code = (err as { code?: string })?.code ?? '';
+    if (
+      code.includes('registration-token-not-registered') ||
+      code.includes('invalid-registration-token') ||
+      code.includes('invalid-argument')
+    ) {
+      try {
+        await db.delete(pushTokens).where(eq(pushTokens.token, token));
+        log.info('fcm', 'removed invalid device token after rejected delivery');
+      } catch (cleanupError) {
+        log.error('fcm', `invalid token cleanup failed: ${(cleanupError as Error).message}`);
+      }
+    }
+    log.error('fcm', `device push rejected: ${(err as Error).message}`, { code });
     return false;
   }
 }
