@@ -644,7 +644,7 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Назад"
-                className="h-10 w-10 rounded-xl border border-primary/35 bg-foreground/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
+                className="h-11 w-11 rounded-xl border border-primary/35 bg-foreground/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
               >
                 <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
               </button>
@@ -661,7 +661,7 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Закрыть"
-                className="h-10 w-10 rounded-xl border border-primary/22 flex items-center justify-center text-foreground/40 active:scale-90 transition-transform"
+                className="h-11 w-11 rounded-xl border border-primary/22 flex items-center justify-center text-foreground/40 active:scale-90 transition-transform"
               >
                 <X className="w-4 h-4" strokeWidth={1.8} />
               </button>

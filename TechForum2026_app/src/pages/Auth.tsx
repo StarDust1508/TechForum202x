@@ -384,7 +384,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                 <button
                   type="button"
                   onClick={() => { setShowForgot(true); setForgotEmail(form.email); setResetStep('email'); setResetCode(''); setResetPassword(''); setForgotError(''); }}
-                  className="text-[13px] text-accent/70 hover:text-accent font-medium transition-colors"
+                  className="inline-flex min-h-11 items-center px-1 text-[13px] text-accent/70 hover:text-accent font-medium transition-colors"
                 >
                   Забыли пароль?
                 </button>
