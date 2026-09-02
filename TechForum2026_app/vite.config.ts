@@ -1,7 +1,12 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import path from 'path';
 import {defineConfig} from 'vite';
+
+const packageJson = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 // BUG_FIX_CONTEXT: предыдущая версия вызывала loadEnv(mode, '.', '') с пустым
 // prefix-параметром, но не использовала результат — это приводило к загрузке
@@ -17,6 +22,9 @@ import {defineConfig} from 'vite';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   envPrefix: 'VITE_',
+  define: {
+    __APP_VERSION__: JSON.stringify(packageJson.version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
