@@ -6,6 +6,7 @@ import BackButton from '@/src/components/BackButton';
 import { authFetch, resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 import { getSpeakerImageStyle, type PublicSpeaker } from '@/src/lib/publicSpeakers';
+import AccessibleDialog from '@/src/components/ui/AccessibleDialog';
 
 interface Day { id: string; label: string; weekday: string; }
 interface Track { id: string; name: string; shortLabel: string; color: string; }
@@ -203,13 +204,13 @@ export default function Schedule() {
         })}</div>
       </main>
 
-      {pendingConflict && <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/65 p-3 backdrop-blur-sm min-[480px]:items-center" role="presentation" onClick={() => setPendingConflict(null)}>
-        <section role="dialog" aria-modal="true" aria-labelledby="schedule-conflict-title" onClick={(event) => event.stopPropagation()} className="w-full max-w-md rounded-3xl border border-border bg-background p-5 shadow-2xl" style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-          <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10 text-amber-200"><AlertTriangle className="h-5 w-5" /></div><div className="min-w-0 flex-1"><h2 id="schedule-conflict-title" className="font-display text-[19px] font-bold">В это время уже есть событие</h2><p className="mt-1 text-[14px] leading-relaxed text-foreground/60">Чтобы план оставался выполнимым, замените пересекающееся выступление.</p></div><button type="button" aria-label="Закрыть" onClick={() => setPendingConflict(null)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border"><X className="h-4 w-4" /></button></div>
+      <AccessibleDialog open={Boolean(pendingConflict)} titleId="schedule-conflict-title" descriptionId="schedule-conflict-description" onClose={() => setPendingConflict(null)} align="bottom" panelClassName="w-full max-w-md rounded-3xl border border-border bg-background p-5 shadow-2xl">
+        {pendingConflict && <>
+          <div className="flex items-start gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-300/10 text-amber-200"><AlertTriangle className="h-5 w-5" aria-hidden="true" /></div><div className="min-w-0 flex-1"><h2 id="schedule-conflict-title" className="font-display text-[19px] font-bold">В это время уже есть событие</h2><p id="schedule-conflict-description" className="mt-1 text-[14px] leading-relaxed text-foreground/60">Чтобы план оставался выполнимым, замените пересекающееся выступление.</p></div><button type="button" aria-label="Закрыть" onClick={() => setPendingConflict(null)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border"><X className="h-4 w-4" aria-hidden="true" /></button></div>
           <div className="mt-4 space-y-2">{pendingConflict.conflicts.map((item) => <div key={item.id} className="rounded-2xl border border-border bg-card p-4"><p className="text-[13px] font-semibold text-foreground/55">{item.startTime}–{item.endTime}</p><p className="mt-1 text-[15px] font-bold leading-snug">{item.title}</p></div>)}</div>
-          <div className="mt-5 grid gap-2 min-[360px]:grid-cols-2"><button type="button" onClick={() => setPendingConflict(null)} className="min-h-12 rounded-xl border border-border px-4 text-[14px] font-bold">Оставить текущий план</button><button type="button" disabled={busySessionId !== null} onClick={() => void addSession(pendingConflict.requested, true)} className="min-h-12 rounded-xl bg-primary px-4 text-[14px] font-bold text-white disabled:opacity-60">Заменить событие</button></div>
-        </section>
-      </div>}
+          <div className="mt-5 grid gap-2 min-[360px]:grid-cols-2"><button type="button" autoFocus onClick={() => setPendingConflict(null)} className="min-h-12 rounded-xl border border-border px-4 text-[14px] font-bold">Оставить текущий план</button><button type="button" disabled={busySessionId !== null} onClick={() => void addSession(pendingConflict.requested, true)} className="min-h-12 rounded-xl bg-primary px-4 text-[14px] font-bold text-white disabled:opacity-60">Заменить событие</button></div>
+        </>}
+      </AccessibleDialog>
     </div>
   );
 }

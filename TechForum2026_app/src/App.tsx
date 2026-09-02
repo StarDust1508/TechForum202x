@@ -40,6 +40,7 @@ import OfflineBanner from './components/OfflineBanner';
 import BrandLogo from './components/BrandLogo';
 import BackButton from './components/BackButton';
 import { createDeepLinkDeduper, resolveDeepLink } from './lib/deepLinks';
+import { APP_BACK_REQUEST_EVENT } from './components/ui/AccessibleDialog';
 
 const GUEST_KEY = 'techforum_guest_mode';
 
@@ -78,6 +79,8 @@ function useHardwareBack() {
       try {
         const { App: CapApp } = await import('@capacitor/app');
         const handle = await CapApp.addListener('backButton', () => {
+          const backRequest = new CustomEvent(APP_BACK_REQUEST_EVENT, { cancelable: true });
+          if (!window.dispatchEvent(backRequest)) return;
           if (window.location.pathname !== '/') {
             if (window.history.length > 1) {
               navigate(-1);
@@ -430,7 +433,7 @@ function AppContent() {
     // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
-    <div className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
+    <div id="app-content" className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
       <OfflineBanner />
       <main
         className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import BrandLogo from '@/src/components/BrandLogo';
 import { Mail, Phone, Lock, ArrowRight, Loader2, User as UserIcon, Fingerprint, X as XIcon, KeyRound, TicketCheck } from 'lucide-react';
@@ -7,6 +7,7 @@ import { isLocalAuthFallbackEnabled, loginLocalUser, registerLocalUser } from '@
 import { resolveApiUrl, saveSessionToken, authFetch, fetchWithTimeout } from '@/src/lib/runtimeEndpoint';
 import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
 import { Capacitor } from '@capacitor/core';
+import { mapAuthServerError, presentAuthException, recordAuthDiagnostic, type AuthErrorPresentation, type AuthErrorTarget } from '@/src/lib/authErrors';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
@@ -29,6 +30,11 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [errorTarget, setErrorTarget] = useState<AuthErrorTarget>('form');
+  const nameRef = useRef<HTMLInputElement>(null);
+  const identifierRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   // BUG_FIX_CONTEXT: focus-стейт для тонкой анимации backdrop'а — при фокусе
   // на input приглушаем blueprint и слегка увеличиваем масштаб, чтобы
   // создать ощущение "фокус на форме". Не блокирует interactivity.
@@ -54,6 +60,24 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
   // BUG_FIX_CONTEXT: По требованию 152-ФЗ при регистрации нужно явное
   // согласие на обработку ПД. На login-моде чекбокс не нужен.
   const [consent, setConsent] = useState(false);
+
+  const showAuthError = (presentation: AuthErrorPresentation, cause: unknown) => {
+    setError(presentation.message);
+    setErrorTarget(presentation.target);
+    recordAuthDiagnostic(cause, presentation);
+  };
+
+  useEffect(() => {
+    if (!error) return;
+    const target = errorTarget === 'name'
+      ? nameRef.current
+      : errorTarget === 'identifier'
+        ? identifierRef.current
+        : errorTarget === 'password'
+          ? passwordRef.current
+          : errorRef.current;
+    window.requestAnimationFrame(() => target?.focus({ preventScroll: false }));
+  }, [error, errorTarget]);
 
   // BUG_FIX_CONTEXT: Биометрия — после успешного login/register предлагаем
   // включить, если (1) сенсор доступен, (2) биометрия ещё не включена.
@@ -107,16 +131,10 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
           ? String(data.issues[0]?.message || '')
           : '';
         const code = String(data?.error || '');
-        const codeMap: Record<string, string> = {
-          invalid_body: issueMsg || 'Проверьте email и пароль: email — в корректном формате, пароль — минимум 6 символов.',
-          user_create_failed: 'Не удалось создать аккаунт. Попробуйте позже.',
-          invalid_credentials: 'Неверный email или пароль.',
-          user_not_found: 'Неверный email или пароль.',
-          wrong_password: 'Неверный email или пароль.',
-          email_taken: 'Пользователь с таким email уже зарегистрирован — войдите.',
-        };
-        const looksHuman = /[А-Яа-яЁё]/.test(code); // сервер прислал готовую русскую фразу
-        throw new Error(codeMap[code] || (looksHuman ? code : (issueMsg || 'Не удалось выполнить. Проверьте введённые данные.')));
+        const presentation = mapAuthServerError(code, issueMsg);
+        const failure = new Error(code || issueMsg || 'server_auth_error') as Error & { authPresentation?: AuthErrorPresentation };
+        failure.authPresentation = presentation;
+        throw failure;
       }
       if (!data || typeof data !== 'object') throw new Error('backend_invalid_response');
       if (data.token) saveSessionToken(data.token);
@@ -132,17 +150,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
       }
       onSuccess(data);
     } catch (err: any) {
-      const rawMessage = String(err?.message || '');
-      const isNetworkError = /failed to fetch|networkerror|fetch|backend_invalid_response|unexpected token|load failed|cors|typeerror|timeout|timed out|abort/i.test(rawMessage);
+      const presentation = err?.authPresentation || presentAuthException(err);
       if (!isLocalAuthFallbackEnabled()) {
-        // BUG_FIX_CONTEXT: Раньше сообщение было общее «Нет соединения», но
-        // у нас 5 разных причин (VPN, mixed-content, CORS, DNS, backend down).
-        // Дописываем технический rawMessage в скобках — юзер видит «Нет
-        // соединения [Failed to fetch]» и я по скрину могу определить точную
-        // причину, не возвращаясь к нему за logs.
-        setError(isNetworkError
-          ? `Нет соединения с сервером. [${rawMessage.slice(0, 80)}] Проверьте интернет / выключите VPN.`
-          : (rawMessage || 'Ошибка входа'));
+        showAuthError(presentation, err);
         setLoading(false);
         return;
       }
@@ -152,15 +162,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
           : await loginLocalUser({ identifier, password: form.password });
         onSuccess(user);
       } catch (fb: any) {
-        const msg = String(fb?.message || '');
-        const friendly =
-          /invalid_credentials|wrong[_ ]?password|user[_ ]?not[_ ]?found|неверные/i.test(msg) ? 'Неверный логин или пароль'
-          : /already[_ ]?exists|duplicate|уже существует/i.test(msg) ? 'Пользователь с такими данными уже зарегистрирован'
-          : /password.*(short|weak|min)|укажите пароль/i.test(msg) ? 'Пароль слишком короткий — минимум 6 символов'
-          : /укажите/i.test(msg) ? msg
-          : isNetworkError ? 'Нет соединения. Попробуйте ещё раз через минуту.'
-          : (msg || 'Не удалось выполнить вход');
-        setError(friendly);
+        showAuthError(presentAuthException(fb), fb);
       }
     } finally {
       setLoading(false);
@@ -306,12 +308,18 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                 transition={{ duration: 0.26, ease: [0.32, 0.72, 0, 1] }}
                 className="space-y-1.5 overflow-hidden"
               >
-                <label className={labelClass}>Имя</label>
+                <label htmlFor="auth-name" className={labelClass}>Имя</label>
                 <div className="relative">
                   <UserIcon className={iconClass} />
                   <input
+                    ref={nameRef}
+                    id="auth-name"
+                    name="name"
                     type="text"
+                    autoComplete="name"
                     required={mode === 'register'}
+                    aria-invalid={errorTarget === 'name' && Boolean(error)}
+                    aria-describedby={errorTarget === 'name' && error ? 'auth-error' : undefined}
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
                     className={inputClass}
@@ -323,22 +331,37 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
           </AnimatePresence>
 
           <div className="space-y-1.5">
-            <label className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
+            <label htmlFor="auth-identifier" className={labelClass}>{method === 'email' ? 'Email' : 'Телефон'}</label>
             <div className="relative">
               {method === 'email' ? <Mail className={iconClass} /> : <Phone className={iconClass} />}
               {method === 'email' ? (
                 <input
+                  ref={identifierRef}
+                  id="auth-identifier"
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  spellCheck={false}
                   required
+                  aria-invalid={errorTarget === 'identifier' && Boolean(error)}
+                  aria-describedby={errorTarget === 'identifier' && error ? 'auth-error' : undefined}
                   placeholder=""
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   className={inputClass}
+                  {...inputFocusProps}
                 />
               ) : (
                 <input
+                  ref={identifierRef}
+                  id="auth-identifier"
+                  name="tel"
                   type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
                   required
+                  aria-invalid={errorTarget === 'identifier' && Boolean(error)}
+                  aria-describedby={errorTarget === 'identifier' && error ? 'auth-error' : undefined}
                   placeholder="+7 (___) ___-__-__"
                   value={form.phone}
                   onChange={(e) => {
@@ -348,6 +371,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                     setForm({ ...form, phone: v });
                   }}
                   className={inputClass}
+                  {...inputFocusProps}
                 />
               )}
             </div>
@@ -355,7 +379,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
 
           <div className="space-y-1.5">
             <div className="flex justify-between items-baseline">
-              <label className={labelClass}>Пароль</label>
+              <label htmlFor="auth-password" className={labelClass}>Пароль</label>
               {mode === 'login' && (
                 <button
                   type="button"
@@ -369,11 +393,19 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
             <div className="relative">
               <Lock className={iconClass} />
               <input
+                ref={passwordRef}
+                id="auth-password"
+                name="password"
                 type="password"
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 required
+                minLength={6}
+                aria-invalid={errorTarget === 'password' && Boolean(error)}
+                aria-describedby={errorTarget === 'password' && error ? 'auth-error' : undefined}
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 className={inputClass}
+                {...inputFocusProps}
               />
             </div>
           </div>
@@ -381,6 +413,11 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
           <AnimatePresence>
             {error && (
               <motion.p
+                ref={errorRef}
+                id="auth-error"
+                role="alert"
+                aria-live="assertive"
+                tabIndex={-1}
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
@@ -395,6 +432,8 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
             <label className="flex items-start gap-3 pt-1 cursor-pointer select-none">
               <input
                 type="checkbox"
+                name="personal-data-consent"
+                required
                 checked={consent}
                 onChange={(e) => setConsent(e.target.checked)}
                 className="mt-1 w-[18px] h-[18px] accent-primary rounded"
@@ -407,17 +446,12 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
 
           <button
             type="submit"
-            disabled={loading || (mode === 'register' && !consent)}
+            disabled={loading}
             className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[17px] font-bold tracking-[0.02em] flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(var(--primary-rgb),0.25)] mt-6"
           >
-            {loading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <>
-                <span>{mode === 'login' ? 'Войти' : 'Создать аккаунт'}</span>
-                <ArrowRight className="w-[18px] h-[18px]" />
-              </>
-            )}
+            {loading && <Loader2 className="w-5 h-5 animate-spin" aria-hidden="true" />}
+            <span>{mode === 'login' ? 'Войти' : 'Создать аккаунт'}</span>
+            {!loading && <ArrowRight className="w-[18px] h-[18px]" aria-hidden="true" />}
           </button>
 
           <button
@@ -451,6 +485,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
             className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-background/85 backdrop-blur-md"
           >
             <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="forgot-password-title"
               initial={{ y: 24, opacity: 0, scale: 0.96 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
               exit={{ y: 24, opacity: 0, scale: 0.96 }}
@@ -470,7 +507,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent/20 to-accent/10 border border-accent/40 flex items-center justify-center mb-5">
                   <KeyRound className="w-7 h-7 text-accent" />
                 </div>
-                <h2 className="font-display text-[22px] leading-tight font-bold text-foreground mb-2">
+                <h2 id="forgot-password-title" className="font-display text-[22px] leading-tight font-bold text-foreground mb-2">
                   Восстановление пароля
                 </h2>
 
@@ -492,9 +529,13 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                     <p className="text-[14px] leading-relaxed text-foreground/65">
                       Если email привязан к Telegram, бот <span className="text-accent font-semibold">@NeuroPravo_Bot</span> прислал код. Введите его и новый пароль.
                     </p>
+                    <label htmlFor="reset-code" className={`${labelClass} block text-left`}>Код из Telegram</label>
                     <input
+                      id="reset-code"
+                      name="one-time-code"
                       type="text"
-                      inputMode="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
                       autoCapitalize="none"
                       autoCorrect="off"
                       placeholder="Код из Telegram"
@@ -502,8 +543,12 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                       onChange={(e) => setResetCode(e.target.value.trim())}
                       className={inputClass}
                     />
+                    <label htmlFor="reset-password" className={`${labelClass} block text-left`}>Новый пароль</label>
                     <input
+                      id="reset-password"
+                      name="new-password"
                       type="password"
+                      autoComplete="new-password"
                       placeholder="Новый пароль (мин. 6 символов)"
                       value={resetPassword}
                       onChange={(e) => setResetPassword(e.target.value)}
@@ -572,8 +617,13 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                     <p className="text-[14px] leading-relaxed text-foreground/65">
                       Введите email аккаунта. Если к нему привязан Telegram, код для сброса придёт в бота <span className="text-accent font-semibold">@NeuroPravo_Bot</span>.
                     </p>
+                    <label htmlFor="forgot-email" className={`${labelClass} block text-left`}>Email аккаунта</label>
                     <input
+                      id="forgot-email"
+                      name="email"
                       type="email"
+                      autoComplete="email"
+                      spellCheck={false}
                       placeholder="Email"
                       value={forgotEmail}
                       onChange={(e) => setForgotEmail(e.target.value)}

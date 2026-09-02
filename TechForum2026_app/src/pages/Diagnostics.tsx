@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Activity, CheckCircle2, CircleAlert, Server } from 'lucide-react';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
+import { readLastAuthDiagnostic } from '@/src/lib/authErrors';
 
 type HealthState = {
   loading: boolean;
@@ -11,6 +12,7 @@ type HealthState = {
 };
 
 export default function Diagnostics() {
+  const lastAuthDiagnostic = readLastAuthDiagnostic();
   const [health, setHealth] = useState<HealthState>({
     loading: true,
     ok: false,
@@ -87,6 +89,18 @@ export default function Diagnostics() {
           <p className="mt-2 text-sm text-foreground/65">Статус: {health.message}</p>
         </div>
       </section>
+
+      {lastAuthDiagnostic && (
+        <section className="rounded-3xl border border-border bg-foreground/[0.03] p-5" aria-labelledby="auth-diagnostic-heading">
+          <h2 id="auth-diagnostic-heading" className="text-base font-semibold text-foreground">Последняя ошибка входа</h2>
+          <dl className="mt-3 space-y-2 text-sm text-foreground/65">
+            <div><dt className="inline font-semibold text-foreground/80">Код: </dt><dd className="inline break-all">{lastAuthDiagnostic.code}</dd></div>
+            <div><dt className="inline font-semibold text-foreground/80">Время: </dt><dd className="inline">{lastAuthDiagnostic.occurredAt}</dd></div>
+            <div><dt className="inline font-semibold text-foreground/80">Техническая причина: </dt><dd className="inline break-words">{lastAuthDiagnostic.errorName}: {lastAuthDiagnostic.technicalMessage}</dd></div>
+          </dl>
+          <p className="mt-3 text-[12px] leading-relaxed text-foreground/50">Эти данные нужны только для диагностики и не содержат пароль.</p>
+        </section>
+      )}
     </div>
   );
 }

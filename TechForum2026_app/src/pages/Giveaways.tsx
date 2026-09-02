@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import BackButton from '@/src/components/BackButton';
 import { useAppContent } from '@/src/lib/useAppContent';
+import { RESEARCH_CONTENT_EVIDENCE, VERIFIED_RESEARCH_BENEFIT } from '@/src/lib/researchEvidence';
 
 export default function Giveaways() {
   const content = useAppContent();
@@ -20,7 +21,7 @@ export default function Giveaways() {
       role: 'Юрист или юридическая команда',
       title: content.researchLawyerTitle,
       description: content.researchLawyerDescription,
-      material: content.researchLawyerMaterial,
+      material: VERIFIED_RESEARCH_BENEFIT,
       href: content.researchLawyerUrl,
       action: 'Пройти опрос для юристов',
     },
@@ -30,7 +31,7 @@ export default function Giveaways() {
       role: 'Арбитражный управляющий',
       title: content.researchManagerTitle,
       description: content.researchManagerDescription,
-      material: content.researchManagerMaterial,
+      material: VERIFIED_RESEARCH_BENEFIT,
       href: content.researchManagerUrl,
       action: 'Пройти опрос для управляющих',
     },
@@ -49,7 +50,7 @@ export default function Giveaways() {
           <BackButton />
           <div className="min-w-0">
             <h1 className="font-display text-[clamp(24px,7vw,29px)] font-bold leading-[1.1] text-balance">Исследования</h1>
-            <p className="mt-1 text-[13px] font-medium text-foreground/60">12 вопросов · около 7 минут</p>
+            <p className="mt-1 text-[13px] font-medium text-foreground/60">{RESEARCH_CONTENT_EVIDENCE.questionCount} вопросов · {RESEARCH_CONTENT_EVIDENCE.estimatedMinutes} минут</p>
           </div>
         </div>
       </header>
@@ -68,7 +69,7 @@ export default function Giveaways() {
           <div className="rounded-2xl bg-background/45 p-3.5">
             <Clock3 className="h-4 w-4 text-accent" aria-hidden="true" />
             <p className="mt-2 text-[13px] font-semibold text-foreground/85">Быстро</p>
-            <p className="mt-1 text-[12px] leading-[1.45] text-foreground/55">Около 7 минут</p>
+            <p className="mt-1 text-[12px] leading-[1.45] text-foreground/55">{RESEARCH_CONTENT_EVIDENCE.estimatedMinutes} минут</p>
           </div>
           <div className="rounded-2xl bg-background/45 p-3.5">
             <FileCheck2 className="h-4 w-4 text-accent" aria-hidden="true" />
