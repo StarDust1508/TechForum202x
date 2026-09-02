@@ -15,8 +15,9 @@
 //    fallback также гарантирует обратную совместимость пока миграция всех
 //    pages не завершена.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { resolveApiUrl, authFetch } from './runtimeEndpoint';
+import { fetchCachedJson, readCachedPublicJson } from './cachedPublicApi';
 import {
   SPEAKERS, SESSIONS, PARTNERS, NEWS, TRACKS, HALLS, DAYS,
   type Speaker, type Session, type Partner, type NewsItem, type Track, type Hall, type Day,
@@ -86,7 +87,31 @@ export function useProgramFetch<T>(path: string): ProgramFetchState<T> {
 
 // Удобные типизированные обёртки для каждой коллекции.
 export const useSpeakers = () => useProgramFetch<Speaker[]>('/speakers');
-export const useSessions = () => useProgramFetch<Session[]>('/sessions');
+/** Publication-filtered sessions for every visible programme surface. */
+export function useSessions<T = Session>(): ProgramFetchState<T[]> {
+  const [initial] = useState<T[]>(() => readCachedPublicJson<T[]>('/sessions') ?? []);
+  const [data, setData] = useState<T[]>(initial);
+  const hasUsableData = useRef(initial.length > 0);
+  const [loading, setLoading] = useState(!hasUsableData.current);
+  const [fromFallback, setFromFallback] = useState(true);
+
+  const refetch = useCallback(async (): Promise<void> => {
+    // Keep a proven cached/bundled programme visible during background refresh.
+    // This avoids a full-screen flash when opening a speaker or returning to a list.
+    setLoading(!hasUsableData.current);
+    try {
+      const result = await fetchCachedJson<T[]>('/sessions');
+      setData(result.data);
+      hasUsableData.current = result.data.length > 0;
+      setFromFallback(result.stale);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refetch(); }, [refetch]);
+  return { data, loading, fromFallback, refetch };
+}
 export const usePartners = () => useProgramFetch<Partner[]>('/partners');
 export const useNews = () => useProgramFetch<NewsItem[]>('/news');
 export const useTracks = () => useProgramFetch<Track[]>('/tracks');

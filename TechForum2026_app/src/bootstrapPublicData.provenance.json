@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "endpoint": "https://tech-pravo.ru/tfapi/v1/speakers",
   "capturedAt": "2026-09-02T08:16:07Z",
   "responseEtag": "W/\"91e3-npAGAbUOlzAdEci0+w/t95UM1WI\"",
@@ -40,5 +40,63 @@
     "ss_366b8251a233434c",
     "ss_4805a2e9aa194ee2",
     "ss_342a441770254f52"
-  ]
+  ],
+  "sessions": {
+    "endpoint": "https://tech-pravo.ru/tfapi/v1/sessions",
+    "capturedAt": "2026-09-02T13:08:08Z",
+    "responseEtag": "W/\"5cd5-dKfo/RnQwGH2lZYfEutVG/te9ZY\"",
+    "responseSha256": "5e726f04bffcaf8e71662af0568413913482ab26883cee824f91108be40d67d2",
+    "sourceSessionCount": 40,
+    "publicationFilter": [
+      "ev_64df4b6eef3776",
+      "ev_cc2ac4fb7154b4"
+    ],
+    "canonicalPublishedSha256": "e27f22a1a5b21d43fd00e54c814e2ab707ef2d5cf58712bf7acf3a118be0a5c3",
+    "publishedSessionCount": 38,
+    "publishedSessionIds": [
+      "ev_ce9967328b5ce0",
+      "ev_6beccff2664a38",
+      "ev_4f56c8d3ee4fa5",
+      "ev_d5af87671e6912",
+      "ev_b49c438f806e3e",
+      "ev_281c3f11772092",
+      "ev_4ba78500b92175",
+      "ev_d0cb3a647b81d2",
+      "ev_89074a7dc274d1",
+      "ev_aa7aff713bb1a5",
+      "ev_72257927766046",
+      "ev_8888a3ec7969c5",
+      "ev_82852bf3347ec4",
+      "ev_16173b4d7e4b6e",
+      "ev_31edb6c05edcb6",
+      "ev_77ec30c6ed1524",
+      "ev_573b138c6ef946",
+      "ev_f59df4399099a4",
+      "ev_b16d2a2105005b",
+      "ev_2b673398c3e202",
+      "ev_627733e74afb45",
+      "ev_3b6f86259a47ae",
+      "ev_99cb036b7ba74f",
+      "ev_cc6816f00cfb99",
+      "ev_c672a11f5a0ff8",
+      "ev_24fe469920e1bd",
+      "ev_be9c1980b66bba",
+      "ev_a9a2de14f4b8aa",
+      "ev_dc8a84d1da31e8",
+      "ev_876a7521fad963",
+      "ev_0958ff46da4f82",
+      "ev_e58308129f0236",
+      "ev_ad197ded6a0403",
+      "ev_1882e735912109",
+      "ev_7a9058752a5b0d",
+      "ev_3979a82fbd634c",
+      "ev_8d2e78bc98728f",
+      "ev_4ed0cf7acbbceb"
+    ],
+    "canonicalSpeakerLinks": {
+      "ev_4ed0cf7acbbceb": [
+        "ss_9549f3332e335f3a"
+      ]
+    }
+  }
 }

@@ -1,11 +1,12 @@
 import { resolveApiUrl } from './runtimeEndpoint';
 import bootstrap from '../bootstrapPublicData.json';
 import { normalizePublicSpeakers } from './publicSpeakers';
+import { normalizePublishedSessions } from './publicSessions';
 
-// v4 инвалидирует старый снимок, где было 29 спикеров и 33 сессии. Без смены
-// пространства ключей обновлённая сборка могла продолжать показывать старую
-// программу офлайн, пока первый сетевой запрос не завершится успешно.
-const prefix = 'tp_public_cache_v5:';
+// v6 invalidates pre-publication caches. Without a namespace change, an
+// upgraded client could render one of the two hidden sessions before the first
+// successful network refresh. All reads are normalized as a second boundary.
+const prefix = 'tp_public_cache_v6:';
 
 const bundledByPath: Record<string, unknown> = {
   '/days': bootstrap.days,
@@ -16,7 +17,9 @@ const bundledByPath: Record<string, unknown> = {
 };
 
 function normalizeByPath(path: string, data: unknown): unknown {
-  return path === '/speakers' ? normalizePublicSpeakers(data) : data;
+  if (path === '/speakers') return normalizePublicSpeakers(data);
+  if (path === '/sessions') return normalizePublishedSessions(data);
+  return data;
 }
 
 /** Мгновенный снимок для экранов, которые не должны мигать skeleton-ом при возврате. */

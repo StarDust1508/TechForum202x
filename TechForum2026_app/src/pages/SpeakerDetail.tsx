@@ -1,11 +1,13 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Calendar, ChevronRight, Sparkles, Clock3, MapPin } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import PageShell from '@/src/components/ui/PageShell';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson, readCachedPublicJson } from '@/src/lib/cachedPublicApi';
 import { getSpeakerImageStyle, type PublicSpeaker } from '@/src/lib/publicSpeakers';
+import { useSessions } from '@/src/lib/programData';
+import { getCanonicalProgrammeSpeaker } from '@/src/lib/canonicalSpeakerSupplements';
 
 // Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
 // программы (id спикеров сохранены → связка работает для программных спикеров).
@@ -43,38 +45,41 @@ export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const cachedSpeakers = readCachedPublicJson<PublicSpeaker[]>('/speakers') ?? [];
-  const cachedSessions = readCachedPublicJson<ApiSession[]>('/sessions') ?? [];
-  const [speaker, setSpeaker] = useState<PublicSpeaker | null>(() => cachedSpeakers.find((item) => item.id === id) ?? null);
-  const [speakerSessions, setSpeakerSessions] = useState<ApiSession[]>(() => cachedSessions.filter((item) => item.speakerIds?.includes(id || '')));
+  const sessionState = useSessions<ApiSession>();
+  const [speaker, setSpeaker] = useState<PublicSpeaker | null>(() => cachedSpeakers.find((item) => item.id === id) ?? getCanonicalProgrammeSpeaker(id || '') ?? null);
   const [tracks, setTracks] = useState<ApiTrack[]>(() => readCachedPublicJson<ApiTrack[]>('/tracks') ?? []);
   const [days, setDays] = useState<ApiDay[]>(() => readCachedPublicJson<ApiDay[]>('/days') ?? []);
-  const [loading, setLoading] = useState(cachedSpeakers.length === 0);
+  const [speakerLoading, setSpeakerLoading] = useState(cachedSpeakers.length === 0 && !getCanonicalProgrammeSpeaker(id || ''));
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      setSpeakerLoading(true);
       try {
-        const [speakerResult, sessionResult, trackResult, dayResult] = await Promise.all([
+        const [speakerResult, trackResult, dayResult] = await Promise.all([
           fetchCachedJson<PublicSpeaker[]>('/speakers'),
-          fetchCachedJson<ApiSession[]>('/sessions'),
           fetchCachedJson<ApiTrack[]>('/tracks'),
           fetchCachedJson<ApiDay[]>('/days'),
         ]);
         if (!cancelled) {
-          setSpeaker(Array.isArray(speakerResult.data) ? (speakerResult.data.find((s) => s.id === id) ?? null) : null);
-          setSpeakerSessions(Array.isArray(sessionResult.data) ? sessionResult.data.filter((session) => session.speakerIds?.includes(id || '')) : []);
+          setSpeaker(Array.isArray(speakerResult.data) ? (speakerResult.data.find((s) => s.id === id) ?? getCanonicalProgrammeSpeaker(id || '') ?? null) : getCanonicalProgrammeSpeaker(id || '') ?? null);
           setTracks(Array.isArray(trackResult.data) ? trackResult.data : []);
           setDays(Array.isArray(dayResult.data) ? dayResult.data : []);
         }
       } catch {
         /* offline */
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setSpeakerLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, [id]);
+
+  const speakerSessions = useMemo(
+    () => sessionState.data.filter((session) => session.speakerIds?.includes(id || '')),
+    [id, sessionState.data],
+  );
+  const loading = speakerLoading || sessionState.loading;
 
   if (loading) {
     return (

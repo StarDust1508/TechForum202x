@@ -7,6 +7,8 @@ import { authFetch, resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndp
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 import { getSpeakerImageStyle, type PublicSpeaker } from '@/src/lib/publicSpeakers';
 import AccessibleDialog from '@/src/components/ui/AccessibleDialog';
+import { useSessions } from '@/src/lib/programData';
+import { getCanonicalProgrammeSpeakers } from '@/src/lib/canonicalSpeakerSupplements';
 
 interface Day { id: string; label: string; weekday: string; }
 interface Track { id: string; name: string; shortLabel: string; color: string; }
@@ -26,13 +28,14 @@ export default function Schedule() {
   const [days, setDays] = useState<Day[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const sessionState = useSessions<Session>();
+  const sessions = sessionState.data;
   const [registered, setRegistered] = useState<string[]>([]);
   const [selectedDay, setSelectedDay] = useState('');
   const [selectedTrack, setSelectedTrack] = useState('all');
-  const [loading, setLoading] = useState(true);
+  const [resourceLoading, setResourceLoading] = useState(true);
   const [error, setError] = useState('');
-  const [stale, setStale] = useState(false);
+  const [resourceStale, setResourceStale] = useState(false);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
   const [highlightedSessionId, setHighlightedSessionId] = useState<string | null>(null);
   const [pendingConflict, setPendingConflict] = useState<{ requested: Session; conflicts: Session[] } | null>(null);
@@ -40,15 +43,15 @@ export default function Schedule() {
   const dayScrollerRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
-    setLoading(true); setError('');
+    setResourceLoading(true); setError('');
     try {
-      const [dayResult, trackResult, speakerResult, sessionResult, registeredRes] = await Promise.all([
+      const [dayResult, trackResult, speakerResult, registeredRes] = await Promise.all([
         fetchCachedJson<Day[]>('/days'), fetchCachedJson<Track[]>('/tracks'), fetchCachedJson<Speaker[]>('/speakers'),
-        fetchCachedJson<Session[]>('/sessions'), authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' }).catch(() => null),
+        authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' }).catch(() => null),
       ]);
-      const nextDays = dayResult.data, nextTracks = trackResult.data, nextSpeakers = speakerResult.data, nextSessions = sessionResult.data;
-      setStale([dayResult, trackResult, speakerResult, sessionResult].some((x) => x.stale));
-      setDays(nextDays); setTracks(nextTracks); setSpeakers(nextSpeakers); setSessions(nextSessions);
+      const nextDays = dayResult.data, nextTracks = trackResult.data, nextSpeakers = speakerResult.data;
+      setResourceStale([dayResult, trackResult, speakerResult].some((x) => x.stale));
+      setDays(nextDays); setTracks(nextTracks); setSpeakers(nextSpeakers);
       setSelectedDay((current) => current || nextDays[0]?.id || '');
       if (registeredRes?.ok) {
         const mine = await registeredRes.json();
@@ -62,10 +65,12 @@ export default function Schedule() {
         } catch { /* corrupted local plan */ }
       }
     } catch { setError('Не удалось загрузить актуальную программу. Проверьте соединение.'); }
-    finally { setLoading(false); }
+    finally { setResourceLoading(false); }
   };
 
   useEffect(() => { void load(); }, []);
+  const loading = resourceLoading || sessionState.loading;
+  const stale = resourceStale || sessionState.fromFallback;
   useEffect(() => {
     if (loading) return;
     const sessionId = searchParams.get('session');
@@ -92,7 +97,9 @@ export default function Schedule() {
     if (!scroller || !selected) return;
     selected.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }, [selectedDay, days.length]);
-  const speakerMap = useMemo(() => new Map(speakers.map((s) => [s.id, s])), [speakers]);
+  const speakerMap = useMemo(() => new Map(
+    [...speakers, ...getCanonicalProgrammeSpeakers()].map((s) => [s.id, s]),
+  ), [speakers]);
   const trackMap = useMemo(() => new Map(tracks.map((t) => [t.id, t])), [tracks]);
   const dayMap = useMemo(() => new Map(days.map((day, index) => [day.id, { ...day, index }])), [days]);
   const visible = useMemo(() => sessions
@@ -179,7 +186,7 @@ export default function Schedule() {
       <main className="px-4 pt-5 min-[360px]:px-5">
         {stale && !error && <div className="mb-4 rounded-2xl border border-amber-400/30 bg-amber-400/[0.07] px-4 py-3 text-[14px] leading-snug text-amber-100">Нет соединения — показываем последнюю сохранённую программу.</div>}
         {loading && <div className="py-20 text-center" role="status"><Loader2 className="mx-auto h-7 w-7 animate-spin text-accent" /><p className="mt-3 text-[14px] text-foreground/60">Загружаем актуальную программу…</p></div>}
-        {error && <div className="rounded-3xl border border-primary/25 bg-card p-6 text-center"><p className="text-base text-foreground/70">{error}</p><button type="button" onClick={load} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-[14px] font-bold text-primary-foreground"><RefreshCw className="w-4 h-4" />Повторить</button></div>}
+        {error && <div className="rounded-3xl border border-primary/25 bg-card p-6 text-center"><p className="text-base text-foreground/70">{error}</p><button type="button" onClick={() => { void load(); void sessionState.refetch(); }} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-4 py-2 text-[14px] font-bold text-primary-foreground"><RefreshCw className="w-4 h-4" />Повторить</button></div>}
         {!loading && !error && visible.length === 0 && <div className="rounded-3xl border border-dashed border-border p-8 text-center"><CalendarPlus className="mx-auto h-8 w-8 text-foreground/35" /><p className="mt-3 text-[15px] text-foreground/65">{selectedDay === MY ? 'Добавьте нужные сессии в свой план.' : 'По этому фильтру сессий нет.'}</p></div>}
         <div className="space-y-3">{visible.map((session, index) => {
           const track = session.trackId ? trackMap.get(session.trackId) : undefined;

@@ -4,7 +4,7 @@
 // PURPOSE: Личный кабинет — список зарегистрированных сессий пользователя
 //          с группировкой по дню и кнопкой экспорта всей программы в .ics.
 // SCOPE: UI + загрузка регистраций с сервера + .ics download.
-// INPUT: SESSIONS, DAYS из src/data; API /sessions/registered, /sessions/calendar.
+// INPUT: publication-filtered useSessions, DAYS; API /sessions/registered, /sessions/calendar.
 // OUTPUT: JSX страница.
 // KEYWORDS: DOMAIN(7): MyAgenda; CONCEPT(7): SortedList; TECH(6): React
 // LINKS: CALLS_API(8): /sessions/registered, /sessions/calendar
@@ -24,6 +24,7 @@ import BackButton from '@/src/components/BackButton';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 import { buildIcsCalendar, formatIcsDateTime } from '@/src/lib/ics';
+import { useSessions } from '@/src/lib/programData';
 
 interface Day { id: string; date: string; label: string; weekday: string; }
 interface Session { id: string; title: string; description: string; startTime: string; endTime: string; dayId: string; speakerName: string; location: string; track?: string; }
@@ -72,21 +73,18 @@ function timeToMinutes(hhmm: string): number {
 }
 
 export default function MyRecords() {
+  const sessionState = useSessions<Session>();
+  const sessions = sessionState.data;
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [days, setDays] = useState<Day[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [dayResult, sessionResult] = await Promise.all([
-        fetchCachedJson<Day[]>('/days'),
-        fetchCachedJson<Session[]>('/sessions'),
-      ]);
+      const dayResult = await fetchCachedJson<Day[]>('/days');
       if (!cancelled) {
         setDays(dayResult.data);
-        setSessions(sessionResult.data);
       }
       try {
         const res = await authFetch(resolveApiUrl('/sessions/registered'), { credentials: 'include' });
@@ -94,16 +92,18 @@ export default function MyRecords() {
           const data = await res.json();
           if (!cancelled && Array.isArray(data?.sessionIds)) {
             setRegisteredIds(data.sessionIds);
-            setLoading(false);
+            setRecordsLoading(false);
             return;
           }
         }
       } catch { /* offline — fall through to legacy */ }
       if (!cancelled) setRegisteredIds(readLocalPlan());
-      if (!cancelled) setLoading(false);
+      if (!cancelled) setRecordsLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const loading = recordsLoading || sessionState.loading;
 
   const registeredSessions = useMemo(() => sessions
     .filter(s => registeredIds.includes(s.id))
