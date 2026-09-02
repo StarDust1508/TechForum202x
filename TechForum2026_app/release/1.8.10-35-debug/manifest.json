@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "techforum-mobile-1.8.10-35-debug",
+  "immutable": true,
+  "createdAt": "2026-09-02T09:19:42Z",
+  "scope": "local QA candidate only; production and stores unchanged",
+  "source": {
+    "repository": "TechForum202x",
+    "baseCommit": "05b223d48081dca14589c0c0863cc7c30be9200b",
+    "artifactCommit": "fb78eb553299f778ebb0390d5ff4195be8afd3e0",
+    "branch": "codex/techforum-mobile-client-pass3-20260902",
+    "worktree": "/Users/bubble3/Desktop/pravo-tech-hub-worktrees/techforum-mobile-client-pass3-20260902"
+  },
+  "application": {
+    "name": "TechPravo",
+    "version": "1.8.10",
+    "build": 35,
+    "apiBaseUrl": "https://tech-pravo.ru/tfapi/v1"
+  },
+  "android": {
+    "applicationId": "com.psy_lololo.conferenceapp",
+    "minSdk": 24,
+    "targetSdk": 36,
+    "debugApk": {
+      "path": "release/1.8.10-35-debug/TechPravo-Android-1.8.10-35-debug.apk",
+      "bytes": 12030658,
+      "sha256": "d0ef609a7bcab0a74241fa4a0588ec96b9373a65a28f57386b85828009ba3529",
+      "signatureSchemes": ["v2"],
+      "certificateDn": "C=US, O=Android, CN=Android Debug",
+      "certificateSha256": "4ba586b873ee61f3f112cdc1093b6e757b802a0ebd86f157c336dd5390fe33da",
+      "upgradeCompatibleWithPublishedRuStorePackage": false
+    },
+    "aab": null,
+    "releaseSigning": {
+      "status": "not configured",
+      "debugKeyForbidden": true,
+      "publishedCertificateMatch": "not verified",
+      "uploadCertificateMatch": "not verified"
+    },
+    "push": {
+      "clientCapability": "Android only, guarded by VITE_PUSH_CONFIGURED",
+      "physicalAcceptance": "owner action pending"
+    },
+    "storeReadiness": "NO-GO"
+  },
+  "ios": {
+    "bundleId": "ru.techpravo.conference",
+    "minimumOs": "15.0",
+    "customUrlScheme": "conference-app",
+    "associatedDomains": false,
+    "pushCapability": false,
+    "firebaseMessagingLinked": false,
+    "privacyManifest": "ios/App/App/PrivacyInfo.xcprivacy",
+    "capacitorSync": "verified",
+    "archive": null,
+    "ipa": null,
+    "distributionCertificate": "not provided",
+    "provisioningProfile": "not provided",
+    "appStoreConnectRecord": "not verified",
+    "testFlightBuild": "not created",
+    "storeReadiness": "NO-GO"
+  },
+  "offlineData": {
+    "speakerCount": 33,
+    "capturedAt": "2026-09-02T08:16:07Z",
+    "endpoint": "https://tech-pravo.ru/tfapi/v1/speakers",
+    "responseEtag": "W/\"91e3-npAGAbUOlzAdEci0+w/t95UM1WI\"",
+    "responseSha256": "c5aca4c724228d04111d20f2238997a6c20310fb9d7a0731f77bde607d5bc07d"
+  },
+  "verification": {
+    "typescript": "PASS",
+    "clientTests": "PASS 20/20",
+    "androidDebugBuild": "PASS",
+    "androidReleaseGateWithoutOwnerSecrets": "EXPECTED NO-GO",
+    "iosSync": "PASS; 8 allow-listed plugins; Firebase Messaging absent",
+    "responsiveBrowser": "PASS at 320, 375, and 393 CSS px for home, speakers, research, and schedule",
+    "productionChanged": false,
+    "storeUploadPerformed": false
+  },
+  "legacyDiscrepancyPolicy": {
+    "currentMarkerReporting1_8_6": "historical evidence only; not overwritten",
+    "checksumReporting1_8_0": "historical evidence only; not overwritten",
+    "serverPackageReporting1_7_0": "historical evidence only; not overwritten",
+    "canonicalResolution": "this manifest plus SHA256SUMS.txt; deployment remains forbidden until separately authorized"
+  },
+  "rollback": {
+    "code": "return to base commit 05b223d48081dca14589c0c0863cc7c30be9200b in the isolated worktree",
+    "artifact": "retain this debug APK as evidence; do not promote, rename, or replace a store artifact",
+    "database": "no migration was applied; no database rollback is required",
+    "production": "no production release exists for this candidate"
+  }
+}
