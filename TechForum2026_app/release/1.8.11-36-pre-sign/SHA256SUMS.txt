@@ -1,0 +1,2 @@
+6b57e2fee40e615ad97fbb2fb5abc9dc499256c100b7c66ddac32d56977394ca  TechPravo-Android-1.8.11-36-QA-NOT-FOR-RUSTORE.apk
+d9e459f54d5222b7e7a286d83361bce34e77be54df362c368fb63233b8c6b8b3  TechPravo-iOS-1.8.11-36-Xcode-Project-NOT-IPA.zip

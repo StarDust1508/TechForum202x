@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "releaseId": "techforum-mobile-1.8.11-36-pre-sign",
+  "createdAt": "2026-09-02T15:46:39Z",
+  "classification": "owner-signing handoff; not store-uploadable",
+  "source": {
+    "branch": "codex/techforum-mobile-client-pass3-20260902",
+    "commit": "21f2e573f1ba6b56e88324cf432bb68f016109d6",
+    "tree": "204bbc8e07a81ed5c61af6a8360e378c7ad310cb"
+  },
+  "application": {
+    "version": "1.8.11",
+    "build": 36,
+    "apiBaseUrl": "https://tech-pravo.ru/tfapi/v1",
+    "visibleVersionContract": "package.json -> Vite __APP_VERSION__ -> About screen"
+  },
+  "android": {
+    "applicationId": "com.psy_lololo.conferenceapp",
+    "minSdk": 24,
+    "targetSdk": 36,
+    "firebaseMessagingLinked": true,
+    "qaApk": {
+      "file": "TechPravo-Android-1.8.11-36-QA-NOT-FOR-RUSTORE.apk",
+      "bytes": 12115297,
+      "sha256": "6b57e2fee40e615ad97fbb2fb5abc9dc499256c100b7c66ddac32d56977394ca",
+      "signatureScheme": "APK Signature Scheme v2",
+      "certificateSubject": "C=US, O=Android, CN=Android Debug",
+      "certificateSha256": "4ba586b873ee61f3f112cdc1093b6e757b802a0ebd86f157c336dd5390fe33da"
+    },
+    "storeAab": null,
+    "storeStatus": "NO-GO until the owner release keystore and RuStore certificate match are available",
+    "failClosedCheck": "PASS: bundleRelease stops when owner signing variables are absent"
+  },
+  "ios": {
+    "bundleId": "ru.techpravo.conference",
+    "minimumOs": "15.0",
+    "pushCapability": false,
+    "firebaseMessagingLinked": false,
+    "xcodeProject": {
+      "file": "TechPravo-iOS-1.8.11-36-Xcode-Project-NOT-IPA.zip",
+      "bytes": 11192631,
+      "sha256": "d9e459f54d5222b7e7a286d83361bce34e77be54df362c368fb63233b8c6b8b3",
+      "archiveIntegrity": "PASS",
+      "allowedPluginCount": 8
+    },
+    "ipa": null,
+    "appStoreStatus": "NO-GO until full Xcode, Apple Distribution identity, provisioning profile, Archive, Validate and TestFlight processing"
+  },
+  "branding": {
+    "embeddedBrandMarkSha256": "ad0c0e106cc077df6515de271c2b72cc3541c03aac5f6ed66283eac84c4ee4d3",
+    "verifiedInAndroidPackage": true,
+    "verifiedInIosCompiledClient": true
+  },
+  "verification": {
+    "typescript": "PASS",
+    "clientTests": "PASS 30/30",
+    "androidLintVitalRelease": "PASS",
+    "androidQaBuild": "PASS",
+    "iosCapacitorSync": "PASS",
+    "embeddedVersion": "PASS 1.8.11",
+    "embeddedCommit": "PASS 21f2e57",
+    "productionDependencyAudit": "0 high, 0 critical; 11 moderate",
+    "physicalAndroidPushAcceptance": "not performed",
+    "physicalIphoneAcceptance": "not performed"
+  },
+  "production": {
+    "webOrApiDeploymentPerformed": false,
+    "storeUploadPerformed": false
+  }
+}
