@@ -1,5 +1,11 @@
 apply plugin: 'com.android.application'
 
+def storeKeystorePath = providers.environmentVariable('TECHFORUM_ANDROID_KEYSTORE').orNull
+def storeKeystorePassword = providers.environmentVariable('TECHFORUM_ANDROID_STORE_PASSWORD').orNull
+def storeKeyAlias = providers.environmentVariable('TECHFORUM_ANDROID_KEY_ALIAS').orNull
+def storeKeyPassword = providers.environmentVariable('TECHFORUM_ANDROID_KEY_PASSWORD').orNull
+def storeSigningConfigured = [storeKeystorePath, storeKeystorePassword, storeKeyAlias, storeKeyPassword].every { it }
+
 android {
     namespace = "com.psy_lololo.conferenceapp"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +13,8 @@ android {
         applicationId "com.psy_lololo.conferenceapp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 34
-        versionName "1.8.9"
+        versionCode 35
+        versionName "1.8.10"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -17,19 +23,34 @@ android {
         }
     }
     signingConfigs {
-        release {
-            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
+        if (storeSigningConfigured) {
+            release {
+                storeFile file(storeKeystorePath)
+                storePassword storeKeystorePassword
+                keyAlias storeKeyAlias
+                keyPassword storeKeyPassword
+            }
         }
     }
     buildTypes {
         release {
-            signingConfig signingConfigs.release
+            if (storeSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+}
+
+// Store artifacts fail closed. Debug builds remain available for local QA, but
+// assembleRelease/bundleRelease may never silently use the Android debug key.
+gradle.taskGraph.whenReady { graph ->
+    def requestsStoreArtifact = graph.allTasks.any { task ->
+        task.path in [':app:assembleRelease', ':app:bundleRelease', ':app:packageRelease']
+    }
+    if (requestsStoreArtifact && !storeSigningConfigured) {
+        throw new GradleException('NO-GO: production Android signing is not configured; debug.keystore is forbidden for store artifacts.')
     }
 }
 

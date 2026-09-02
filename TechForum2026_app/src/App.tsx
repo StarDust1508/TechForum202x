@@ -39,6 +39,7 @@ import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
 import BrandLogo from './components/BrandLogo';
 import BackButton from './components/BackButton';
+import { createDeepLinkDeduper, resolveDeepLink } from './lib/deepLinks';
 
 const GUEST_KEY = 'techforum_guest_mode';
 
@@ -112,6 +113,44 @@ function AppContent() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const isChatRoute = location.pathname === '/chat';
+
+  useEffect(() => {
+    const Capacitor: any = (window as any).Capacitor;
+    if (!Capacitor?.isNativePlatform?.()) return;
+
+    let active = true;
+    let removeListener = () => {};
+    const shouldOpen = createDeepLinkDeduper();
+    const openUrl = (rawUrl: string) => {
+      if (!active) return;
+      const target = resolveDeepLink(rawUrl);
+      if (target.ok === false) {
+        console.warn('[deep-link] rejected', { reason: target.reason });
+        navigate('/', { replace: true });
+        showToast('Ссылка не поддерживается. Открыта главная страница.', 3500);
+        return;
+      }
+      if (!shouldOpen(target.canonicalUrl)) return;
+      navigate(target.route);
+    };
+
+    void (async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        const launch = await CapApp.getLaunchUrl();
+        if (launch?.url) openUrl(launch.url);
+        const listener = await CapApp.addListener('appUrlOpen', ({ url }) => openUrl(url));
+        removeListener = () => { void listener.remove(); };
+      } catch (error) {
+        console.warn('[deep-link] native listener unavailable', error);
+      }
+    })();
+
+    return () => {
+      active = false;
+      removeListener();
+    };
+  }, [navigate, showToast]);
 
   useEffect(() => {
     let active = true;
