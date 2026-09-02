@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "attestationId": "techforum-mobile-1.8.10-35-publication-pass",
+  "immutable": true,
+  "createdAt": "2026-09-02T13:19:24Z",
+  "scope": "source-only publication-boundary pass; no native binary, production write or store upload",
+  "source": {
+    "branch": "codex/techforum-mobile-client-pass3-20260902",
+    "parentCommit": "08e788195271db6768825cf6a128bff67b866293",
+    "implementationCommit": "bb5dca79acc88c29abd5ac5e4cee1e3423bdf543",
+    "implementationTree": "bb1d810ec6d1eea1621e05aaeb7a59a6487bea3b"
+  },
+  "application": {
+    "version": "1.8.10",
+    "build": 35,
+    "androidApplicationId": "com.psy_lololo.conferenceapp",
+    "iosBundleId": "ru.techpravo.conference",
+    "apiBaseUrl": "https://tech-pravo.ru/tfapi/v1"
+  },
+  "publicationBoundary": {
+    "capturedAt": "2026-09-02T13:08:08Z",
+    "sourceSessionCount": 40,
+    "publishedSessionCount": 38,
+    "hiddenSessionIds": [
+      "ev_64df4b6eef3776",
+      "ev_cc2ac4fb7154b4"
+    ],
+    "rawResponseSha256": "5e726f04bffcaf8e71662af0568413913482ab26883cee824f91108be40d67d2",
+    "publishedSessionsSha256": "e27f22a1a5b21d43fd00e54c814e2ab707ef2d5cf58712bf7acf3a118be0a5c3",
+    "publicSpeakerCount": 33,
+    "ivanBondarenko": {
+      "speakerId": "ss_9549f3332e335f3a",
+      "sessionId": "ev_4ed0cf7acbbceb",
+      "exposure": "programme-only initials card; not added to the 33-card speaker list"
+    }
+  },
+  "verification": {
+    "typescript": "PASS",
+    "clientTests": "PASS 29/29",
+    "viteBuild": "PASS",
+    "distHashListSha256": "0281bd7f735fd9c8a50008f16a47a38ed52fb824b68fec1349666ac19c60a188",
+    "generatedAppJs": "dist/assets/index-X5M2NC48.js",
+    "generatedAppJsSha256": "673418297665cf1dc4208bec3df7113bc2cf31b033bbbd163d034d6ccc336198"
+  },
+  "sourceFileSha256": {
+    "src/bootstrapPublicData.json": "4e347a3d97d721634b9542f259a6c304d1d44c03aeea6e565f99a627e7797f96",
+    "src/bootstrapPublicData.provenance.json": "124fca9592eab34032823332bdabbad342ada009268dd709319f4b33b4415c59",
+    "src/lib/publicSessions.ts": "82d542928e88a4cf142b7c25fa93c6aebcea96f8746806a9fc655fbc13f70f23",
+    "src/lib/programData.ts": "ea8a38b384b1de85b03875ed9ca90bdd58a3d70107e01953d664412949613a7b",
+    "src/lib/cachedPublicApi.ts": "02fcb218d7cdecbcc9c2a119a3dee3c7f6a48926796594ee653a5087e2c3c74e",
+    "src/lib/canonicalSpeakerSupplements.ts": "5cdeebdc3f59c2a0d684e5e86c3d17136562bc3c22a25756613bb86b38abf89c",
+    "src/pages/Schedule.tsx": "efebf04a3e44ba555c03c5f6ba9bfa40b6b7b79048ea9054c4c64316a11b9286",
+    "src/pages/MyRecords.tsx": "85bf4d832629d2f2fd3057d6b407787a6d52dabad1e412709d2abcda4371d15a",
+    "src/pages/SpeakerDetail.tsx": "c9cc9eec7b16b3b41fed6b8693aef814ea4c2a2da2c9263e7231e6833620a696",
+    "ops/snapshots/sync-published-program.mjs": "9439419697388afbae6f79e45f7ded19163988246fffb5d5fef33bf0d2251867"
+  },
+  "serverMutation": {
+    "performed": false,
+    "historicalRowsDeleted": false
+  },
+  "nativeArtifacts": {
+    "apk": null,
+    "aab": null,
+    "ipa": null,
+    "reason": "existing 1.8.10 (35) debug APK predates implementation commit; a new native build was not authorized"
+  },
+  "storeReadiness": {
+    "ruStore": "NO-GO: owner release/upload certificate match and signed AAB are still missing",
+    "appStore": "NO-GO: Distribution signing, provisioning, Archive, App Store Connect record and TestFlight acceptance are still missing"
+  },
+  "rollback": {
+    "code": "return isolated branch to parent commit 08e788195271db6768825cf6a128bff67b866293",
+    "database": "not applicable; no migration or server write occurred",
+    "production": "not applicable; no deployment occurred"
+  }
+}
