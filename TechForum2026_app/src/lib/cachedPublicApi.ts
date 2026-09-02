@@ -1,10 +1,11 @@
 import { resolveApiUrl } from './runtimeEndpoint';
 import bootstrap from '../bootstrapPublicData.json';
+import { normalizePublicSpeakers } from './publicSpeakers';
 
 // v4 инвалидирует старый снимок, где было 29 спикеров и 33 сессии. Без смены
 // пространства ключей обновлённая сборка могла продолжать показывать старую
 // программу офлайн, пока первый сетевой запрос не завершится успешно.
-const prefix = 'tp_public_cache_v4:';
+const prefix = 'tp_public_cache_v5:';
 
 const bundledByPath: Record<string, unknown> = {
   '/days': bootstrap.days,
@@ -14,14 +15,18 @@ const bundledByPath: Record<string, unknown> = {
   '/partners': bootstrap.partners,
 };
 
+function normalizeByPath(path: string, data: unknown): unknown {
+  return path === '/speakers' ? normalizePublicSpeakers(data) : data;
+}
+
 /** Мгновенный снимок для экранов, которые не должны мигать skeleton-ом при возврате. */
 export function readCachedPublicJson<T>(path: string): T | undefined {
   const key = `${prefix}${path}`;
   try {
     const cached = JSON.parse(localStorage.getItem(key) || 'null') as { data?: T } | null;
-    if (cached?.data !== undefined) return cached.data;
+    if (cached?.data !== undefined) return normalizeByPath(path, cached.data) as T;
   } catch { /* corrupted cache */ }
-  return bundledByPath[path] as T | undefined;
+  return normalizeByPath(path, bundledByPath[path]) as T | undefined;
 }
 
 export async function fetchCachedJson<T>(path: string): Promise<{ data: T; stale: boolean }> {
@@ -36,7 +41,7 @@ export async function fetchCachedJson<T>(path: string): Promise<{ data: T; stale
       window.clearTimeout(timeout);
     }
     if (!response.ok) throw new Error(String(response.status));
-    const data = await response.json() as T;
+    const data = normalizeByPath(path, await response.json()) as T;
     try { localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* noop */ }
     return { data, stale: false };
   } catch (error) {

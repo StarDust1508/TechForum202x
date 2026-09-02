@@ -5,21 +5,10 @@ import { useState, useEffect } from 'react';
 import PageShell from '@/src/components/ui/PageShell';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson, readCachedPublicJson } from '@/src/lib/cachedPublicApi';
+import { getSpeakerImageStyle, type PublicSpeaker } from '@/src/lib/publicSpeakers';
 
 // Спикер тянется из API (живой синк с сайта, с фото). Сессии — из статической
 // программы (id спикеров сохранены → связка работает для программных спикеров).
-interface ApiSpeaker {
-  id: string;
-  name: string;
-  role: string;
-  company: string;
-  bio: string;
-  avatarLetter: string;
-  avatarUrl?: string | null;
-  topic?: string | null;
-  trackId: string;
-}
-
 interface ApiTrack { id: string; name: string; shortLabel: string; }
 interface ApiDay { id: string; label: string; weekday: string; }
 interface ApiSession {
@@ -53,9 +42,9 @@ const sessionCountLabel = (count: number) => {
 export default function SpeakerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const cachedSpeakers = readCachedPublicJson<ApiSpeaker[]>('/speakers') ?? [];
+  const cachedSpeakers = readCachedPublicJson<PublicSpeaker[]>('/speakers') ?? [];
   const cachedSessions = readCachedPublicJson<ApiSession[]>('/sessions') ?? [];
-  const [speaker, setSpeaker] = useState<ApiSpeaker | null>(() => cachedSpeakers.find((item) => item.id === id) ?? null);
+  const [speaker, setSpeaker] = useState<PublicSpeaker | null>(() => cachedSpeakers.find((item) => item.id === id) ?? null);
   const [speakerSessions, setSpeakerSessions] = useState<ApiSession[]>(() => cachedSessions.filter((item) => item.speakerIds?.includes(id || '')));
   const [tracks, setTracks] = useState<ApiTrack[]>(() => readCachedPublicJson<ApiTrack[]>('/tracks') ?? []);
   const [days, setDays] = useState<ApiDay[]>(() => readCachedPublicJson<ApiDay[]>('/days') ?? []);
@@ -67,7 +56,7 @@ export default function SpeakerDetail() {
       setLoading(true);
       try {
         const [speakerResult, sessionResult, trackResult, dayResult] = await Promise.all([
-          fetchCachedJson<ApiSpeaker[]>('/speakers'),
+          fetchCachedJson<PublicSpeaker[]>('/speakers'),
           fetchCachedJson<ApiSession[]>('/sessions'),
           fetchCachedJson<ApiTrack[]>('/tracks'),
           fetchCachedJson<ApiDay[]>('/days'),
@@ -135,7 +124,7 @@ export default function SpeakerDetail() {
             src={resolveAssetUrl(speaker.avatarUrl)}
             alt={speaker.name}
             className="h-24 w-24 shrink-0 rounded-2xl border border-primary/55 bg-background/80 object-cover shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20"
-            style={{ objectPosition: 'center 25%' }}
+            style={getSpeakerImageStyle(speaker.id)}
           />
         ) : (
           <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl border border-primary/55 bg-background/80 font-display text-[32px] font-semibold text-primary shadow-[0_0_24px_rgba(255,51,153,0.18)] min-[360px]:h-20 min-[360px]:w-20">

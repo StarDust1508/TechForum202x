@@ -4,21 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import BackButton from '@/src/components/BackButton';
 import { resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson, readCachedPublicJson } from '@/src/lib/cachedPublicApi';
+import { getSpeakerImageStyle, type PublicSpeaker } from '@/src/lib/publicSpeakers';
 
 // Спикеры тянутся из API (GET /speakers), который живым синком отражает
 // опубликованных спикеров сайта — с фото. Новые спикеры появляются сами,
 // без пересборки приложения.
-interface ApiSpeaker {
-  id: string;
-  name: string;
-  role: string;
-  company: string;
-  avatarLetter: string;
-  avatarUrl?: string | null;
-  topic?: string | null;
-  trackId: string;
-}
-
 const cleanField = (value?: string | null) => {
   const normalized = (value || '').trim();
   return normalized && normalized !== '—' && normalized !== '-' ? normalized : '';
@@ -29,11 +19,11 @@ const cleanTopic = (value?: string | null) => cleanField(value)
   .trim();
 
 export default function Speakers() {
-  const initialSpeakers = useMemo(() => readCachedPublicJson<ApiSpeaker[]>('/speakers') || [], []);
+  const initialSpeakers = useMemo(() => readCachedPublicJson<PublicSpeaker[]>('/speakers') || [], []);
   const [search, setSearch] = useState(() => {
     try { return sessionStorage.getItem('tp_speakers_search') || ''; } catch { return ''; }
   });
-  const [speakers, setSpeakers] = useState<ApiSpeaker[]>(initialSpeakers);
+  const [speakers, setSpeakers] = useState<PublicSpeaker[]>(initialSpeakers);
   const [loading, setLoading] = useState(initialSpeakers.length === 0);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -51,7 +41,7 @@ export default function Speakers() {
     let cancelled = false;
     (async () => {
       try {
-        const result = await fetchCachedJson<ApiSpeaker[]>('/speakers');
+        const result = await fetchCachedJson<PublicSpeaker[]>('/speakers');
         if (!cancelled && Array.isArray(result.data)) setSpeakers(result.data);
       } catch {
         if (!cancelled) setError('Не удалось загрузить список спикеров.');
@@ -162,7 +152,7 @@ export default function Speakers() {
                   alt={speaker.name}
                   loading="lazy"
                   className="h-[72px] w-[72px] shrink-0 rounded-2xl border border-primary/25 bg-background object-cover"
-                  style={{ objectPosition: 'center 25%' }}
+                  style={getSpeakerImageStyle(speaker.id)}
                 />
               ) : (
                 <div
