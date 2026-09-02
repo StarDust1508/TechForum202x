@@ -48,8 +48,22 @@ export default function AccessibleDialog({
     const previousInert = background?.inert ?? false;
     if (background) background.inert = true;
 
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+
     const focusables = () => [...(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [])]
-      .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true');
+      .filter((element) => {
+        const style = window.getComputedStyle(element);
+        return !element.hidden
+          && !element.closest('[hidden], [aria-hidden="true"]')
+          && style.display !== 'none'
+          && style.visibility !== 'hidden'
+          && element.getClientRects().length > 0;
+      });
     window.requestAnimationFrame(() => {
       const preferred = panelRef.current?.querySelector<HTMLElement>('[autofocus]');
       (preferred || focusables()[0] || panelRef.current)?.focus({ preventScroll: true });
@@ -88,6 +102,9 @@ export default function AccessibleDialog({
       document.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener(APP_BACK_REQUEST_EVENT, onBackRequest);
       if (background) background.inert = previousInert;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
       window.requestAnimationFrame(() => previousFocus?.focus({ preventScroll: true }));
     };
   }, [open]);

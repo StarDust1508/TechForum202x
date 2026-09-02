@@ -1,7 +1,8 @@
 // FILE: src/lib/push.ts
 // Единая обёртка над Firebase Messaging с silent fallback на web.
-// На Android и iOS получает именно FCM token и шлёт
-// его на бэк (POST /me/push-token).
+// Только на Android получает FCM token и шлёт его на бэк
+// (POST /me/push-token). iOS закрыт кодом до подтверждённых APNs capability,
+// provisioning profile и Distribution signing.
 //
 // Реальная регистрация включается только когда в нативных проектах есть
 // Firebase-конфиги. Это предотвращает native crash неполной сборки.
@@ -12,17 +13,25 @@ import { FirebaseMessaging, Importance } from '@capacitor-firebase/messaging';
 
 const TOKEN_LS_KEY = 'techforum_push_token';
 
-export const PUSH_SERVICE_CONFIGURED = String(import.meta.env.VITE_PUSH_CONFIGURED || '').toLowerCase() === 'true';
+export const PUSH_SERVICE_CONFIGURED = String(import.meta.env?.VITE_PUSH_CONFIGURED || '').toLowerCase() === 'true';
 
 function isNative(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+export function isPushRuntimeSupported(platform: string, native: boolean, configured: boolean): boolean {
+  return native && platform === 'android' && configured;
+}
+
+function canUseFirebaseMessaging(): boolean {
+  return isPushRuntimeSupported(Capacitor.getPlatform(), isNative(), PUSH_SERVICE_CONFIGURED);
 }
 
 export type PushNotificationState = {
   available: boolean;
   enabled: boolean;
   permission: 'granted' | 'denied' | 'prompt' | 'unavailable';
-  reason?: 'web_unsupported' | 'service_not_configured' | 'permission_denied' | 'registration_missing' | 'check_failed';
+  reason?: 'web_unsupported' | 'platform_not_supported' | 'service_not_configured' | 'permission_denied' | 'registration_missing' | 'check_failed';
 };
 
 export function getStoredPushToken(): string {
@@ -31,7 +40,7 @@ export function getStoredPushToken(): string {
 
 export async function clearPushRegistrationLocally(): Promise<void> {
   try { localStorage.removeItem(TOKEN_LS_KEY); } catch { /* noop */ }
-  if (isNative() && PUSH_SERVICE_CONFIGURED) {
+  if (canUseFirebaseMessaging()) {
     try { await FirebaseMessaging.deleteToken(); } catch { /* already revoked */ }
   }
 }
@@ -39,6 +48,7 @@ export async function clearPushRegistrationLocally(): Promise<void> {
 /** Сверяет UI не с localStorage, а с разрешением ОС и регистрацией в БД. */
 export async function getPushNotificationState(): Promise<PushNotificationState> {
   if (!isNative()) return { available: false, enabled: false, permission: 'unavailable', reason: 'web_unsupported' };
+  if (Capacitor.getPlatform() !== 'android') return { available: false, enabled: false, permission: 'unavailable', reason: 'platform_not_supported' };
   if (!PUSH_SERVICE_CONFIGURED) return { available: false, enabled: false, permission: 'unavailable', reason: 'service_not_configured' };
   try {
     const permission = await FirebaseMessaging.checkPermissions();
@@ -72,23 +82,21 @@ export async function getPushNotificationState(): Promise<PushNotificationState>
  * upsert по token UNIQUE (только last_seen_at обновляется).
  */
 export async function registerPushNotifications(deviceLabel?: string): Promise<boolean> {
-  if (!isNative()) {
-    // Web push API можно сделать в будущем (Notifications API + Service Worker
-    // VAPID), но сейчас пропускаем.
+  if (!canUseFirebaseMessaging()) {
+    // Web/iOS push включаются только отдельным доказанным контуром. До этого
+    // любой случайный build flag остаётся fail-closed.
     return false;
   }
   try {
-    if (Capacitor.getPlatform() === 'android') {
-      await FirebaseMessaging.createChannel({
-        id: 'techpravo_updates',
-        name: 'ТехнологИИ Права',
-        description: 'Программа форума, сообщения и важные объявления',
-        importance: Importance.High,
-        lights: true,
-        lightColor: '#00FFFF',
-        vibration: true,
-      });
-    }
+    await FirebaseMessaging.createChannel({
+      id: 'techpravo_updates',
+      name: 'ТехнологИИ Права',
+      description: 'Программа форума, сообщения и важные объявления',
+      importance: Importance.High,
+      lights: true,
+      lightColor: '#00FFFF',
+      vibration: true,
+    });
     let perm;
     try {
       perm = await FirebaseMessaging.checkPermissions();
@@ -110,13 +118,6 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
     }
     if (!granted) return false;
 
-    // FCM не настроен — НЕ зовём native getToken() и не изображаем
-    // успешную подписку: UI честно сообщает, что сервис пока недоступен.
-    if (!PUSH_SERVICE_CONFIGURED) {
-      console.info('[Push] permission granted; native FCM register skipped (FCM not configured)');
-      return false;
-    }
-
     const token = (await FirebaseMessaging.getToken()).token;
     if (!token) return false;
     const platform = Capacitor.getPlatform();
@@ -127,7 +128,7 @@ export async function registerPushNotifications(deviceLabel?: string): Promise<b
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         token,
-        platform: platform === 'ios' ? 'ios' : 'android',
+        platform: 'android',
         ...(normalizedDeviceLabel ? { deviceLabel: normalizedDeviceLabel } : {}),
       }),
     });
@@ -168,7 +169,7 @@ export async function attachPushListeners(
   onForegroundMessage?: (notification: { title?: string; body?: string; data?: Record<string, unknown> }) => void,
   onActionPerformed?: (data: Record<string, unknown>) => void,
 ): Promise<() => void> {
-  if (!isNative() || !PUSH_SERVICE_CONFIGURED) return () => {};
+  if (!canUseFirebaseMessaging()) return () => {};
   const handles: PluginListenerHandle[] = [];
   try {
     if (onForegroundMessage) {
