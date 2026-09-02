@@ -6,14 +6,20 @@ const config: CapacitorConfig = {
   appId: process.env.CAP_APP_ID || 'com.psy_lololo.conferenceapp',
   appName: 'TechPravo',
   webDir: 'dist',
-  experimental: {
-    ios: {
-      spm: {
-        packageOptions: {
-          '@capacitor-firebase/messaging': { symlink: true },
-        },
-      },
-    },
+  ios: {
+    // iOS remains intentionally no-push until an owner-controlled Apple team,
+    // APNs capability and provisioning profile are proven. This allow-list
+    // prevents `cap sync ios` from importing the Android-only Firebase plugin.
+    includePlugins: [
+      '@capacitor/app',
+      '@capacitor/camera',
+      '@capacitor/filesystem',
+      '@capacitor/haptics',
+      '@capacitor/keyboard',
+      '@capacitor/splash-screen',
+      '@capacitor/status-bar',
+      '@capgo/capacitor-native-biometric',
+    ],
   },
   server: {
     // Бэкенд переведён на HTTPS: https://pravotech.pro/tfapi/v1 (nginx + Let's Encrypt).
