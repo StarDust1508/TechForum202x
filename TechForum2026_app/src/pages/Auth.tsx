@@ -8,6 +8,7 @@ import { resolveApiUrl, saveSessionToken, authFetch, fetchWithTimeout } from '@/
 import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src/lib/biometric';
 import { Capacitor } from '@capacitor/core';
 import { mapAuthServerError, presentAuthException, recordAuthDiagnostic, type AuthErrorPresentation, type AuthErrorTarget } from '@/src/lib/authErrors';
+import AccessibleDialog from '@/src/components/ui/AccessibleDialog';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
@@ -88,6 +89,11 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
   const [pendingUser, setPendingUser] = useState<unknown | null>(null);
   const [pendingCreds, setPendingCreds] = useState<{ email: string; password: string } | null>(null);
   const [bioBusy, setBioBusy] = useState(false);
+  const closeBioOffer = () => {
+    if (bioBusy) return;
+    setShowBioOffer(false);
+    if (pendingUser) onSuccess(pendingUser);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -475,30 +481,17 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
       </div>
 
       {/* Забыли пароль — модалка */}
-      <AnimatePresence>
-        {showForgot && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-background/85 backdrop-blur-md"
-          >
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="forgot-password-title"
-              initial={{ y: 24, opacity: 0, scale: 0.96 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 24, opacity: 0, scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="w-full max-w-[380px] bg-background border border-foreground/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(0,255,255,0.12)] relative"
-            >
+      <AccessibleDialog
+        open={showForgot}
+        titleId="forgot-password-title"
+        onClose={closeForgot}
+        panelClassName="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[380px] overflow-y-auto rounded-3xl border border-foreground/10 bg-background p-7 shadow-[0_24px_60px_rgba(0,255,255,0.12)]"
+      >
               <button
                 type="button"
                 onClick={closeForgot}
                 aria-label="Закрыть"
-                className="absolute right-4 top-4 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
+                className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
               >
                 <XIcon className="w-[18px] h-[18px]" />
               </button>
@@ -678,40 +671,23 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                   </div>
                 )}
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </AccessibleDialog>
 
       {/* Биометрический оффер. Появляется ПОВЕРХ Auth поверх blueprint-фона
           сразу после успешного login/register, если: (a) сенсор есть,
           (b) биометрия ещё не включена, (c) метод входа email (при phone
           credentials/password в этой версии не валидируются на сервере). */}
-      <AnimatePresence>
-        {showBioOffer && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            className="fixed inset-0 z-50 flex items-center justify-center px-7 bg-background/85 backdrop-blur-md"
-          >
-            <motion.div
-              initial={{ y: 24, opacity: 0, scale: 0.96 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 24, opacity: 0, scale: 0.96 }}
-              transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-              className="w-full max-w-[380px] bg-background border border-foreground/10 rounded-3xl p-7 shadow-[0_24px_60px_rgba(var(--primary-rgb),0.18)]"
-            >
+      <AccessibleDialog
+        open={showBioOffer}
+        titleId="biometric-offer-title"
+        onClose={closeBioOffer}
+        panelClassName="relative max-h-[calc(100dvh-1.5rem)] w-full max-w-[380px] overflow-y-auto rounded-3xl border border-foreground/10 bg-background p-7 shadow-[0_24px_60px_rgba(var(--primary-rgb),0.18)]"
+      >
               <button
                 type="button"
-                onClick={() => {
-                  if (bioBusy) return;
-                  setShowBioOffer(false);
-                  if (pendingUser) onSuccess(pendingUser);
-                }}
+                onClick={closeBioOffer}
                 aria-label="Закрыть"
-                className="absolute right-5 top-5 w-9 h-9 flex items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
+                className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-foreground/55 hover:text-foreground/85 hover:bg-foreground/[0.06] transition-colors"
               >
                 <XIcon className="w-[18px] h-[18px]" />
               </button>
@@ -720,7 +696,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/40 flex items-center justify-center mb-5 shadow-[0_8px_28px_rgba(var(--primary-rgb),0.25)]">
                   <Fingerprint className="w-8 h-8 text-primary" />
                 </div>
-                <h2 className="font-display text-[26px] leading-tight font-bold text-primary mb-2">
+                <h2 id="biometric-offer-title" className="font-display text-[26px] leading-tight font-bold text-primary mb-2">
                   Включить вход<br />по биометрии?
                 </h2>
                 <p className="text-[15px] leading-relaxed text-foreground/65 mb-6">
@@ -771,10 +747,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                   Не сейчас
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </AccessibleDialog>
     </div>
   );
 }

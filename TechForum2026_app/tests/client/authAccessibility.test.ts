@@ -20,3 +20,9 @@ test('auth error is announced, focusable and contains no VPN instruction', () =>
   assert.match(authSource, /tabIndex=\{-1\}/);
   assert.doesNotMatch(authSource, /выключите VPN|отключите VPN/i);
 });
+
+test('auth recovery and biometric prompts share the focus-trapped dialog primitive', () => {
+  assert.match(authSource, /<AccessibleDialog[\s\S]*open=\{showForgot\}[\s\S]*titleId="forgot-password-title"/);
+  assert.match(authSource, /<AccessibleDialog[\s\S]*open=\{showBioOffer\}[\s\S]*titleId="biometric-offer-title"/);
+  assert.doesNotMatch(authSource, /w-9 h-9/);
+});

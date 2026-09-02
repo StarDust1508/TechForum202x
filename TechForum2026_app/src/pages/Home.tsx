@@ -100,7 +100,7 @@ export default function Home() {
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
+            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
             aria-label="О форуме: 25–26 сентября 2026, Москва"
           >
             <CalendarDays className="h-3.5 w-3.5 text-accent" />
