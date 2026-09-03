@@ -8,3 +8,6 @@ coverage/
 !.env.example
 !.env.android
 !.env.ios
+
+# Inject the owner's Firebase client configuration locally; never commit credentials.
+/android/app/google-services.json

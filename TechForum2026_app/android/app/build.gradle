@@ -5,6 +5,7 @@ def storeKeystorePassword = providers.environmentVariable('TECHFORUM_ANDROID_STO
 def storeKeyAlias = providers.environmentVariable('TECHFORUM_ANDROID_KEY_ALIAS').orNull
 def storeKeyPassword = providers.environmentVariable('TECHFORUM_ANDROID_KEY_PASSWORD').orNull
 def storeSigningConfigured = [storeKeystorePath, storeKeystorePassword, storeKeyAlias, storeKeyPassword].every { it }
+def servicesJSON = file('google-services.json')
 
 android {
     namespace = "com.psy_lololo.conferenceapp"
@@ -52,6 +53,9 @@ gradle.taskGraph.whenReady { graph ->
     if (requestsStoreArtifact && !storeSigningConfigured) {
         throw new GradleException('NO-GO: production Android signing is not configured; debug.keystore is forbidden for store artifacts.')
     }
+    if (requestsStoreArtifact && !servicesJSON.isFile()) {
+        throw new GradleException('NO-GO: google-services.json is required for this Android release with Push enabled.')
+    }
 }
 
 repositories {
@@ -74,11 +78,19 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
+if (servicesJSON.isFile()) {
+    def firebaseConfig = new groovy.json.JsonSlurper().parse(servicesJSON)
+    def matchingClient = firebaseConfig.client?.find { client ->
+        client.client_info?.android_client_info?.package_name == android.defaultConfig.applicationId
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+    if (firebaseConfig.project_info?.project_id != 'techpravo-33f82' ||
+        !firebaseConfig.project_info?.project_number ||
+        !matchingClient?.client_info?.mobilesdk_app_id ||
+        !matchingClient?.api_key?.any { it.current_key }) {
+        throw new GradleException('NO-GO: Firebase configuration must match techpravo-33f82 and this applicationId.')
+    }
+    // Plugin/configuration failures must not silently produce a package without Push.
+    apply plugin: 'com.google.gms.google-services'
+} else {
+    logger.warn('Local debug build has no Firebase config. Release artifacts are blocked.')
 }

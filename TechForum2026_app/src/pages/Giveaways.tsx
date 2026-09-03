@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import BackButton from '@/src/components/BackButton';
 import { useAppContent } from '@/src/lib/useAppContent';
-import { RESEARCH_CONTENT_EVIDENCE, VERIFIED_RESEARCH_BENEFIT } from '@/src/lib/researchEvidence';
+import { RESEARCH_CONTENT_EVIDENCE } from '@/src/lib/researchEvidence';
 
 export default function Giveaways() {
   const content = useAppContent();
@@ -21,7 +21,7 @@ export default function Giveaways() {
       role: 'Юрист или юридическая команда',
       title: content.researchLawyerTitle,
       description: content.researchLawyerDescription,
-      material: VERIFIED_RESEARCH_BENEFIT,
+      material: content.researchLawyerMaterial,
       href: content.researchLawyerUrl,
       action: 'Пройти опрос для юристов',
     },
@@ -31,7 +31,7 @@ export default function Giveaways() {
       role: 'Арбитражный управляющий',
       title: content.researchManagerTitle,
       description: content.researchManagerDescription,
-      material: VERIFIED_RESEARCH_BENEFIT,
+      material: content.researchManagerMaterial,
       href: content.researchManagerUrl,
       action: 'Пройти опрос для управляющих',
     },

@@ -4,7 +4,8 @@ export const RESEARCH_CONTENT_EVIDENCE = {
   questionCount: 12,
   estimatedMinutes: '5–7',
   participantBenefit: 'Профессиональный материал, сертификат на выбор и участие в розыгрыше после выполнения условий исследования.',
-  pendingRemoteFields: ['researchLawyerMaterial', 'researchManagerMaterial'],
+  // Evidence for bundled fallback copy; published descriptions are owned by the admin editor.
+  remotelyManagedFields: ['researchLawyerMaterial', 'researchManagerMaterial'],
 } as const;
 
 export const VERIFIED_RESEARCH_BENEFIT = RESEARCH_CONTENT_EVIDENCE.participantBenefit;

@@ -25,6 +25,7 @@ import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { fetchCachedJson } from '@/src/lib/cachedPublicApi';
 import { buildIcsCalendar, formatIcsDateTime } from '@/src/lib/ics';
 import { useSessions } from '@/src/lib/programData';
+import { useAppContent, type AppContent } from '@/src/lib/useAppContent';
 
 interface Day { id: string; date: string; label: string; weekday: string; }
 interface Session { id: string; title: string; description: string; startTime: string; endTime: string; dayId: string; speakerName: string; location: string; track?: string; }
@@ -43,7 +44,7 @@ function readLocalPlan(): string[] {
   }
 }
 
-function downloadCalendar(sessions: Session[], days: Day[], filename: string) {
+function downloadCalendar(sessions: Session[], days: Day[], filename: string, content: AppContent) {
   const dayMap = new Map(days.map((day) => [day.id, day]));
   const events = sessions.flatMap((session) => {
     const day = dayMap.get(session.dayId);
@@ -54,12 +55,12 @@ function downloadCalendar(sessions: Session[], days: Day[], filename: string) {
       dtend: formatIcsDateTime(day.date, session.endTime),
       summary: session.title,
       description: [session.description, session.speakerName && session.speakerName !== '—' ? `Спикеры: ${session.speakerName}` : ''].filter(Boolean).join('\n'),
-      location: session.location || 'БЦ «Красные Ворота», Москва',
-      organizer: { name: 'ТехнологИИ Права', email: 'tickets@notify.tech-pravo.ru' },
+      location: [session.location, content.venueName, content.address].filter(Boolean).join(', '),
+      organizer: { name: content.name, email: content.email },
       url: 'https://tech-pravo.ru/conference',
     }];
   });
-  const blob = new Blob([buildIcsCalendar(events, { name: 'Мой план — ТехнологИИ Права', timezone: 'Europe/Saratov' })], { type: 'text/calendar;charset=utf-8' });
+  const blob = new Blob([buildIcsCalendar(events, { name: `Мой план — ${content.name}`, timezone: 'Europe/Moscow' })], { type: 'text/calendar;charset=utf-8' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = filename;
@@ -73,6 +74,7 @@ function timeToMinutes(hhmm: string): number {
 }
 
 export default function MyRecords() {
+  const content = useAppContent();
   const sessionState = useSessions<Session>();
   const sessions = sessionState.data;
   const [registeredIds, setRegisteredIds] = useState<string[]>([]);
@@ -146,7 +148,7 @@ export default function MyRecords() {
         <>
           <button
             type="button"
-            onClick={() => downloadCalendar(registeredSessions, days, 'tech-pravo-2026-my.ics')}
+            onClick={() => downloadCalendar(registeredSessions, days, 'tech-pravo-2026-my.ics', content)}
             className="flex items-center justify-center gap-2 bg-primary/10 border border-primary/30 text-primary py-3 rounded-2xl text-[12px] font-semibold uppercase tracking-widest active:scale-[0.98] transition-transform"
           >
             <Download className="w-4 h-4" />
@@ -179,7 +181,7 @@ export default function MyRecords() {
                       )}
                       <button
                         type="button"
-                        onClick={() => downloadCalendar([session], days, `tech-pravo-2026-${session.id}.ics`)}
+                        onClick={() => downloadCalendar([session], days, `tech-pravo-2026-${session.id}.ics`, content)}
                         className="inline-flex items-center gap-1.5 text-[11px] text-primary/80 hover:text-primary font-semibold uppercase tracking-widest"
                       >
                         <Download className="w-3.5 h-3.5" />

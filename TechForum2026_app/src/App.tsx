@@ -41,6 +41,7 @@ import BrandLogo from './components/BrandLogo';
 import BackButton from './components/BackButton';
 import { createDeepLinkDeduper, resolveDeepLink } from './lib/deepLinks';
 import { APP_BACK_REQUEST_EVENT } from './components/ui/AccessibleDialog';
+import { useAppContent } from './lib/useAppContent';
 
 const GUEST_KEY = 'techforum_guest_mode';
 
@@ -108,6 +109,7 @@ function useHardwareBack() {
 }
 
 function AppContent() {
+  const content = useAppContent();
   const location = useLocation();
   const navigate = useNavigate();
   const toast = useToast();
@@ -420,7 +422,7 @@ function AppContent() {
         <div className="absolute bg-gradient-to-t from-[#080b16] via-[#0b1020]/68 to-[#071323]/22" style={{ inset: '-50px' }} />
         <div className="relative z-10 flex flex-col items-center gap-4 animate-pulse px-8 text-center">
           <h1 className="w-full text-[clamp(18px,7vw,28px)]"><BrandLogo /></h1>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-accent/75">25–26 сентября · Москва</p>
+          <p className="max-w-full break-words text-[11px] font-semibold uppercase tracking-[0.26em] text-accent/75">{content.dateLabel} · {content.city}</p>
         </div>
       </div>
     );

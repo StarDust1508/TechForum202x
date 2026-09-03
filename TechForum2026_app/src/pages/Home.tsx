@@ -3,7 +3,7 @@
 // START_MODULE_CONTRACT:
 // PURPOSE: Главная страница — заголовок бренда, кликабельная плашка с датами/
 //          локацией (ведёт на About), 12 ярлыков разделов в сетке 3×4.
-// SCOPE: UI only. Без API.
+// SCOPE: Navigation UI and shared remote event settings.
 // INPUT: react-router-dom Link.
 // OUTPUT: JSX страница.
 // KEYWORDS: DOMAIN(7): NavigationHub; CONCEPT(7): GridMenu; TECH(6): React, Tailwind
@@ -47,12 +47,13 @@ import {
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import BrandLogo from '@/src/components/BrandLogo';
+import { useAppContent } from '@/src/lib/useAppContent';
 
 interface MenuItem {
   label: string;
   icon: typeof User;
   to?: string;
-  href?: string;
+  contact?: 'organizerTelegram' | 'telegramChannel';
 }
 
 const menuItems: MenuItem[] = [
@@ -61,16 +62,17 @@ const menuItems: MenuItem[] = [
   { label: 'Чат', icon: MessageCircle, to: '/chat' },
   { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
   { label: 'Спикеры', icon: Presentation, to: '/speakers' },
-  { label: 'TG Канал', icon: Send, href: 'https://t.me/TechPravoAI' },
+  { label: 'TG Канал', icon: Send, contact: 'telegramChannel' },
   { label: 'Настройки', icon: Settings, to: '/settings' },
   { label: 'Маршрут', icon: MapPin, to: '/map' },
   { label: 'Исследования', icon: ClipboardCheck, to: '/giveaways' },
   { label: 'О форуме', icon: Info, to: '/about' },
   { label: 'Помощь', icon: CircleHelp, to: '/faq' },
-  { label: 'Связаться', icon: Send, href: 'https://t.me/CEO_WYRM1' },
+  { label: 'Связаться', icon: Send, contact: 'organizerTelegram' },
 ];
 
 export default function Home() {
+  const content = useAppContent();
   // BUG_FIX_CONTEXT: Home больше не рендерит свой фон — единый фон даёт
   // <AppBackground> в App.tsx (применяется ко всем разделам). Здесь только контент.
   // STICKY_HEADER: header вынесен в sticky top-0 — заголовок виден всегда при скролле,
@@ -100,20 +102,18 @@ export default function Home() {
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
-            aria-label="О форуме: 25–26 сентября 2026, Москва"
+            className="mt-3 inline-flex max-w-full min-h-11 flex-wrap justify-center items-center gap-x-3 gap-y-1 rounded-2xl border border-foreground/10 bg-foreground/[0.04] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
+            aria-label={`О форуме: ${content.dateLabel}, ${content.city}`}
           >
-            <CalendarDays className="h-3.5 w-3.5 text-accent" />
-            <span>25–26 сент.</span>
-            <span className="h-0.5 w-0.5 rounded-full bg-foreground/30" />
-            <MapPin className="h-3.5 w-3.5 text-accent" />
-            <span>Москва</span>
+            <span className="flex min-w-0 items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" /><span className="break-words">{content.dateLabel}</span></span>
+            <span className="flex min-w-0 items-center gap-1.5"><MapPin className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true" /><span className="break-words">{content.city}</span></span>
           </Link>
         </header>
 
         <section>
           <div className="grid grid-cols-3 gap-x-3 gap-y-8 mt-8">
-            {menuItems.map(({ label, icon: Icon, to, href }, idx) => {
+            {menuItems.map(({ label, icon: Icon, to, contact }, idx) => {
+              const href = contact ? `https://t.me/${content[contact]}` : undefined;
               const isCyan = idx % 3 === 1;
               const inner = (
                 <>

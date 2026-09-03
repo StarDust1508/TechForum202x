@@ -31,6 +31,7 @@ import { openNotificationSettings } from '@/src/lib/appSettings';
 import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
 import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
 import { cn } from '@/src/lib/utils';
+import { useAppContent } from '@/src/lib/useAppContent';
 
 type Section = 'notifications' | 'telegram' | 'terms' | 'privacy' | 'about' | 'account';
 
@@ -46,7 +47,7 @@ const TERMS_TEXT = `Используя приложение ТехнологИИ
 
 Полную версию пользовательского соглашения см. на сайте tech-pravo.ru.`;
 
-const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
+const privacyText = (email: string) => `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
 — ФИО, контактный email, телефон;
 — фото профиля (если загружено);
 — ваша активность в приложении (регистрации на сессии и переписка с другими участниками);
@@ -59,7 +60,7 @@ const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных д
 Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
 
 Вы можете в любой момент:
-— скачать копию своих данных (запрос через tickets@notify.tech-pravo.ru);
+— скачать копию своих данных (запрос через ${email});
 — удалить аккаунт через профиль (необратимо).
 
 Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
@@ -528,6 +529,7 @@ function AccountPage() {
 }
 
 export default function Settings() {
+  const content = useAppContent();
   const [section, setSectionRaw] = useState<Section | null>(null);
   const [theme, setThemeState] = useState<Theme>(getTheme());
   // Push is a release feature only on Android. Keep the entry unreachable on
@@ -677,7 +679,7 @@ export default function Settings() {
               )}
               {section === 'privacy' && (
                 <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
-                  {PRIVACY_TEXT}
+                  {privacyText(content.email)}
                 </p>
               )}
               {section === 'account' && <AccountPage />}
@@ -690,8 +692,8 @@ export default function Settings() {
                     </p>
                   </div>
                   <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-                    <h3 className="font-display text-[17px] font-bold text-foreground">Весь форум — в одном маршруте</h3>
-                    <p className="text-[13px] text-foreground/75 leading-relaxed">ТехнологИИ Права объединяет юристов, предпринимателей и технологические команды, которые внедряют ИИ в реальную практику.</p>
+                    <h3 className="font-display text-[17px] font-bold text-foreground break-words">{content.name}</h3>
+                    <p className="text-[13px] text-foreground/75 leading-relaxed break-words">{content.description}</p>
                     <ul className="space-y-2 text-[12px] leading-relaxed text-foreground/60">
                       <li>• актуальная программа двух дней и личный план;</li>
                       <li>• проверенные профили спикеров и темы выступлений;</li>
@@ -699,10 +701,10 @@ export default function Settings() {
                       <li>• нетворкинг и общение участников.</li>
                     </ul>
                   </div>
-                  <p className="text-[12px] text-foreground/50 leading-relaxed">Организатор — команда «ТехнологИИ Права». Москва, 25–26 сентября 2026 года, БЦ «Красные Ворота».</p>
-                  <p className="text-[12px] text-foreground/40 leading-relaxed">
-                    Поддержка: tickets@notify.tech-pravo.ru<br />
-                    Telegram: @CEO_WYRM1 · @TechPravoAI<br />
+                  <p className="text-[12px] text-foreground/50 leading-relaxed break-words">{content.city} · {content.dateLabel} · {content.venueName}</p>
+                  <p className="text-[12px] text-foreground/65 leading-relaxed break-words">
+                    Поддержка: <a className="underline" href={`mailto:${content.email}`}>{content.email}</a><br />
+                    Telegram: <a className="underline" href={`https://t.me/${content.organizerTelegram}`} target="_blank" rel="noreferrer">@{content.organizerTelegram}</a> · <a className="underline" href={`https://t.me/${content.telegramChannel}`} target="_blank" rel="noreferrer">@{content.telegramChannel}</a><br />
                     Сайт: tech-pravo.ru
                   </p>
                 </div>

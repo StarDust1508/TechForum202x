@@ -22,8 +22,10 @@ import { motion } from 'motion/react';
 import { getSpeakerById } from '../data';
 import { useNews } from '../lib/useNews';
 import BackButton from '@/src/components/BackButton';
+import { useAppContent } from '@/src/lib/useAppContent';
 
 export default function Feed() {
+  const content = useAppContent();
   const { news: NEWS } = useNews();
   return (
     <div
@@ -119,9 +121,9 @@ export default function Feed() {
       {NEWS.length === 0 && (
         <section className="rounded-3xl border border-accent/25 bg-card/90 p-6 text-center">
           <Send className="mx-auto h-8 w-8 text-accent" />
-          <h2 className="mt-4 font-display text-lg">Новости — в TechPravoAI</h2>
+          <h2 className="mt-4 font-display text-lg">Новости конференции</h2>
           <p className="mt-2 text-[13px] leading-6 text-foreground/55">Анонсы программы, новые спикеры и важные обновления публикуем в официальном Telegram-канале.</p>
-          <a href="https://t.me/TechPravoAI" target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex min-h-12 items-center justify-center rounded-2xl bg-accent px-5 font-bold text-background">Открыть канал</a>
+          <a href={`https://t.me/${content.telegramChannel}`} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex min-h-12 items-center justify-center rounded-2xl bg-accent px-5 font-bold text-background">Открыть канал</a>
         </section>
       )}
     </div>

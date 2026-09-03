@@ -9,6 +9,7 @@ import { isBiometricAvailable, isBiometricEnabled, enableBiometric } from '@/src
 import { Capacitor } from '@capacitor/core';
 import { mapAuthServerError, presentAuthException, recordAuthDiagnostic, type AuthErrorPresentation, type AuthErrorTarget } from '@/src/lib/authErrors';
 import AccessibleDialog from '@/src/components/ui/AccessibleDialog';
+import { useAppContent } from '@/src/lib/useAppContent';
 
 interface AuthProps {
   onSuccess: (user: any) => void;
@@ -27,6 +28,7 @@ function registrationContext(): { registrationPlatform: 'android' | 'ios' | 'web
 }
 
 export default function Auth({ onSuccess, onGuest }: AuthProps) {
+  const content = useAppContent();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [method, setMethod] = useState<'email' | 'phone'>('email');
   const [loading, setLoading] = useState(false);
@@ -246,7 +248,7 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
             transition={{ delay: 0.4, duration: 0.6 }}
             style={{ textShadow: '0 0 12px rgba(0,255,255,0.4)' }}
           >
-            25–26 сентября · Москва
+            {content.dateLabel} · {content.city}
           </motion.p>
         </motion.div>
 
@@ -598,9 +600,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:tickets@notify.tech-pravo.ru"
+                        <a href={`mailto:${content.email}`}
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          tickets@notify.tech-pravo.ru
+                          {content.email}
                         </a>
                       </div>
                     </div>
@@ -662,9 +664,9 @@ export default function Auth({ onSuccess, onGuest }: AuthProps) {
                           @NeuroPravo_Bot
                         </a>
                         <span className="text-foreground/20">·</span>
-                        <a href="mailto:tickets@notify.tech-pravo.ru"
+                        <a href={`mailto:${content.email}`}
                           className="text-[12px] text-accent/70 hover:text-accent font-medium">
-                          tickets@notify.tech-pravo.ru
+                          {content.email}
                         </a>
                       </div>
                     </div>

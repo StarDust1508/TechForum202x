@@ -22,7 +22,7 @@
 //
 // START_INVARIANTS:
 // - Каждое событие имеет UID (стабильный для одной и той же сессии).
-// - DTSTART/DTEND в формате "YYYYMMDDTHHMMSS" с TZID (Europe/Saratov).
+// - DTSTART/DTEND use the event timezone, not the phone's timezone.
 // - Long lines (>75 chars) не складываются — большинство клиентов терпят.
 // END_INVARIANTS
 
@@ -42,9 +42,14 @@ interface IcsEvent {
 function escapeIcsText(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
-    .replace(/\n/g, '\\n')
+    .replace(/\r\n|\r|\n/g, '\\n')
     .replace(/,/g, '\\,')
     .replace(/;/g, '\\;');
+}
+
+// RFC 6868: parameter values use caret escaping, unlike property text values.
+function quoteIcsParameter(value: string): string {
+  return `"${value.replace(/\^/g, '^^').replace(/\r\n|\r|\n/g, '^n').replace(/"/g, "^'")}"`;
 }
 
 /**
@@ -67,7 +72,7 @@ export function buildIcsEvent(ev: IcsEvent, timezone: string): string {
     `SUMMARY:${escapeIcsText(ev.summary)}`,
     `DESCRIPTION:${escapeIcsText(ev.description)}`,
     `LOCATION:${escapeIcsText(ev.location)}`,
-    `ORGANIZER;CN=${escapeIcsText(ev.organizer.name)}:mailto:${ev.organizer.email}`,
+    `ORGANIZER;CN=${quoteIcsParameter(ev.organizer.name)}:mailto:${ev.organizer.email}`,
   ];
   if (ev.url) lines.push(`URL:${ev.url}`);
   lines.push('END:VEVENT');
@@ -78,6 +83,10 @@ export function buildIcsCalendar(
   events: IcsEvent[],
   meta: { name: string; timezone: string },
 ): string {
+  const zone = meta.timezone === 'Europe/Moscow'
+    ? { offset: '+0300', name: 'MSK' }
+    : meta.timezone === 'Europe/Saratov' ? { offset: '+0400', name: 'MSK+1' } : null;
+  if (!zone) throw new Error(`Unsupported calendar timezone: ${meta.timezone}`);
   const head = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -86,14 +95,14 @@ export function buildIcsCalendar(
     'METHOD:PUBLISH',
     `X-WR-CALNAME:${escapeIcsText(meta.name)}`,
     `X-WR-TIMEZONE:${meta.timezone}`,
-    // Минимальный VTIMEZONE для Europe/Saratov (UTC+4, без DST с 2014)
+    // Fixed offsets applicable to this 2026 programme. Never label UTC+4 as Moscow.
     'BEGIN:VTIMEZONE',
     `TZID:${meta.timezone}`,
     'BEGIN:STANDARD',
     'DTSTART:20140101T000000',
-    'TZOFFSETFROM:+0400',
-    'TZOFFSETTO:+0400',
-    'TZNAME:MSK+1',
+    `TZOFFSETFROM:${zone.offset}`,
+    `TZOFFSETTO:${zone.offset}`,
+    `TZNAME:${zone.name}`,
     'END:STANDARD',
     'END:VTIMEZONE',
   ];
