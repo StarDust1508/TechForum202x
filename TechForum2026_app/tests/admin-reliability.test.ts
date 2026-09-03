@@ -21,7 +21,8 @@ before(async () => {
   await pool.query("INSERT INTO tracks(id,name,color,short_label) VALUES('t_ai','ИИ','#123456','ИИ') ON CONFLICT DO NOTHING");
   await pool.query("INSERT INTO days(id,date,label,weekday) VALUES('test-day','2026-09-25','25 сентября','Пятница') ON CONFLICT DO NOTHING");
   await pool.query("INSERT INTO halls(id,name,capacity) VALUES('test-hall','Тестовый зал',10) ON CONFLICT DO NOTHING");
-  await pool.query("INSERT INTO speakers(id,name,role,company,bio,avatar_letter,track_id,interest_ids) VALUES('test-speaker','Тестовый спикер','Юрист','Тест','Тест','ТС','t_ai','{}') ON CONFLICT DO NOTHING");
+  await pool.query("INSERT INTO speakers(id,name,role,company,bio,avatar_letter,track_id,interest_ids) VALUES('test-speaker','Тестовый спикер','Юрист','Тест','Тест','ТС','t_ai','{}') ON CONFLICT(id) DO UPDATE SET name=excluded.name");
+  await pool.query("DELETE FROM speaker_source_links WHERE source_id='test-source-id'");
 });
 after(async () => { await pool.end(); });
 
@@ -50,6 +51,8 @@ test('content health detects missing speaker, invalid clock and overlaps, not a 
   const refs={speakers:[],days:[{id:'d1'}],halls:[{id:'h1'}],tracks:[{id:'t1'}],links:[],moderators:[]};
   assert.match(contentIssues({...refs,sessions:[session]}).join(' '),/без спикера/);
   assert.deepEqual(contentIssues({...refs,sessions:[{...session,format:'Регистрация'}]}),[]);
+  assert.deepEqual(contentIssues({...refs,sessions:[{...session,format:'Перерыв',trackId:null}]}),[]);
+  assert.match(contentIssues({...refs,sessions:[{...session,format:'Перерыв',trackId:'missing-track'}]}).join(' '),/направление/);
   assert.match(contentIssues({...refs,sessions:[{...session,startTime:'29:99'}]}).join(' '),/время/);
   assert.match(contentIssues({...refs,sessions:[session,{...session,id:'s2',title:'Второй доклад'}]}).join(' '),/Пересечение/);
 });

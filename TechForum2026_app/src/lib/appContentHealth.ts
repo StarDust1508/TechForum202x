@@ -9,7 +9,8 @@ export function contentIssues(data: { sessions: Session[]; speakers: Speaker[]; 
   for (const s of data.sessions) {
     if (!days.has(s.dayId)) issues.push(`Сессия «${s.title}»: день не найден.`);
     if (!s.hallId || !halls.has(s.hallId)) issues.push(`Сессия «${s.title}»: зал не выбран или не найден.`);
-    if (!s.trackId || !tracks.has(s.trackId)) issues.push(`Сессия «${s.title}»: направление не выбрано или не найдено.`);
+    const generalEvent = /перерыв|регистрац|открыти|закрыти/i.test(s.format);
+    if ((s.trackId && !tracks.has(s.trackId)) || (!s.trackId && !generalEvent)) issues.push(`Сессия «${s.title}»: направление не выбрано или не найдено.`);
     if (!validTime(s.startTime) || !validTime(s.endTime) || s.startTime >= s.endTime) issues.push(`Сессия «${s.title}»: проверьте время начала и окончания.`);
     if (s.isPublished && /доклад|демо|дискусс|мастер|воркшоп|лекци/i.test(s.format) && !data.links.some(l => l.sessionId === s.id)) issues.push(`Опубликовано без спикера: «${s.title}».`);
   }
