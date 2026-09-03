@@ -63,7 +63,7 @@
 // FUNC 10[Auto-login на cold-start: verify → getCredentials → POST /auth/login] => tryBiometricAutoLogin
 // END_MODULE_MAP
 
-import { resolveApiUrl, authFetch, saveSessionToken } from './runtimeEndpoint';
+import { resolveApiUrl } from './runtimeEndpoint';
 
 const LS_ENABLED_KEY = 'techforum_biometric_enabled';
 const SERVER_KEY = 'techforum-techforum2026';
@@ -123,9 +123,9 @@ export async function enableBiometric(email: string, password: string): Promise<
   if (!plugin) throw new Error('biometric_unavailable');
 
   await plugin.verifyIdentity({
-    title: 'ТехнологИИ Права 2026',
+    title: 'TechForum 2026',
     subtitle: 'Включить вход по биометрии',
-    description: 'Подтвердите личность, чтобы привязать ТехнологИИ Права к биометрии',
+    description: 'Подтвердите личность, чтобы привязать TechForum к биометрии',
     useFallback: true,
     negativeButtonText: 'Отмена',
   });
@@ -175,7 +175,7 @@ export async function tryBiometricAutoLogin(): Promise<unknown | null> {
 
   try {
     await plugin.verifyIdentity({
-      title: 'ТехнологИИ Права 2026',
+      title: 'TechForum 2026',
       subtitle: 'Войти по биометрии',
       description: 'Приложите палец или посмотрите в камеру',
       useFallback: true,
@@ -201,7 +201,7 @@ export async function tryBiometricAutoLogin(): Promise<unknown | null> {
   }
 
   try {
-    const res = await authFetch(resolveApiUrl('/auth/login'), {
+    const res = await fetch(resolveApiUrl('/auth/login'), {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -216,9 +216,7 @@ export async function tryBiometricAutoLogin(): Promise<unknown | null> {
       }
       return null;
     }
-    const data = await res.json();
-    if (data?.token) saveSessionToken(data.token);
-    return data;
+    return await res.json();
   } catch {
     return null;
   }

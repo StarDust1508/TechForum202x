@@ -15,12 +15,12 @@ export default function Button({
   disabled,
   ...rest
 }: ButtonProps) {
-  const base = 'w-full rounded-[14px] py-4 text-[16px] font-semibold tracking-[0.04em] uppercase flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 font-sans';
+  const base = 'w-full rounded-[14px] py-4 text-[16px] font-semibold tracking-[0.04em] uppercase flex items-center justify-center gap-2 active:scale-[0.98] transition-all disabled:opacity-50 font-ui';
   const variants = {
     primary:
-      'border border-primary/55 bg-background/60 backdrop-blur-sm text-foreground/90 shadow-[0_8px_24px_rgba(0,255,255,0.18)] hover:border-primary/80 hover:bg-card',
+      'border border-[#4ec9c0]/55 bg-[#03161c]/60 backdrop-blur-sm text-[#d8f0ee] shadow-[0_8px_24px_rgba(78,201,192,0.18)] hover:border-[#4ec9c0]/80 hover:bg-[#0e3a44]/80',
     ghost:
-      'border border-primary/25 bg-transparent text-foreground/40 hover:text-foreground/90 hover:border-primary/50',
+      'border border-[#4ec9c0]/25 bg-transparent text-[#7aa8a4] hover:text-[#d8f0ee] hover:border-[#4ec9c0]/50',
   } as const;
   return (
     <button

@@ -1,140 +1,187 @@
-import {
-  ArrowUpRight,
-  BriefcaseBusiness,
-  Clock3,
-  FileCheck2,
-  Gift,
-  ListChecks,
-  Scale,
-  ShieldCheck,
-} from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
+import { AlertCircle, CheckCircle2, Clock, Gift, Loader2, Sparkles, Trophy, Users, XCircle, Zap } from 'lucide-react';
 import BackButton from '@/src/components/BackButton';
-import { useAppContent } from '@/src/lib/useAppContent';
+import { authFetch, resolveApiUrl } from '@/src/lib/runtimeEndpoint';
+
+interface Giveaway {
+  id: string;
+  title: string;
+  category: string;
+  item: string;
+  imageUrl?: string | null;
+  gradient?: string | null;
+  description?: string | null;
+  condition?: string | null;
+  endTime?: string | null;
+  endsAt?: string | null;
+  participants: number;
+  featured?: boolean;
+}
+
+type Notice = { type: 'success' | 'error'; text: string } | null;
 
 export default function Giveaways() {
-  const content = useAppContent();
-  const researchPaths = [
-    {
-      id: 'lawyer',
-      icon: Scale,
-      role: 'Юрист или юридическая команда',
-      title: content.researchLawyerTitle,
-      description: content.researchLawyerDescription,
-      material: content.researchLawyerMaterial,
-      href: content.researchLawyerUrl,
-      action: 'Пройти опрос для юристов',
-    },
-    {
-      id: 'arbitration',
-      icon: BriefcaseBusiness,
-      role: 'Арбитражный управляющий',
-      title: content.researchManagerTitle,
-      description: content.researchManagerDescription,
-      material: content.researchManagerMaterial,
-      href: content.researchManagerUrl,
-      action: 'Пройти опрос для управляющих',
-    },
-  ];
+  const [items, setItems] = useState<Giveaway[]>([]);
+  const [participatingIds, setParticipatingIds] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState('');
+  const [notice, setNotice] = useState<Notice>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [catalogResponse, mineResponse] = await Promise.all([
+        fetch(resolveApiUrl('/giveaways'), { credentials: 'include', cache: 'no-store' }),
+        authFetch(resolveApiUrl('/me/giveaways'), { cache: 'no-store' }),
+      ]);
+      if (!catalogResponse.ok) throw new Error('catalog_unavailable');
+      const catalog = await catalogResponse.json() as Giveaway[];
+      const mine = mineResponse.ok
+        ? await mineResponse.json() as { giveawayIds?: string[] }
+        : { giveawayIds: [] };
+      setItems(Array.isArray(catalog) ? catalog : []);
+      setParticipatingIds(Array.isArray(mine.giveawayIds) ? mine.giveawayIds : []);
+    } catch {
+      setItems([]);
+      setNotice({ type: 'error', text: 'Не удалось получить актуальные розыгрыши. Попробуйте обновить страницу.' });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const toggleParticipation = async (id: string) => {
+    if (busyId) return;
+    const joined = participatingIds.includes(id);
+    setBusyId(id);
+    setNotice(null);
+    try {
+      const response = await authFetch(resolveApiUrl(`/giveaways/${encodeURIComponent(id)}/join`), {
+        method: joined ? 'DELETE' : 'POST',
+      });
+      if (response.status === 401) throw new Error('auth');
+      if (response.status === 403) throw new Error('closed');
+      if (!response.ok) throw new Error('failed');
+      setParticipatingIds((current) => joined ? current.filter((value) => value !== id) : [...current, id]);
+      setItems((current) => current.map((item) => item.id === id
+        ? { ...item, participants: Math.max(0, item.participants + (joined ? -1 : 1)) }
+        : item));
+      setNotice({ type: 'success', text: joined ? 'Участие отменено.' : 'Участие зарегистрировано в системе.' });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : '';
+      setNotice({
+        type: 'error',
+        text: reason === 'auth'
+          ? 'Войдите в аккаунт, чтобы участвовать.'
+          : reason === 'closed'
+            ? 'Приём заявок уже закрыт.'
+            : 'Не удалось изменить участие. Попробуйте ещё раз.',
+      });
+    } finally {
+      setBusyId('');
+      window.setTimeout(() => setNotice(null), 3500);
+    }
+  };
 
   return (
-    <div
-      className="min-h-full px-4 min-[360px]:px-5"
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
-      }}
-    >
-      <header className="sticky top-0 z-20 -mx-4 border-b border-border bg-background/95 px-4 pb-4 pt-1 backdrop-blur-xl min-[360px]:-mx-5 min-[360px]:px-5">
+    <div className="flex-1 px-5 space-y-7 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
+      <header className="space-y-5">
         <div className="flex items-center gap-3">
-          <BackButton />
-          <div className="min-w-0">
-            <h1 className="font-display text-[clamp(24px,7vw,29px)] font-bold leading-[1.1] text-balance">Исследования</h1>
-            <p className="mt-1 text-[13px] font-medium text-foreground/60">12 вопросов · около 7 минут</p>
+          <BackButton to="/" />
+          <h1 className="font-display text-[28px] leading-none font-bold bg-gradient-to-r from-[#ff3399] via-[#ff66b2] to-[#00ffff] bg-clip-text text-transparent">Розыгрыши</h1>
+        </div>
+
+        <div className="relative overflow-hidden rounded-2xl border border-primary/15 bg-primary/[0.04] p-5">
+          <Trophy className="absolute -right-2 -top-2 h-24 w-24 text-primary opacity-[0.055]" />
+          <div className="relative z-10 space-y-2">
+            <h2 className="text-[15px] font-bold text-foreground/90">Только подтверждённые предложения партнёров</h2>
+            <p className="max-w-[88%] text-[11px] leading-relaxed text-foreground/45">Условия, сроки и количество участников приходят с сервера. Заявка сохраняется в вашем аккаунте и доступна организатору.</p>
           </div>
         </div>
+
+        {!loading && items.length > 0 && (
+          <div className="flex items-center justify-between px-1 text-[11px] text-foreground/40">
+            <span className="inline-flex items-center gap-2"><Gift className="h-3.5 w-3.5 text-primary/60" /><b className="text-foreground/70">{items.length}</b> активных</span>
+            <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-3.5 w-3.5 text-green-400/60" />Вы участвуете: <b className="text-green-400">{participatingIds.length}</b></span>
+          </div>
+        )}
       </header>
 
-      <section className="mt-5 overflow-hidden rounded-3xl border border-primary/30 bg-card p-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-primary">
-          <ListChecks className="h-5 w-5" aria-hidden="true" />
+      {loading ? (
+        <div className="grid min-h-64 place-items-center rounded-2xl border border-white/[0.06] bg-white/[0.02]"><Loader2 className="h-8 w-8 animate-spin text-primary/70" /></div>
+      ) : items.length === 0 ? (
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] px-6 py-12 text-center">
+          <Gift className="mx-auto h-10 w-10 text-primary/35" />
+          <h2 className="mt-4 text-[17px] font-bold text-foreground/85">Активных розыгрышей пока нет</h2>
+          <p className="mx-auto mt-2 max-w-sm text-[12px] leading-relaxed text-foreground/45">Новые предложения появятся здесь только после подтверждения приза, условий и сроков организатором.</p>
+          <button onClick={() => void load()} className="mt-5 rounded-xl border border-primary/25 px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Обновить</button>
         </div>
-        <h2 className="mt-5 max-w-[18ch] font-display text-[23px] font-bold leading-[1.15] text-balance">
-          Как ИИ меняет юридическую работу
-        </h2>
-        <p className="mt-3 max-w-[38rem] text-[15px] leading-[1.55] text-foreground/72 text-pretty">
-          {content.researchIntro}
-        </p>
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl bg-background/45 p-3.5">
-            <Clock3 className="h-4 w-4 text-accent" aria-hidden="true" />
-            <p className="mt-2 text-[13px] font-semibold text-foreground/85">Быстро</p>
-            <p className="mt-1 text-[12px] leading-[1.45] text-foreground/55">Около 7 минут</p>
-          </div>
-          <div className="rounded-2xl bg-background/45 p-3.5">
-            <FileCheck2 className="h-4 w-4 text-accent" aria-hidden="true" />
-            <p className="mt-2 text-[13px] font-semibold text-foreground/85">Полезно</p>
-            <p className="mt-1 text-[12px] leading-[1.45] text-foreground/55">Материал после регистрации</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-7" aria-labelledby="research-role-heading">
-        <h2 id="research-role-heading" className="px-1 font-display text-[17px] font-bold text-foreground">
-          Выберите направление
-        </h2>
-        <div className="mt-3 space-y-4">
-          {researchPaths.map((item, index) => {
-            const Icon = item.icon;
+      ) : (
+        <div className="space-y-5">
+          {items.map((giveaway, index) => {
+            const joined = participatingIds.includes(giveaway.id);
             return (
-              <article key={item.id} className="rounded-3xl border border-border bg-card p-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-primary/25 bg-primary/[0.08] text-primary">
-                    <Icon className="h-5 w-5" aria-hidden="true" />
+              <motion.article
+                key={giveaway.id}
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: index * 0.05 }}
+                className={`overflow-hidden rounded-2xl border ${joined ? 'border-green-500/30 bg-green-500/[0.035]' : 'border-white/[0.07] bg-white/[0.025]'}`}
+              >
+                {giveaway.imageUrl ? (
+                  <div className="relative h-44 overflow-hidden">
+                    <img src={giveaway.imageUrl} alt={giveaway.item} className="h-full w-full object-cover" loading="lazy" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f1118] via-[#0f1118]/35 to-transparent" />
+                    <div className="absolute bottom-4 left-5 right-5"><h3 className="text-[19px] font-bold text-white">{giveaway.item}</h3><p className="mt-1 text-[11px] text-white/55">{giveaway.title || giveaway.category}</p></div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-primary/90">
-                      {String(index + 1).padStart(2, '0')} · {item.role}
-                    </p>
-                    <h3 className="mt-2 font-display text-[20px] font-bold leading-[1.2] text-balance">{item.title}</h3>
+                ) : (
+                  <div className="relative overflow-hidden border-b border-white/[0.06] px-5 py-7">
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_85%_20%,rgba(255,51,153,0.14),transparent_55%)]" />
+                    <Gift className="absolute right-5 top-4 h-16 w-16 text-primary opacity-10" />
+                    <div className="relative"><h3 className="text-[19px] font-bold text-foreground/95">{giveaway.item}</h3><p className="mt-1 text-[11px] text-foreground/45">{giveaway.title || giveaway.category}</p></div>
                   </div>
-                </div>
+                )}
 
-                <p className="mt-4 text-[14px] leading-[1.55] text-foreground/68 text-pretty">{item.description}</p>
-
-                <div className="mt-5 rounded-2xl bg-background/45 p-4">
-                  <div className="flex gap-3">
-                    <Gift className="mt-0.5 h-4.5 w-4.5 shrink-0 text-accent" aria-hidden="true" />
-                    <div>
-                      <p className="text-[13px] font-semibold text-foreground/88">Что получите</p>
-                      <p className="mt-1.5 text-[13px] leading-[1.5] text-foreground/60 text-pretty">{item.material}</p>
+                <div className="space-y-4 p-5">
+                  <div className="flex flex-wrap gap-2">
+                    {giveaway.featured && <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-primary"><Sparkles className="h-2.5 w-2.5" />Главный приз</span>}
+                    {giveaway.endTime && <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.1em] text-foreground/55"><Clock className="h-2.5 w-2.5" />{giveaway.endTime}</span>}
+                  </div>
+                  {giveaway.description && <p className="text-[12px] leading-relaxed text-foreground/55">{giveaway.description}</p>}
+                  {giveaway.condition && (
+                    <div className="flex items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-3.5">
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-primary/75" />
+                      <div><span className="text-[9px] font-bold uppercase tracking-[0.15em] text-foreground/30">Условие участия</span><p className="mt-1 text-[12px] font-medium leading-snug text-foreground/70">{giveaway.condition}</p></div>
                     </div>
+                  )}
+                  <div className="flex items-center justify-between gap-4 pt-1">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] text-foreground/45"><Users className="h-3.5 w-3.5 text-primary/60" /><b className="font-mono text-foreground/80">{giveaway.participants}</b> участников</span>
+                    <button
+                      onClick={() => void toggleParticipation(giveaway.id)}
+                      disabled={Boolean(busyId)}
+                      className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-[10px] font-bold uppercase tracking-[0.1em] transition disabled:opacity-50 ${joined ? 'border border-red-500/20 bg-red-500/10 text-red-400' : 'bg-primary text-white shadow-lg shadow-primary/20'}`}
+                    >
+                      {busyId === giveaway.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : joined ? <XCircle className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
+                      {joined ? 'Отказаться' : 'Участвовать'}
+                    </button>
                   </div>
                 </div>
-
-                <a
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-center text-[14px] font-bold text-white transition-transform duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/80 focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none motion-reduce:active:scale-100"
-                >
-                  {item.action}
-                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
-                </a>
-              </article>
+              </motion.article>
             );
           })}
         </div>
-      </section>
+      )}
 
-      <section className="mt-5 rounded-2xl bg-foreground/[0.04] p-4">
-        <div className="flex gap-3">
-          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
-          <div>
-            <h2 className="text-[13px] font-semibold text-foreground/88">Конфиденциальность ответов</h2>
-            <p className="mt-1.5 text-[12px] leading-[1.55] text-foreground/58 text-pretty">{content.researchConditions}</p>
-          </div>
-        </div>
-      </section>
+      <AnimatePresence>
+        {notice && (
+          <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }} className={`fixed bottom-24 left-5 right-5 z-50 flex items-center gap-3 rounded-2xl border p-4 shadow-2xl ${notice.type === 'success' ? 'border-green-400/25 bg-green-500 text-white' : 'border-red-400/25 bg-[#29161c] text-red-100'}`}>
+            {notice.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertCircle className="h-5 w-5 shrink-0" />}
+            <p className="text-[12px] font-semibold">{notice.text}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

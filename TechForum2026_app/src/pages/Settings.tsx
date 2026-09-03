@@ -8,33 +8,22 @@
 // Все 4 экрана внутри — простые info-страницы. Условия / Соглашение —
 // полные тексты в комплект 152-ФЗ. О приложении — версия + ссылки.
 //
-// Уведомления синхронизируются с разрешением ОС и серверной регистрацией
-// устройства. Системная доставка подтверждается отдельным одноразовым тестом.
+// Уведомления — пока локальная toggle (без бэкенда push), Round 4 заведёт
+// push_tokens table и реальные подписки.
 
 import { useState, useEffect } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff, Send, Moon, Sun, Trash2,
+  Bell, FileText, ShieldCheck, Info, ChevronRight, X, ArrowLeft, Loader2, EyeOff,
 } from 'lucide-react';
 import PageShell from '@/src/components/ui/PageShell';
-import BrandLogo from '@/src/components/BrandLogo';
 import { hapticSelection } from '@/src/lib/haptics';
-import {
-  PUSH_SERVICE_CONFIGURED,
-  getStoredPushToken,
-  getPushNotificationState,
-  registerPushNotifications,
-  unregisterPushNotifications,
-} from '@/src/lib/push';
-import { openNotificationSettings } from '@/src/lib/appSettings';
-import { resolveApiUrl, authFetch } from '@/src/lib/runtimeEndpoint';
-import { getTheme, setTheme, type Theme } from '@/src/lib/theme';
-import { cn } from '@/src/lib/utils';
+import { registerPushNotifications, unregisterPushNotifications } from '@/src/lib/push';
+import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 
-type Section = 'notifications' | 'telegram' | 'terms' | 'privacy' | 'about' | 'account';
+type Section = 'notifications' | 'terms' | 'privacy' | 'about';
 
-const TERMS_TEXT = `Используя приложение ТехнологИИ Права 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
+const TERMS_TEXT = `Используя приложение TechForum 2026, вы соглашаетесь с правилами форума и политикой конфиденциальности.
 
 Приложение разработано для участников конференции и предоставляется для удобства навигации по программе, общения с другими участниками и получения уведомлений от организатора.
 
@@ -44,27 +33,27 @@ const TERMS_TEXT = `Используя приложение ТехнологИИ
 
 Все материалы (доклады, фото, видео) защищены авторским правом и не могут быть опубликованы вне приложения без разрешения авторов и организатора.
 
-Полную версию пользовательского соглашения см. на сайте tech-pravo.ru.`;
+Полную версию пользовательского соглашения см. на сайте techforum.ru.`;
 
 const PRIVACY_TEXT = `Согласно ФЗ-152 «О персональных данных», вы даёте согласие на обработку следующих данных:
 — ФИО, контактный email, телефон;
 — фото профиля (если загружено);
-— ваша активность в приложении (регистрации на сессии и переписка с другими участниками);
+— ваша активность в приложении (регистрации на сессии, переписка с другими участниками — содержимое сообщений шифруется на сервере при хранении);
 — технические данные устройства (модель, ОС, IP-адрес) — для диагностики и защиты от злоупотреблений.
 
 Цели обработки: предоставление функционала приложения, отправка уведомлений о форуме, статистика для организатора (анонимизированная).
 
-Срок хранения: пока действует аккаунт. При удалении аккаунта связанные персональные данные и пользовательский контент удаляются; обязательные технические записи могут сохраняться только в пределах сроков, установленных законом.
+Срок хранения: пока действует ваш аккаунт + 6 месяцев после удаления (юридический архив).
 
 Передача третьим лицам: только организатору форума и его техническому подрядчику. Не передаётся партнёрам или рекламным сетям.
 
 Вы можете в любой момент:
-— скачать копию своих данных (запрос через tickets@notify.tech-pravo.ru);
+— скачать копию своих данных (запрос через support@techforum.ru);
 — удалить аккаунт через профиль (необратимо).
 
-Полная политика конфиденциальности доступна на сайте tech-pravo.ru/privacy.`;
+Полная политика конфиденциальности доступна на сайте techforum.ru/privacy.`;
 
-const APP_VERSION = '1.8.9';
+const APP_VERSION = '1.0.0';
 const APP_BUILD = (import.meta.env.VITE_BUILD_SHORT_SHA as string | undefined) ?? 'dev';
 
 function NotificationsPage() {
@@ -72,83 +61,55 @@ function NotificationsPage() {
   // Round 7: + privacy-toggle «Скрывать предпросмотр» — body push'а становится
   // generic «Новое сообщение» вместо реального текста (lock-screen не светит).
   const NOTIF_LS_KEY = 'techforum_notifications_enabled';
-  const [enabled, setEnabled] = useState(false);
-  const [available, setAvailable] = useState(true);
-  const [permissionDenied, setPermissionDenied] = useState(false);
-  const [busy, setBusy] = useState(true);
+  const [enabled, setEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem(NOTIF_LS_KEY) === '1'; } catch { return false; }
+  });
+  const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState<string | null>(null);
+  const [pushDelivery, setPushDelivery] = useState<'checking' | 'live' | 'unavailable'>('checking');
   const [previewHidden, setPreviewHidden] = useState<boolean>(false);
   const [previewBusy, setPreviewBusy] = useState(false);
-  const [testBusy, setTestBusy] = useState(false);
-  const [testPending, setTestPending] = useState(false);
-  const [testVerified, setTestVerified] = useState(false);
 
-  // Подгружаем фактическое разрешение ОС + регистрацию устройства в БД.
-  // localStorage больше не является источником истины для положения тумблера.
+  // Подгружаем текущее значение pushPreviewHidden c бэка.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const state = await getPushNotificationState();
-        if (!cancelled) {
-          setAvailable(state.available);
-          setEnabled(state.enabled);
-          setPermissionDenied(state.reason === 'permission_denied');
-          try { localStorage.setItem(NOTIF_LS_KEY, state.enabled ? '1' : '0'); } catch { /* noop */ }
-          if (state.reason === 'service_not_configured') setHint('Уведомления пока недоступны. Когда доставка будет готова, переключатель станет активным автоматически.');
-          else if (state.reason === 'permission_denied') setHint('Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.');
-          else if (state.reason === 'check_failed') setHint('Не удалось проверить push-сервис. Проверьте соединение и откройте экран повторно.');
-        }
-        const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
+        const r = await fetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
         if (r.ok) {
           const me = await r.json();
-          if (!cancelled) {
-            setPreviewHidden(!!me.pushPreviewHidden);
-            setTestVerified(Boolean(me.pushTestVerifiedAt));
-          }
+          if (!cancelled) setPreviewHidden(!!me.pushPreviewHidden);
         }
       } catch { /* offline */ }
-      finally { if (!cancelled) setBusy(false); }
     })();
     return () => { cancelled = true; };
   }, []);
 
+  // Server delivery is a separate capability from OS permission. Fail closed:
+  // a granted Android permission is not presented as a working subscription
+  // when FCM credentials are absent on the backend.
   useEffect(() => {
-    if (!testPending) return;
-    const timer = window.setTimeout(() => {
-      setTestPending(false);
-      setHint('Уведомление не подтверждено. Проверьте шторку телефона или запустите проверку ещё раз.');
-    }, 30_000);
-    return () => window.clearTimeout(timer);
-  }, [testPending]);
-
-  useEffect(() => {
-    const markVerified = () => {
-      setTestVerified(true);
-      setTestPending(false);
-      setHint('Проверка завершена. Системные уведомления включены.');
-    };
-    window.addEventListener('techforum:push-test-verified', markVerified);
-    return () => window.removeEventListener('techforum:push-test-verified', markVerified);
-  }, []);
-
-  useEffect(() => {
-    const refreshPermission = async () => {
-      if (document.visibilityState === 'hidden') return;
-      const state = await getPushNotificationState();
-      setAvailable(state.available);
-      setEnabled(state.enabled);
-      setPermissionDenied(state.reason === 'permission_denied');
-      if (state.reason !== 'permission_denied') {
-        setHint((current) => current?.includes('запрещены в настройках') ? null : current);
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(resolveApiUrl('/health'), { cache: 'no-store' });
+        const health = response.ok ? await response.json() : null;
+        const live = health?.pushDelivery === 'live';
+        if (cancelled) return;
+        setPushDelivery(live ? 'live' : 'unavailable');
+        if (!live) {
+          setEnabled(false);
+          try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
+          setHint('Push-доставка временно недоступна. Переключатель станет активным после подключения сервиса организатором.');
+        }
+      } catch {
+        if (!cancelled) {
+          setPushDelivery('unavailable');
+          setHint('Не удалось проверить сервис уведомлений. Подписка не включена.');
+        }
       }
-    };
-    window.addEventListener('focus', refreshPermission);
-    document.addEventListener('visibilitychange', refreshPermission);
-    return () => {
-      window.removeEventListener('focus', refreshPermission);
-      document.removeEventListener('visibilitychange', refreshPermission);
-    };
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const togglePreviewHidden = async () => {
@@ -158,7 +119,7 @@ function NotificationsPage() {
     setPreviewHidden(next);
     void hapticSelection();
     try {
-      const r = await authFetch(resolveApiUrl('/auth/me'), {
+      const r = await fetch(resolveApiUrl('/auth/me'), {
         method: 'PATCH', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pushPreviewHidden: next }),
@@ -171,7 +132,7 @@ function NotificationsPage() {
     }
   };
   const toggle = async () => {
-    if (busy || !available) return;
+    if (busy || pushDelivery !== 'live') return;
     setBusy(true);
     void hapticSelection();
     if (!enabled) {
@@ -182,131 +143,62 @@ function NotificationsPage() {
         try { localStorage.setItem(NOTIF_LS_KEY, '1'); } catch { /* noop */ }
         setHint('Подписка зарегистрирована на этом устройстве.');
       } else {
-        const state = await getPushNotificationState();
-        setAvailable(state.available);
-        setPermissionDenied(state.reason === 'permission_denied');
-        setHint(state.reason === 'permission_denied'
-          ? 'Уведомления запрещены в настройках телефона. Разрешите их для TechPravo и вернитесь сюда.'
-          : 'Устройство не удалось зарегистрировать для push. Проверьте соединение и попробуйте ещё раз.');
+        setHint('Разрешение на уведомления не получено или сервис недоступен. Откройте Настройки → Приложения → TechForum 2026 → Уведомления и включите вручную.');
       }
     } else {
       // OFF: unregister
-      const removed = await unregisterPushNotifications();
-      if (removed) {
-        setEnabled(false);
-        try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
-        setHint('Подписка отключена. Push-уведомления приходить не будут.');
-      } else {
-        setHint('Не удалось отключить подписку на сервере. Проверьте соединение и попробуйте ещё раз.');
-      }
+      await unregisterPushNotifications();
+      setEnabled(false);
+      try { localStorage.setItem(NOTIF_LS_KEY, '0'); } catch { /* noop */ }
+      setHint('Подписка отключена. Push-уведомления приходить не будут.');
     }
     setBusy(false);
-  };
-
-  const sendTest = async () => {
-    if (testBusy || testPending || testVerified || !enabled) return;
-    setTestBusy(true);
-    setHint(null);
-    try {
-      const token = getStoredPushToken();
-      if (!token) throw new Error('device_not_registered');
-      const response = await authFetch(resolveApiUrl('/me/push-test'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-      const result = await response.json().catch(() => null) as { verified?: boolean; scheduled?: boolean; error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || `push_test_${response.status}`);
-      if (result?.verified) {
-        setTestVerified(true);
-        setHint('Проверка уже завершена. Системные уведомления включены.');
-      } else {
-        setTestPending(true);
-        setHint('Сверните приложение сейчас. Через 8 секунд уведомление появится в шторке — нажмите на него, чтобы завершить проверку.');
-      }
-    } catch (error) {
-      const code = error instanceof Error ? error.message : '';
-      setHint(code === 'push_not_configured'
-        ? 'Сервис доставки ещё не подключён на сервере.'
-        : 'Тест не доставлен. Проверьте разрешение телефона и повторите попытку.');
-    } finally {
-      setTestBusy(false);
-    }
-  };
-
-  const openSystemSettings = async () => {
-    const opened = await openNotificationSettings();
-    if (!opened) setHint('Не удалось открыть настройки автоматически. Откройте настройки TechPravo и разрешите уведомления.');
   };
   return (
     <div className="space-y-3">
       <button
         type="button"
         onClick={toggle}
-        disabled={busy || !available}
-        aria-pressed={enabled}
-        className="flex min-h-16 w-full items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-foreground/[0.06] px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-70"
+        disabled={busy || pushDelivery !== 'live'}
+        className="w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/55 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
       >
         <div className="text-left">
-          <p className="font-display text-[15px] font-semibold text-foreground">
+          <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
             Push-уведомления
           </p>
-          <p className="mt-1 text-[14px] text-foreground/60">
-            Анонсы сессий, ответы на сообщения
+          <p className="text-[12px] text-[#7aa8a4] mt-0.5">
+            {pushDelivery === 'checking' ? 'Проверяем доступность' : pushDelivery === 'live' ? 'Анонсы сессий, ответы на сообщения' : 'Временно недоступно'}
           </p>
         </div>
         {busy ? (
-          <Loader2 className="w-5 h-5 animate-spin text-primary" strokeWidth={1.8} />
+          <Loader2 className="w-5 h-5 animate-spin text-[#4ec9c0]" strokeWidth={1.8} />
         ) : (
           <span
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              enabled ? 'bg-primary' : 'bg-foreground/[0.06] border border-primary/30'
+              enabled ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
             }`}
           >
             <motion.span
               layout
               transition={{ type: 'spring', stiffness: 380, damping: 26 }}
               className={`absolute top-0.5 w-5 h-5 rounded-full ${
-                enabled ? 'left-[22px] bg-background' : 'left-0.5 bg-primary'
+                enabled ? 'left-[22px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
               }`}
             />
           </span>
         )}
       </button>
       {hint && (
-        <p role="status" aria-live="polite" className="px-5 text-[14px] leading-relaxed text-foreground/70">
+        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
           {hint}
         </p>
       )}
       {!hint && (
-        <p className="px-5 text-[14px] leading-relaxed text-foreground/65">
-          Получайте напоминания о сессиях, новые сообщения и объявления
-          организаторов. Вы можете отключить их в любое время.
+        <p className="px-5 text-[11px] text-[#7aa8a4]/85 leading-relaxed">
+          Включите чтобы получать важные оповещения форума: начало сессии,
+          новые сообщения, объявления оргкомитета. Отключение применяется
+          мгновенно и не требует переустановки.
         </p>
-      )}
-
-      {!enabled && permissionDenied && (
-        <button
-          type="button"
-          onClick={() => void openSystemSettings()}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/40 bg-primary/[0.08] px-4 text-[14px] font-semibold text-primary transition-[background-color,transform] duration-150 active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 motion-reduce:transition-none motion-reduce:active:scale-100"
-        >
-          <Bell className="h-4 w-4" aria-hidden="true" />
-          Открыть настройки уведомлений
-        </button>
-      )}
-
-      {enabled && !testVerified && (
-        <button
-          type="button"
-          onClick={() => void sendTest()}
-          disabled={testBusy || testPending}
-          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-primary/35 px-4 text-[14px] font-semibold text-primary transition-[background-color,transform] duration-150 active:scale-[0.96] hover:bg-primary/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-60 disabled:active:scale-100 motion-reduce:transition-none"
-        >
-          {testBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bell className="h-4 w-4" />}
-          {testPending ? 'Ожидаем нажатия уведомления' : 'Проверить уведомления'}
-        </button>
       )}
 
       {/* Round 7: privacy-toggle. Только если push-уведомления вообще включены —
@@ -316,26 +208,25 @@ function NotificationsPage() {
           type="button"
           onClick={togglePreviewHidden}
           disabled={previewBusy}
-          aria-pressed={previewHidden}
-          className="mt-4 flex min-h-16 w-full items-center justify-between gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:opacity-70"
+          className="mt-4 w-full flex items-center justify-between gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 active:scale-[0.99] transition-transform disabled:opacity-70"
         >
           <div className="flex items-start gap-3 text-left flex-1 min-w-0">
-            <EyeOff className="w-4 h-4 mt-0.5 text-primary shrink-0" strokeWidth={1.6} />
+            <EyeOff className="w-4 h-4 mt-0.5 text-[#4ec9c0] shrink-0" strokeWidth={1.6} />
             <div>
-              <p className="font-display text-[14px] font-semibold text-foreground">
+              <p className="font-display-cyrl text-[14px] font-semibold text-[#d8f0ee]">
                 Скрывать предпросмотр
               </p>
-              <p className="mt-1 text-[14px] leading-relaxed text-foreground/60">
+              <p className="text-[11px] text-[#7aa8a4] mt-0.5 leading-relaxed">
                 Текст сообщения не будет виден на заблокированном экране — только «Новое сообщение».
               </p>
             </div>
           </div>
           {previewBusy ? (
-            <Loader2 className="w-4 h-4 animate-spin text-primary shrink-0" strokeWidth={1.8} />
+            <Loader2 className="w-4 h-4 animate-spin text-[#4ec9c0] shrink-0" strokeWidth={1.8} />
           ) : (
             <span
               className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${
-                previewHidden ? 'bg-primary' : 'bg-foreground/[0.06] border border-primary/30'
+                previewHidden ? 'bg-[#4ec9c0]' : 'bg-[#0a2f38] border border-[#4ec9c0]/30'
               }`}
               style={{ height: 22, width: 40 }}
             >
@@ -343,7 +234,7 @@ function NotificationsPage() {
                 layout
                 transition={{ type: 'spring', stiffness: 380, damping: 26 }}
                 className={`absolute top-0.5 w-4 h-4 rounded-full ${
-                  previewHidden ? 'left-[20px] bg-background' : 'left-0.5 bg-primary'
+                  previewHidden ? 'left-[20px] bg-[#03161c]' : 'left-0.5 bg-[#4ec9c0]'
                 }`}
               />
             </span>
@@ -354,274 +245,37 @@ function NotificationsPage() {
   );
 }
 
-// Привязка Telegram для безопасного сброса пароля. Владелец под своей сессией
-// получает одноразовую ссылку → открывает @NeuroPravo_Bot → бот вяжет chat_id к
-// аккаунту. При сбросе код приходит ТОЛЬКО в этот привязанный чат (см. Auth.tsx +
-// server.ts forgot-password).
-function TelegramLinkPage() {
-  const [loading, setLoading] = useState(true);
-  const [linked, setLinked] = useState(false);
-  const [username, setUsername] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [manualLink, setManualLink] = useState<string | null>(null);
-
-  async function refresh(): Promise<void> {
-    try {
-      const r = await authFetch(resolveApiUrl('/auth/me'), { credentials: 'include' });
-      if (r.ok) {
-        const u = await r.json();
-        setLinked(!!u.telegramLinked);
-        setUsername(u.telegramUsername ?? null);
-      }
-    } catch {
-      /* offline — оставляем текущее состояние */
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void refresh(); }, []);
-  // Юзер уходит в Telegram привязывать и возвращается — перечитываем статус.
-  useEffect(() => {
-    const onFocus = () => { void refresh(); };
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
-  }, []);
-
-  async function startLink(): Promise<void> {
-    setBusy(true); setError(null); setManualLink(null);
-    try {
-      const r = await authFetch(resolveApiUrl('/me/telegram/link-token'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!r.ok) {
-        setError(r.status === 503
-          ? 'Привязка временно недоступна. Попробуйте позже.'
-          : 'Не удалось создать ссылку. Попробуйте позже.');
-        return;
-      }
-      const data = await r.json();
-      const link = String(data?.deepLink || '');
-      if (!link) { setError('Не удалось создать ссылку. Попробуйте позже.'); return; }
-      // window.open после await часто блокируется WebView как popup. Сначала
-      // создаём устойчивую ссылку, затем пользователь открывает её явным тапом.
-      setManualLink(link);
-    } catch {
-      setError('Нет соединения с сервером');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function unlink(): Promise<void> {
-    setBusy(true); setError(null);
-    try {
-      const r = await authFetch(resolveApiUrl('/me/telegram/unlink'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (r.ok) { setLinked(false); setUsername(null); }
-      else setError('Не удалось отвязать. Попробуйте позже.');
-    } catch {
-      setError('Нет соединения с сервером');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-10">
-        <Loader2 className="w-6 h-6 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-5">
-      <div className="rounded-2xl border border-primary/25 bg-foreground/[0.04] p-5">
-        <p className="text-[14px] text-foreground/85 leading-relaxed">
-          Привязка нужна для <b>безопасного сброса пароля</b>: если забудете пароль, код придёт
-          в бота <span className="text-accent font-semibold">@NeuroPravo_Bot</span> — только в ваш
-          привязанный аккаунт, никто другой его не получит.
-        </p>
-      </div>
-
-      {linked ? (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-emerald-400/30 bg-emerald-400/[0.06] p-5 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl border border-emerald-400/40 bg-background/40 flex items-center justify-center text-emerald-300 shrink-0">
-              <Send className="w-[18px] h-[18px]" strokeWidth={1.7} />
-            </div>
-            <div className="min-w-0">
-              <p className="font-display text-[15px] font-semibold text-foreground">Telegram привязан</p>
-              <p className="text-[12px] text-foreground/50 mt-0.5 truncate">
-                {username ? `@${username}` : 'Аккаунт привязан'}
-              </p>
-            </div>
-          </div>
-          {error && <p className="text-[13px] font-semibold text-rose-300 text-center">{error}</p>}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={unlink}
-            className="w-full border border-rose-400/40 text-rose-300 py-3.5 rounded-2xl text-[14px] font-semibold active:scale-[0.98] transition-transform disabled:opacity-50"
-          >
-            {busy ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Отвязать Telegram'}
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {error && <p className="text-[13px] font-semibold text-rose-300 text-center">{error}</p>}
-          {!manualLink ? <button
-            type="button"
-            disabled={busy}
-            onClick={startLink}
-            className="w-full bg-primary text-primary-foreground py-4 rounded-2xl text-[15px] font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-50 shadow-[0_8px_28px_rgba(255,51,153,0.2)]"
-          >
-            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : (<><Send className="w-4 h-4" strokeWidth={1.9} /> Создать ссылку</>)}
-          </button> : (
-            <a
-              href={manualLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 text-center text-[15px] font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
-            >
-              <Send className="h-4 w-4" /> Открыть @NeuroPravo_Bot
-            </a>
-          )}
-          <p className="text-[12px] text-foreground/45 text-center leading-relaxed">
-            После открытия нажмите «Start» в боте и вернитесь сюда — статус обновится автоматически.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AccountPage() {
-  const [confirmed, setConfirmed] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const remove = async () => {
-    if (!confirmed || busy) return;
-    setBusy(true); setError(null);
-    try {
-      const r = await authFetch(resolveApiUrl('/auth/me'), {
-        method: 'DELETE', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmation: 'DELETE' }),
-      });
-      if (!r.ok) throw new Error(`delete_failed_${r.status}`);
-      localStorage.clear(); sessionStorage.clear(); window.location.reload();
-    } catch { setError('Не удалось удалить аккаунт. Проверьте соединение и попробуйте ещё раз.'); setBusy(false); }
-  };
-  return <div className="space-y-5">
-    <div className="rounded-2xl border border-rose-400/30 bg-rose-400/[0.06] p-5"><h3 className="font-display text-[16px] font-semibold text-rose-300">Удаление необратимо</h3><p className="mt-2 text-[13px] leading-relaxed text-foreground/65">Будут удалены профиль, контакты, регистрации на сессии, сообщения и загруженные данные, кроме сведений, которые организатор обязан сохранять по закону.</p></div>
-    <label className="flex items-start gap-3 rounded-2xl border border-border bg-card p-4"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-1 h-4 w-4 accent-rose-400" /><span className="text-[13px] leading-relaxed text-foreground/75">Я понимаю последствия и хочу полностью удалить аккаунт.</span></label>
-    {error && <p className="text-[12px] text-rose-300">{error}</p>}
-    <button type="button" disabled={!confirmed || busy} onClick={() => void remove()} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-400/45 py-4 text-[14px] font-bold text-rose-300 disabled:opacity-35">{busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Trash2 className="h-5 w-5" />}Удалить аккаунт</button>
-  </div>;
-}
-
 export default function Settings() {
-  const [section, setSectionRaw] = useState<Section | null>(null);
-  const [theme, setThemeState] = useState<Theme>(getTheme());
-  // Push is a release feature only on Android. Keep the entry unreachable on
-  // iOS even if a build is accidentally created with the Android env file.
-  const pushSettingsVisible = PUSH_SERVICE_CONFIGURED && Capacitor.getPlatform() === 'android';
-  const changeTheme = (t: Theme) => { setTheme(t); setThemeState(t); void hapticSelection(); };
-
-  // Integrate with browser history so swipe-back closes the sub-section
-  // instead of navigating away from Settings entirely
-  const setSection = (next: Section | null) => {
-    if (next && !section) {
-      // Opening a sub-section: push a dummy history entry
-      window.history.pushState({ settingsSection: next }, '');
-    } else if (!next && section) {
-      // Closing via UI button — go back to pop the dummy entry we pushed
-      // (but only if the dummy entry is the current state)
-      if (window.history.state?.settingsSection) {
-        window.history.back();
-        // The popstate handler will set section=null
-        return;
-      }
-    }
-    setSectionRaw(next);
-  };
-
-  useEffect(() => {
-    const onPopState = (e: PopStateEvent) => {
-      // If we're leaving a settings sub-section, just close it
-      if (section) {
-        setSectionRaw(null);
-      }
-    };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [section]);
+  const [section, setSection] = useState<Section | null>(null);
 
   const items: Array<{ key: Section; icon: typeof Bell; label: string; sub: string }> = [
-    ...(pushSettingsVisible
-      ? [{ key: 'notifications' as const, icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' }]
-      : []),
-    { key: 'telegram', icon: Send, label: 'Привязка Telegram', sub: 'Для безопасного сброса пароля' },
+    { key: 'notifications', icon: Bell, label: 'Уведомления', sub: 'Push, анонсы сессий' },
     { key: 'terms', icon: FileText, label: 'Условия использования', sub: 'Правила форума' },
     { key: 'privacy', icon: ShieldCheck, label: 'Согласие на обработку ПД', sub: '152-ФЗ' },
-    { key: 'account', icon: Trash2, label: 'Управление аккаунтом', sub: 'Полное удаление данных' },
     { key: 'about', icon: Info, label: 'О приложении', sub: `Версия ${APP_VERSION}` },
   ];
 
   return (
-    <PageShell title="Настройки">
-      {/* Тема оформления — тёмная (бренд) / светлая */}
-      <div className="mb-4 rounded-2xl border border-primary/22 bg-card p-4">
-        <p className="font-display text-[14px] font-semibold text-foreground mb-3">Тема оформления</p>
-        <div className="flex gap-2">
-          {([['dark', 'Тёмная', Moon], ['light', 'Светлая', Sun]] as const).map(([val, label, Icon]) => (
-            <button
-              key={val}
-              type="button"
-              onClick={() => changeTheme(val)}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-semibold border transition-all active:scale-[0.98]',
-                theme === val
-                  ? 'bg-primary/15 border-primary/45 text-primary'
-                  : 'bg-background/40 border-border text-foreground/55 hover:text-foreground/80',
-              )}
-            >
-              <Icon className="w-4 h-4" strokeWidth={1.8} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
+    <PageShell title="Настройки" kicker="Параметры">
       <div className="space-y-2.5">
-        {items.map((it, idx) => (
-          <motion.button
+        {items.map((it) => (
+          <button
             key={it.key}
             type="button"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: idx * 0.06, ease: [0.32, 0.72, 0, 1] }}
             onClick={() => setSection(it.key)}
-            className="w-full flex items-center gap-4 rounded-2xl border border-primary/22 bg-card px-5 py-4 hover:border-primary/45 active:scale-[0.99] transition-all text-left"
+            className="w-full flex items-center gap-4 rounded-2xl border border-[#4ec9c0]/22 bg-[#0a2f38]/40 px-5 py-4 hover:border-[#4ec9c0]/45 active:scale-[0.99] transition-all text-left"
           >
-            <div className="w-10 h-10 rounded-xl border border-primary/35 bg-background/55 flex items-center justify-center text-primary shrink-0">
+            <div className="w-10 h-10 rounded-xl border border-[#4ec9c0]/35 bg-[#03161c]/55 flex items-center justify-center text-[#4ec9c0] shrink-0">
               <it.icon className="w-4.5 h-4.5" strokeWidth={1.6} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-display text-[15px] font-semibold text-foreground">
+              <p className="font-display-cyrl text-[15px] font-semibold text-[#d8f0ee]">
                 {it.label}
               </p>
-              <p className="text-[12px] text-foreground/40 mt-0.5 truncate">{it.sub}</p>
+              <p className="text-[12px] text-[#7aa8a4] mt-0.5 truncate">{it.sub}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-primary/55" strokeWidth={1.6} />
-          </motion.button>
+            <ChevronRight className="w-4 h-4 text-[#4ec9c0]/55" strokeWidth={1.6} />
+          </button>
         ))}
       </div>
 
@@ -633,77 +287,65 @@ export default function Settings() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 24 }}
             transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-            className="fixed inset-0 z-[80] bg-background flex flex-col"
+            className="fixed inset-0 z-[80] bg-[#03161c] flex flex-col"
             style={{
               paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
               paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
             }}
           >
-            <div className="flex items-center gap-3 px-5 pb-4 border-b border-primary/22">
+            <div className="flex items-center gap-3 px-5 pb-4 border-b border-[#4ec9c0]/22">
               <button
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Назад"
-                className="h-10 w-10 rounded-xl border border-primary/35 bg-foreground/[0.06] flex items-center justify-center text-primary active:scale-90 transition-transform"
+                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/35 bg-[#0a2f38]/45 flex items-center justify-center text-[#4ec9c0] active:scale-90 transition-transform"
               >
                 <ArrowLeft className="w-4 h-4" strokeWidth={1.8} />
               </button>
-              <h2 className="font-display text-[18px] font-semibold text-foreground">
+              <h2 className="font-display-cyrl text-[18px] font-semibold text-[#d8f0ee]">
                 {section === 'notifications' && 'Уведомления'}
-                {section === 'telegram' && 'Привязка Telegram'}
                 {section === 'terms' && 'Условия использования'}
                 {section === 'privacy' && 'Согласие на обработку ПД'}
                 {section === 'about' && 'О приложении'}
-                {section === 'account' && 'Управление аккаунтом'}
               </h2>
               <span className="flex-1" />
               <button
                 type="button"
                 onClick={() => setSection(null)}
                 aria-label="Закрыть"
-                className="h-10 w-10 rounded-xl border border-primary/22 flex items-center justify-center text-foreground/40 active:scale-90 transition-transform"
+                className="h-10 w-10 rounded-xl border border-[#4ec9c0]/22 flex items-center justify-center text-[#7aa8a4] active:scale-90 transition-transform"
               >
                 <X className="w-4 h-4" strokeWidth={1.8} />
               </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
-              {section === 'notifications' && pushSettingsVisible && <NotificationsPage />}
-              {section === 'telegram' && <TelegramLinkPage />}
+              {section === 'notifications' && <NotificationsPage />}
               {section === 'terms' && (
-                <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
+                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
                   {TERMS_TEXT}
                 </p>
               )}
               {section === 'privacy' && (
-                <p className="text-[14px] text-foreground/85 leading-relaxed whitespace-pre-line">
+                <p className="text-[14px] text-[#d8f0ee]/85 leading-relaxed whitespace-pre-line">
                   {PRIVACY_TEXT}
                 </p>
               )}
-              {section === 'account' && <AccountPage />}
               {section === 'about' && (
                 <div className="space-y-4">
-                  <div className="rounded-2xl border border-primary/30 bg-foreground/[0.06] p-5 text-center">
-                    <p className="text-[17px]"><BrandLogo /></p>
-                    <p className="font-mono text-[11px] uppercase tracking-widest text-primary mt-1">
+                  <div className="rounded-2xl border border-[#4ec9c0]/30 bg-[#0a2f38]/45 p-5 text-center">
+                    <p className="font-display text-[24px] font-semibold text-[#d8f0ee]">TechForum 2026</p>
+                    <p className="font-mono text-[11px] uppercase tracking-widest text-[#4ec9c0] mt-1">
                       Версия {APP_VERSION} · build {APP_BUILD}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-                    <h3 className="font-display text-[17px] font-bold text-foreground">Весь форум — в одном маршруте</h3>
-                    <p className="text-[13px] text-foreground/75 leading-relaxed">ТехнологИИ Права объединяет юристов, предпринимателей и технологические команды, которые внедряют ИИ в реальную практику.</p>
-                    <ul className="space-y-2 text-[12px] leading-relaxed text-foreground/60">
-                      <li>• актуальная программа двух дней и личный план;</li>
-                      <li>• проверенные профили спикеров и темы выступлений;</li>
-                      <li>• электронный билет, навигация и новости форума;</li>
-                      <li>• нетворкинг и общение участников.</li>
-                    </ul>
-                  </div>
-                  <p className="text-[12px] text-foreground/50 leading-relaxed">Организатор — команда «ТехнологИИ Права». Москва, 25–26 сентября 2026 года, БЦ «Красные Ворота».</p>
-                  <p className="text-[12px] text-foreground/40 leading-relaxed">
-                    Поддержка: tickets@notify.tech-pravo.ru<br />
-                    Telegram: @CEO_WYRM1 · @TechPravoAI<br />
-                    Сайт: tech-pravo.ru
+                  <p className="text-[13px] text-[#d8f0ee]/85 leading-relaxed">
+                    Приложение TechForum 2026 — официальный гид по программе форума,
+                    инструмент нетворкинга и личный кабинет участника.
+                  </p>
+                  <p className="text-[12px] text-[#7aa8a4] leading-relaxed">
+                    Поддержка: support@techforum.ru<br />
+                    Сайт: techforum.ru
                   </p>
                 </div>
               )}

@@ -32,21 +32,22 @@
 
 import {
   User,
+  Newspaper,
   MessageCircle,
   Calendar,
-  CircleHelp,
+  Handshake,
   ShieldCheck,
-  Presentation,
+  Mic,
   Info,
-  ClipboardCheck,
+  Sparkles,
   CalendarDays,
   MapPin,
   Settings,
+  Users,
   Send,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import BrandLogo from '@/src/components/BrandLogo';
 
 interface MenuItem {
   label: string;
@@ -60,14 +61,14 @@ const menuItems: MenuItem[] = [
   { label: 'Программа', icon: Calendar, to: '/schedule' },
   { label: 'Чат', icon: MessageCircle, to: '/chat' },
   { label: 'Билет', icon: ShieldCheck, to: '/ticket' },
-  { label: 'Спикеры', icon: Presentation, to: '/speakers' },
-  { label: 'TG Канал', icon: Send, href: 'https://t.me/TechPravoAI' },
+  { label: 'Спикеры', icon: Mic, to: '/speakers' },
+  { label: 'Новости', icon: Newspaper, to: '/feed' },
   { label: 'Настройки', icon: Settings, to: '/settings' },
-  { label: 'Маршрут', icon: MapPin, to: '/map' },
-  { label: 'Исследования', icon: ClipboardCheck, to: '/giveaways' },
+  { label: 'Участники', icon: Users, to: '/attendees' },
+  { label: 'Розыгрыши', icon: Sparkles, to: '/giveaways' },
   { label: 'О форуме', icon: Info, to: '/about' },
-  { label: 'Помощь', icon: CircleHelp, to: '/faq' },
-  { label: 'Связаться', icon: Send, href: 'https://t.me/CEO_WYRM1' },
+  { label: 'Партнёры', icon: Handshake, to: '/partners' },
+  { label: 'TG Бот', icon: Send, href: 'https://t.me/NeuroPravo_Bot' },
 ];
 
 export default function Home() {
@@ -90,22 +91,34 @@ export default function Home() {
             снизу/сверху. Заголовок "TechForum / 2026" в две строки — как
             на главном экране. */}
         <header
-          className="sticky top-0 z-20 -mx-5 px-5 pb-5 text-center bg-background border-b border-border"
+          className="sticky top-0 z-20 -mx-5 px-5 pb-5 text-center bg-[#0f1118] border-b border-white/[0.06]"
           style={{
             paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
           }}
         >
-          <h1 className="w-full min-w-0 px-1" style={{ fontSize: 'clamp(18px, 6.1vw, 34px)' }}><BrandLogo className="mx-auto" /></h1>
+          <h1
+            className="font-display font-extrabold tracking-[0.03em]"
+            style={{
+              fontSize: 'clamp(38px, 12vw, 62px)',
+              lineHeight: 1,
+              background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              filter: 'drop-shadow(0 0 18px rgba(0,255,255,0.4)) drop-shadow(0 0 36px rgba(0,255,255,0.15))',
+            }}
+          >
+            TechForum
+          </h1>
 
           {/* Кликабельная плашка с датой/локацией → ведёт в /about */}
           <Link
             to="/about"
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-foreground/10 bg-foreground/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-foreground/[0.06] active:scale-[0.97] transition-all"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/65 backdrop-blur-sm hover:border-primary/40 hover:bg-white/[0.06] active:scale-[0.97] transition-all"
             aria-label="О форуме: 25–26 сентября 2026, Москва"
           >
             <CalendarDays className="h-3.5 w-3.5 text-accent" />
             <span>25–26 сент.</span>
-            <span className="h-0.5 w-0.5 rounded-full bg-foreground/30" />
+            <span className="h-0.5 w-0.5 rounded-full bg-white/30" />
             <MapPin className="h-3.5 w-3.5 text-accent" />
             <span>Москва</span>
           </Link>

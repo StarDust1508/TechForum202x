@@ -40,7 +40,7 @@
 //                       days, speakers, session_speakers, partners.]
 // END_CHANGE_SUMMARY
 
-import { pgTable, text, integer, bigint, boolean, timestamp, primaryKey, index, varchar, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, integer, boolean, timestamp, primaryKey, index, varchar, jsonb } from 'drizzle-orm/pg-core';
 
 // ============================================================================
 // AUTH
@@ -56,10 +56,6 @@ export const users = pgTable(
     avatar: text('avatar').notNull().default(''),
     bio: text('bio').notNull().default(''),
     phone: text('phone'),
-    // Фиксируем ОС и устройство при регистрации/входе. Эти поля нужны общей
-    // админке, чтобы Android/iOS не смешивались в одну неизвестную аудиторию.
-    registrationPlatform: varchar('registration_platform', { length: 16 }).notNull().default('unknown'),
-    registrationDevice: text('registration_device'),
     role: text('role').notNull().default('Участник'),
     company: text('company').notNull().default(''),
     workplace: text('workplace').notNull().default(''),
@@ -67,20 +63,6 @@ export const users = pgTable(
     birthday: text('birthday').notNull().default(''),
     isPrivate: boolean('is_private').notNull().default(false),
     pushPreviewHidden: boolean('push_preview_hidden').notNull().default(false),
-    // Заполняется только после того, как пользователь нажал системное Android-
-    // уведомление проверки. Это делает проверку одноразовой для аккаунта и не
-    // выдаёт принятие сообщения Firebase за фактическое появление в шторке.
-    pushTestVerifiedAt: timestamp('push_test_verified_at', { withTimezone: true }),
-    // Telegram-привязка для безопасного сброса пароля: код сброса шлётся ТОЛЬКО
-    // в привязанный чат владельца (см. server.ts forgot-password). telegram_id —
-    // это chat_id приватного чата (== telegram user id). Привязку выпускает сам
-    // владелец под своей сессией (POST /me/telegram/link-token) → бот вяжет.
-    telegramId: text('telegram_id'),
-    telegramUsername: text('telegram_username'),
-    // Presence: обновляется при подключении/отключении WS-сокета (см. server.ts
-    // initDmWs). Пока юзер онлайн (есть сокет в userSockets) — «в сети»; иначе
-    // показываем «был(а) в сети {relative(last_seen_at)}».
-    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -124,10 +106,6 @@ export const speakers = pgTable(
     company: text('company').notNull(),
     bio: text('bio').notNull(),
     avatarLetter: text('avatar_letter').notNull(),
-    // Фото спикера (абсолютный URL на сайт, напр. https://tech-pravo.ru/speakers/x.jpg
-    // или /api/media/file/<uuid>). null → карточка показывает инициалы. Заполняется
-    // живым синком с сайта (см. syncSpeakersFromSite в server.ts).
-    avatarUrl: text('avatar_url'),
     topic: text('topic'),
     trackId: text('track_id').notNull().references(() => tracks.id, { onDelete: 'restrict' }),
     // BUG_FIX_CONTEXT: Для ранжирования "Recommended" в Schedule нужно знать
@@ -153,70 +131,13 @@ export const sessionsEvent = pgTable(
     dayId: text('day_id').notNull().references(() => days.id, { onDelete: 'restrict' }),
     trackId: text('track_id').references(() => tracks.id, { onDelete: 'set null' }),
     status: text('status').notNull().default('Soon'),
-    // Public visibility is independent from programme content. Only the
-    // dedicated CAS endpoint may change these fields.
-    isPublished: boolean('is_published').notNull().default(false),
-    publicationVersion: bigint('publication_version', { mode: 'number' }).notNull().default(0),
-    publicationReason: text('publication_reason'),
-    publicationChangedAt: timestamp('publication_changed_at', { withTimezone: true }),
-    publicationChangedBy: text('publication_changed_by'),
-    publicationReportedActor: text('publication_reported_actor'),
   },
   (t) => ({
     dayIdx: index('sessions_day_idx').on(t.dayId),
     trackIdx: index('sessions_track_idx').on(t.trackId),
     hallIdx: index('sessions_hall_idx').on(t.hallId),
-    publicationIdx: index('sessions_publication_idx').on(t.isPublished, t.dayId, t.startTime),
   }),
 );
-
-export const programmeSessionPublicationRevisions = pgTable(
-  'programme_session_publication_revisions',
-  {
-    id: text('id').primaryKey(),
-    requestId: text('request_id').notNull(),
-    sessionId: text('session_id').notNull().references(() => sessionsEvent.id, { onDelete: 'restrict' }),
-    actor: text('actor').notNull(),
-    reportedActor: text('reported_actor'),
-    reason: text('reason').notNull(),
-    beforeIsPublished: boolean('before_is_published').notNull(),
-    afterIsPublished: boolean('after_is_published').notNull(),
-    beforeVersion: bigint('before_version', { mode: 'number' }).notNull(),
-    afterVersion: bigint('after_version', { mode: 'number' }).notNull(),
-    beforePayload: jsonb('before_payload').notNull(),
-    afterPayload: jsonb('after_payload').notNull(),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    requestSessionIdx: index('programme_session_publication_revisions_request_session_idx').on(t.requestId, t.sessionId),
-    sessionCreatedIdx: index('programme_session_publication_revisions_session_created_idx').on(t.sessionId, t.createdAt),
-  }),
-);
-
-export const programmeSessionPublicationRuns = pgTable('programme_session_publication_runs', {
-  runId: text('run_id').primaryKey(),
-  mode: text('mode').notNull(),
-  targetSessionIds: text('target_session_ids').array().notNull(),
-  actor: text('actor').notNull(),
-  reportedActor: text('reported_actor'),
-  reason: text('reason').notNull(),
-  beforeTotal: integer('before_total').notNull(),
-  beforePublic: integer('before_public').notNull(),
-  afterTotal: integer('after_total').notNull(),
-  afterPublic: integer('after_public').notNull(),
-  affectedCount: integer('affected_count').notNull(),
-  auditCount: integer('audit_count').notNull(),
-  beforeProgrammeSha256: text('before_programme_sha256').notNull(),
-  afterProgrammeSha256: text('after_programme_sha256').notNull(),
-  beforeRegistrationCount: integer('before_registration_count').notNull(),
-  afterRegistrationCount: integer('after_registration_count').notNull(),
-  preservedRegistrationCount: integer('preserved_registration_count').notNull(),
-  beforeRegistrationsSha256: text('before_registrations_sha256').notNull(),
-  afterRegistrationsSha256: text('after_registrations_sha256').notNull(),
-  beforeStateSha256: text('before_state_sha256').notNull(),
-  afterStateSha256: text('after_state_sha256').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
 
 // many-to-many: одна сессия — несколько спикеров (для panel)
 export const sessionSpeakers = pgTable(
@@ -397,37 +318,6 @@ export const dmPins = pgTable(
   }),
 );
 
-// Закреплённые контакты — отдельная пользовательская настройка. Храним на
-// сервере, чтобы порядок диалогов не терялся после переустановки или смены ОС.
-export const contactPins = pgTable(
-  'contact_pins',
-  {
-    userId: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    contactUserId: text('contact_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-    pinnedAt: timestamp('pinned_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.userId, t.contactUserId] }),
-    userIdx: index('contact_pins_user_idx').on(t.userId, t.pinnedAt),
-  }),
-);
-
-export const userBlocks = pgTable('user_blocks', {
-  blockerId: text('blocker_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  blockedId: text('blocked_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (t) => ({ pk: primaryKey({ columns: [t.blockerId, t.blockedId] }) }));
-
-export const contentReports = pgTable('content_reports', {
-  id: text('id').primaryKey(),
-  reporterId: text('reporter_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  reportedUserId: text('reported_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  messageId: text('message_id'),
-  reason: text('reason').notNull(),
-  status: text('status').notNull().default('new'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
 // ============================================================================
 // NOTES (личные заметки участника)
 // ============================================================================
@@ -457,33 +347,24 @@ export const news = pgTable('news', {
   imageUrl: text('image_url'),
   speakerId: text('speaker_id'),
   sortOrder: integer('sort_order').notNull().default(0),
-  isPublished: boolean('is_published').notNull().default(true),
   publishedAt: timestamp('published_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const events = pgTable('events', {
   id: text('id').primaryKey(),
-  slug: text('slug').notNull().unique(),
+  slug: varchar('slug', { length: 128 }).notNull().unique(),
   name: text('name').notNull(),
-  location: text('location').notNull().default(''),
-  city: text('city').notNull().default(''),
-  timezone: text('timezone').notNull().default('Europe/Moscow'),
-  organizer: text('organizer').notNull().default(''),
-  organizerEmail: text('organizer_email'),
+  title: text('title').notNull(),
+  description: text('description'),
+  city: text('city'),
+  timezone: varchar('timezone', { length: 64 }),
+  organizer: text('organizer'),
   url: text('url'),
-  startsAt: timestamp('starts_at', { withTimezone: true }),
+  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
   endsAt: timestamp('ends_at', { withTimezone: true }),
-  hmacSecret: text('hmac_secret').notNull().default(''),
+  location: text('location'),
   isActive: boolean('is_active').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-// Редактируемая из общей админки карточка конференции. JSONB позволяет менять
-// текстовые блоки и ссылки без новой схемы и, главное, без новой сборки APK/IPA.
-export const appContent = pgTable('app_content', {
-  id: text('id').primaryKey(),
-  payload: jsonb('payload').notNull().default({}),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ============================================================================

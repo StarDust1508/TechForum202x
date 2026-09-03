@@ -15,17 +15,19 @@ interface SkeletonProps {
 export default function Skeleton({ className = '', style, height, width }: SkeletonProps) {
   return (
     <div
-      className={`relative overflow-hidden rounded-[10px] bg-card ${className}`}
+      className={`relative overflow-hidden rounded-[10px] bg-[#0a2f38]/55 ${className}`}
       style={{
         height,
         width,
         backgroundImage:
-          'linear-gradient(90deg, rgba(0,255,255,0) 0%, rgba(0,255,255,0.10) 50%, rgba(0,255,255,0) 100%)',
+          'linear-gradient(90deg, rgba(78,201,192,0) 0%, rgba(78,201,192,0.10) 50%, rgba(78,201,192,0) 100%)',
         backgroundSize: '200% 100%',
         animation: 'tfSkeleton 1.4s ease-in-out infinite',
         ...style,
       }}
-    />
+    >
+      <style>{`@keyframes tfSkeleton { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
+    </div>
   );
 }
 

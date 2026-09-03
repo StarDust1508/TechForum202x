@@ -16,7 +16,7 @@
 //    pages не завершена.
 
 import { useState, useEffect, useCallback } from 'react';
-import { resolveApiUrl, authFetch } from './runtimeEndpoint';
+import { resolveApiUrl } from './runtimeEndpoint';
 import {
   SPEAKERS, SESSIONS, PARTNERS, NEWS, TRACKS, HALLS, DAYS,
   type Speaker, type Session, type Partner, type NewsItem, type Track, type Hall, type Day,
@@ -35,11 +35,6 @@ const FALLBACKS: Record<string, unknown> = {
   '/halls': HALLS,
   '/days': DAYS,
 };
-
-/** Bundled last-known programme used only on a first offline launch. */
-export function getProgramFallback<T>(path: string): T | undefined {
-  return FALLBACKS[path] as T | undefined;
-}
 
 export interface ProgramFetchState<T> {
   data: T;
@@ -62,7 +57,7 @@ export function useProgramFetch<T>(path: string): ProgramFetchState<T> {
 
   const fetchOnce = useCallback(async (): Promise<void> => {
     try {
-      const r = await authFetch(resolveApiUrl(path), { credentials: 'include' });
+      const r = await fetch(resolveApiUrl(path), { credentials: 'include' });
       if (!r.ok) throw new Error(`http_${r.status}`);
       const arr = (await r.json()) as T;
       cache.set(path, { data: arr, ts: Date.now() });

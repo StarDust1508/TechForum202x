@@ -1,4 +1,5 @@
 const API_OVERRIDE_KEY = 'techforum_api_base_url_override';
+const SESSION_TOKEN_KEY = 'techforum_session_token';
 
 function normalizeApiBase(raw: string): string {
   const cleaned = raw.trim().replace(/\/+$/, '');
@@ -45,6 +46,34 @@ export function resolveApiUrl(path: string): string {
   return `${base}${normalizedPath}`;
 }
 
+export function saveSessionToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  const normalized = String(token || '').trim();
+  if (!normalized) return;
+  try {
+    window.localStorage.setItem(SESSION_TOKEN_KEY, normalized);
+  } catch {
+    // Cookie-сессия остаётся основным механизмом в браузере. Хранилище токена
+    // нужно только нативному контейнеру, где cookie может не пережить рестарт.
+  }
+}
+
+export function getSessionToken(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return String(window.localStorage.getItem(SESSION_TOKEN_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+export function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers || undefined);
+  const token = getSessionToken();
+  if (token && !headers.has('Authorization')) headers.set('Authorization', `Bearer ${token}`);
+  return fetch(input, { ...init, headers, credentials: init.credentials ?? 'include' });
+}
+
 /**
  * Преобразует относительный URL ассета (например, '/uploads/abc.jpg') в абсолютный,
  * используя origin из API base URL. Если URL уже абсолютный (http/https/data) — возвращает как есть.
@@ -67,54 +96,6 @@ export function resolveAssetUrl(pathOrUrl: string | null | undefined): string {
   } catch {
     return value;
   }
-}
-
-const TOKEN_KEY = 'techforum_session_token';
-
-export function saveSessionToken(token: string): void {
-  try { localStorage.setItem(TOKEN_KEY, token); } catch { /* noop */ }
-}
-
-export function getSessionToken(): string {
-  try { return localStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
-}
-
-export function clearSessionToken(): void {
-  try { localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ }
-}
-
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
-
-/** Fetch с обязательным завершением — для экранов с loading-состоянием. */
-export function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const upstreamSignal = init?.signal;
-  const abortFromUpstream = () => controller.abort(upstreamSignal?.reason);
-  if (upstreamSignal?.aborted) abortFromUpstream();
-  else upstreamSignal?.addEventListener('abort', abortFromUpstream, { once: true });
-  const timer = globalThis.setTimeout(
-    () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
-    timeoutMs,
-  );
-
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => {
-    globalThis.clearTimeout(timer);
-    upstreamSignal?.removeEventListener('abort', abortFromUpstream);
-  });
-}
-
-/**
- * Авторизованные запросы не должны оставлять экран в вечном loading-состоянии.
- * В Capacitor fetch иногда не отклоняется при потере сети, поэтому завершаем
- * запрос сами. Переданный вызывающим кодом AbortSignal также сохраняется.
- */
-export function authFetch(url: string, init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<Response> {
-  const token = getSessionToken();
-  const headers = new Headers(init?.headers);
-  if (token && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${token}`);
-  }
-  return fetchWithTimeout(url, { ...init, credentials: 'include', headers }, timeoutMs);
 }
 
 export function resolveWsUrl(path = '/ws'): string {

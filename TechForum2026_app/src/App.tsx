@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate, Navigate } from 'react-router-dom';
-import { LockKeyhole } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 // BUG_FIX_CONTEXT: Откатил lazy/Suspense — каждый chunk подгружался с
 // задержкой через Suspense fallback, юзер видел ре-рендер шрифта и
@@ -16,6 +15,12 @@ import Speakers from './pages/Speakers';
 import Map from './pages/Map';
 import Chat from './pages/Chat';
 import Profile from './pages/Profile';
+import SettingsPage from './pages/Settings';
+import Attendees from './pages/Attendees';
+import UserProfile from './pages/UserProfile';
+import SpeakerDetail from './pages/SpeakerDetail';
+import Faq from './pages/Faq';
+import MyCard from './pages/MyCard';
 import Ticket from './pages/Ticket';
 import Giveaways from './pages/Giveaways';
 import Partners from './pages/Partners';
@@ -23,38 +28,13 @@ import Diagnostics from './pages/Diagnostics';
 import About from './pages/About';
 import MyRecords from './pages/MyRecords';
 import NewsDetail from './pages/NewsDetail';
-import Faq from './pages/Faq';
-import Settings from './pages/Settings';
-import SpeakerDetail from './pages/SpeakerDetail';
-import UserProfile from './pages/UserProfile';
-import MyCard from './pages/MyCard';
-import Attendees from './pages/Attendees';
 import { getCurrentLocalUser, isLocalAuthFallbackEnabled } from './lib/localAuth';
-import { resolveApiUrl, authFetch } from './lib/runtimeEndpoint';
+import { resolveApiUrl } from './lib/runtimeEndpoint';
 import { tryBiometricAutoLogin } from './lib/biometric';
 import { prefetchPublicData } from './lib/prefetch';
-import { attachPushListeners } from './lib/push';
 import { ToastProvider, useToast } from './components/Toast';
 import AppBackground from './components/AppBackground';
 import OfflineBanner from './components/OfflineBanner';
-import BrandLogo from './components/BrandLogo';
-import BackButton from './components/BackButton';
-
-const GUEST_KEY = 'techforum_guest_mode';
-
-function GuestGate({ onLogin }: { onLogin: () => void }) {
-  return (
-    <div className="min-h-full px-5" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
-      <header className="flex items-center gap-3"><BackButton /><h1 className="font-display text-[24px] font-bold">Нужен вход</h1></header>
-      <section className="mt-10 rounded-3xl border border-primary/30 bg-card p-6 text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/35 bg-primary/10"><LockKeyhole className="h-7 w-7 text-primary" /></div>
-        <h2 className="mt-5 font-display text-[19px] font-bold">Это личный раздел</h2>
-        <p className="mt-3 text-[13px] leading-relaxed text-foreground/55">Войдите с email, на который куплен билет. Публичная программа и карточки спикеров доступны без регистрации.</p>
-        <button type="button" onClick={onLogin} className="mt-6 w-full rounded-2xl bg-primary py-4 text-[15px] font-bold text-white active:scale-[0.98]">Войти</button>
-      </section>
-    </div>
-  );
-}
 
 
 // BUG_FIX_CONTEXT: ROOT-CAUSE hardware back exits — пакет @capacitor/app не
@@ -105,85 +85,9 @@ function useHardwareBack() {
 
 function AppContent() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const toast = useToast();
-  const showToast = toast.show;
   useHardwareBack();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const isChatRoute = location.pathname === '/chat';
-
-  useEffect(() => {
-    let active = true;
-    let detach = () => {};
-    const openPushTarget = (data: Record<string, unknown>) => {
-      if (!active) return;
-      const type = String(data.type || '');
-      if (type === 'push_test') {
-        const verification = String(data.verification || '').trim();
-        if (!verification) return;
-        void authFetch(resolveApiUrl('/me/push-test/confirm'), {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ verification }),
-        }).then((response) => {
-          if (!active || !response.ok) return;
-          window.dispatchEvent(new Event('techforum:push-test-verified'));
-          showToast('Проверка завершена. Уведомления работают.', 3500);
-        }).catch(() => {});
-        return;
-      }
-      if (type === 'news' && data.newsId) navigate(`/news/${encodeURIComponent(String(data.newsId))}`);
-      else if (type === 'session' && data.sessionId) navigate(`/schedule?session=${encodeURIComponent(String(data.sessionId))}`);
-      else if (type === 'dm') {
-        const from = String(data.from || '').trim();
-        navigate(from ? `/chat?dm=${encodeURIComponent(from)}` : '/chat');
-      }
-    };
-    void attachPushListeners(
-      (notification) => {
-        if (!active) return;
-        // Проверочное сообщение должно быть доказано системной шторкой. Пока
-        // приложение открыто, не подменяем её внутренней плашкой.
-        if (String(notification.data?.type || '') === 'push_test') return;
-        const text = [notification.title, notification.body].filter(Boolean).join(' · ');
-        if (text) showToast(text, 4500);
-      },
-      openPushTarget,
-    ).then((cleanup) => {
-      if (active) detach = cleanup;
-      else cleanup();
-    });
-    return () => { active = false; detach(); };
-  }, [navigate, showToast]);
-
-  // 100dvh и resize:body расходятся на iOS/Android при открытии клавиатуры.
-  // visualViewport — фактическая видимая область над клавиатурой; единая CSS
-  // переменная не даёт странице прыгать и исключает невидимый composer.
-  useEffect(() => {
-    let largestViewport = window.innerHeight;
-    const syncViewport = () => {
-      const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight);
-      if (!document.activeElement?.matches('input, textarea, [contenteditable="true"]')) {
-        largestViewport = Math.max(largestViewport, viewportHeight);
-      }
-      document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
-      document.documentElement.classList.toggle('keyboard-open', largestViewport - viewportHeight > 120);
-    };
-    syncViewport();
-    window.addEventListener('resize', syncViewport);
-    window.addEventListener('orientationchange', syncViewport);
-    window.visualViewport?.addEventListener('resize', syncViewport);
-    window.visualViewport?.addEventListener('scroll', syncViewport);
-    return () => {
-      window.removeEventListener('resize', syncViewport);
-      window.removeEventListener('orientationchange', syncViewport);
-      window.visualViewport?.removeEventListener('resize', syncViewport);
-      window.visualViewport?.removeEventListener('scroll', syncViewport);
-      document.documentElement.classList.remove('keyboard-open');
-    };
-  }, []);
 
   // BUG_FIX_CONTEXT: Samsung S25 / OnePlus 9R показывали системный status-bar
   // с дефолтным светлым иконками поверх тёмного фона приложения — иконки
@@ -197,43 +101,17 @@ function AppContent() {
     if (!Capacitor || typeof Capacitor.isNativePlatform !== 'function' || !Capacitor.isNativePlatform()) {
       return;
     }
-    let active = true;
     (async () => {
       try {
         const { StatusBar, Style } = await import('@capacitor/status-bar');
-        await StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
-        await StatusBar.setBackgroundColor({ color: '#0f1118' }).catch(() => {});
-        // WebView must start below the native status bar. Overlay mode was the
-        // root cause of headers colliding with the clock/notch. Android 15+
-        // enforces edge-to-edge and ignores overlay=false, so reserve the
-        // measured native inset in the app shell on those versions.
-        await StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
-        const platform = typeof Capacitor.getPlatform === 'function' ? Capacitor.getPlatform() : '';
-        const androidMajor = Number(/Android\s+(\d+)/i.exec(navigator.userAgent)?.[1] || '0');
-        if (active && platform === 'android' && androidMajor >= 15) {
-          const info = await StatusBar.getInfo().catch(() => null);
-          const height = Math.max(0, Number(info?.height || 0));
-          document.documentElement.style.setProperty('--native-status-bar-inset', `${height}px`);
-        }
+        StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+        StatusBar.setBackgroundColor({ color: '#0a0e17' }).catch(() => {});
+        StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
       } catch {
         /* noop — плагин недоступен или web-окружение */
       }
     })();
-    return () => {
-      active = false;
-      document.documentElement.style.setProperty('--native-status-bar-inset', '0px');
-    };
   }, []);
-
-  const enterGuestMode = () => {
-    try { localStorage.setItem(GUEST_KEY, '1'); } catch { /* storage unavailable */ }
-    setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
-  };
-
-  const leaveGuestMode = () => {
-    try { localStorage.removeItem(GUEST_KEY); } catch { /* storage unavailable */ }
-    setUser(null);
-  };
 
   useEffect(() => {
     let isMounted = true;
@@ -265,7 +143,7 @@ function AppContent() {
         return;
       }
       try {
-        const res = await authFetch(resolveApiUrl('/me/interests'), {
+        const res = await fetch(resolveApiUrl('/me/interests'), {
           method: 'PUT',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -288,7 +166,7 @@ function AppContent() {
         prefetchPublicData();
 
         const meUrl = resolveApiUrl('/auth/me');
-        const res = await authFetch(meUrl);
+        const res = await fetch(meUrl, { credentials: 'include' });
         if (res.ok) {
           const data = await res.json();
           if (isMounted) setUser(data);
@@ -319,11 +197,6 @@ function AppContent() {
             console.error('Local auth check failed', fallbackError);
           }
         }
-        if (isMounted) {
-          try {
-            if (localStorage.getItem(GUEST_KEY) === '1') setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
-          } catch { /* storage unavailable */ }
-        }
       } catch (error) {
         console.error('Auth check failed', error);
         if (isLocalAuthFallbackEnabled()) {
@@ -334,23 +207,10 @@ function AppContent() {
             console.error('Local auth check failed', fallbackError);
           }
         }
-        if (isMounted) {
-          try {
-            if (localStorage.getItem(GUEST_KEY) === '1') setUser({ id: 'guest', name: 'Гость', interestsCount: 1, isGuest: true });
-          } catch { /* storage unavailable */ }
-        }
       } finally {
         const elapsed = Date.now() - startAt;
         const wait = Math.max(0, MIN_SPLASH_MS - elapsed);
-        setTimeout(() => {
-          if (isMounted) setLoading(false);
-          const Cap: any = (window as any).Capacitor;
-          if (Cap?.isNativePlatform?.()) {
-            import('@capacitor/splash-screen').then(({ SplashScreen }) => {
-              SplashScreen.hide().catch(() => {});
-            }).catch(() => {});
-          }
-        }, wait);
+        setTimeout(() => { if (isMounted) setLoading(false); }, wait);
       }
     };
 
@@ -365,22 +225,7 @@ function AppContent() {
     // просто прозрачный контейнер для минимального 1с ожидания. body::before
     // (CSS) красится мгновенно при загрузке стилей, никакого FOUC.
     return (
-      <div className="relative flex items-center justify-center overflow-hidden" style={{ height: 'var(--app-height, 100dvh)', backgroundColor: '#0f1118' }}>
-        <div
-          className="absolute bg-cover bg-no-repeat"
-          style={{
-            inset: '-50px',
-            backgroundImage: 'url(/brand/auth-hero-2026-v2.jpg)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center center',
-          }}
-        />
-        <div className="absolute bg-gradient-to-t from-[#080b16] via-[#0b1020]/68 to-[#071323]/22" style={{ inset: '-50px' }} />
-        <div className="relative z-10 flex flex-col items-center gap-4 animate-pulse px-8 text-center">
-          <h1 className="w-full text-[clamp(18px,7vw,28px)]"><BrandLogo /></h1>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-accent/75">25–26 сентября · Москва</p>
-        </div>
-      </div>
+      <div className="relative" style={{ minHeight: '100dvh' }} />
     );
   }
 
@@ -391,21 +236,15 @@ function AppContent() {
     // на 100% высоты родителя без явного h-[100dvh], а outer задаёт фиксированный
     // 100dvh с min-height 100vh fallback. На desktop (sm:) — старый поведение
     // с центрированной "телефонной" рамкой 420×840.
-    <div className="flex min-w-0 flex-col overflow-hidden sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ height: 'var(--app-height, 100dvh)' }}>
+    <div className="flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 relative" style={{ minHeight: '100dvh', paddingTop: 'env(safe-area-inset-top, 0)' }}>
       <OfflineBanner />
-      <main
-        className="w-full min-w-0 h-full min-h-0 sm:max-w-[420px] sm:h-[840px] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]"
-        style={{ paddingTop: 'var(--native-status-bar-inset, 0px)' }}
-      >
-        <div data-app-scroll-container className={`flex-1 min-h-0 min-w-0 scrollbar-hide relative ${isChatRoute ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
-          <div className={isChatRoute ? 'h-full min-h-0 min-w-0' : 'min-h-full min-w-0'}>
+      <main className="w-full sm:max-w-[420px] sm:h-[840px] shadow-[0_0_90px_rgba(0,255,255,0.2)] relative overflow-hidden flex flex-col z-10 sm:rounded-[40px] sm:border-[8px] border-[#0d1117]" style={{ flex: '1 1 auto', minHeight: '100dvh' }}>
+        <div className="flex-1 overflow-y-auto scrollbar-hide relative">
+          <div className="min-h-full">
             {!user ? (
               // Auth имеет свой постер-фон, не оборачиваем в AppBackground.
-              <Auth
-                onSuccess={(nextUser) => { try { localStorage.removeItem(GUEST_KEY); } catch { /* noop */ } setUser(nextUser); }}
-                onGuest={enterGuestMode}
-              />
-            ) : !user.isGuest && !user.interestsCount ? (
+              <Auth onSuccess={setUser} />
+            ) : !user.interestsCount ? (
               // BUG_FIX_CONTEXT: показываем Onboarding если interestsCount === 0
               // ИЛИ undefined (legacy юзеры из старых билдов без поля). Onboarding
               // вызывает onDone(count) ТОЛЬКО после успешного PUT /me/interests
@@ -415,14 +254,14 @@ function AppContent() {
             ) : (
               // Все остальные разделы — единый фон Home (требование заказчика).
               <AppBackground>
-                <AnimatePresence mode="wait" initial={false}>
+                <AnimatePresence mode="wait">
                   <motion.div
                     key={location.pathname}
-                    initial={{ opacity: 0, y: location.pathname === '/' || location.pathname.startsWith('/speakers') ? 0 : 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: location.pathname.startsWith('/speakers') ? 0.15 : 0.28, ease: [0.32, 0.72, 0, 1] }}
-                    className={isChatRoute ? 'h-full min-h-0 min-w-0 overflow-hidden' : 'min-h-full min-w-0 overflow-x-hidden'}
+                    initial={{ opacity: 0, x: location.pathname === '/' ? 0 : 24 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: location.pathname === '/' ? 0 : -16 }}
+                    transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+                    className="min-h-full"
                   >
                     <Routes location={location}>
                       <Route path="/" element={<Home />} />
@@ -430,21 +269,22 @@ function AppContent() {
                       <Route path="/news/:id" element={<NewsDetail />} />
                       <Route path="/schedule" element={<Schedule />} />
                       <Route path="/speakers" element={<Speakers />} />
+                      <Route path="/speakers/:id" element={<SpeakerDetail />} />
                       <Route path="/map" element={<Map />} />
-                      <Route path="/chat" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Chat />} />
-                      <Route path="/profile" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Profile user={user} onUpdate={setUser} />} />
-                      <Route path="/ticket" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Ticket />} />
+                      <Route path="/chat" element={<Chat />} />
+                      <Route path="/chat/:userId" element={<Chat />} />
+                      <Route path="/attendees" element={<Attendees />} />
+                      <Route path="/users/:id" element={<UserProfile />} />
+                      <Route path="/profile" element={<Profile user={user} />} />
+                      <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/faq" element={<Faq />} />
+                      <Route path="/my-card" element={<MyCard />} />
+                      <Route path="/ticket" element={<Ticket />} />
                       <Route path="/giveaways" element={<Giveaways />} />
                       <Route path="/partners" element={<Partners />} />
                       <Route path="/diagnostics" element={<Diagnostics />} />
                       <Route path="/about" element={<About />} />
                       <Route path="/my-records" element={<MyRecords />} />
-                      <Route path="/faq" element={<Faq />} />
-                      <Route path="/settings" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Settings />} />
-                      <Route path="/speakers/:id" element={<SpeakerDetail />} />
-                      <Route path="/users/:id" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <UserProfile />} />
-                      <Route path="/my-card" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <MyCard />} />
-                      <Route path="/attendees" element={user.isGuest ? <GuestGate onLogin={leaveGuestMode} /> : <Attendees />} />
                       <Route path="*" element={<Navigate to="/" />} />
                     </Routes>
                   </motion.div>
@@ -459,13 +299,14 @@ function AppContent() {
 }
 
 export default function App() {
-  // basename берём из base сборки: web-PWA собирается с --base=/app/ (nginx-alias),
-  // поэтому react-router должен знать префикс, иначе <Routes> не матчат пути и
-  // залогиненный экран рендерится пустым. APK собирается с base=/ → basename
-  // undefined (корень), поведение не меняется.
-  const routerBase = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
+  // The web PWA is served from /app, while native/dev builds still run at
+  // the origin root. Pick the basename from the actual runtime path so both
+  // deployments keep the same route definitions.
+  const routerBasename = window.location.pathname === '/app' || window.location.pathname.startsWith('/app/')
+    ? '/app'
+    : '/';
   return (
-    <Router basename={routerBase}>
+    <Router basename={routerBasename}>
       <ToastProvider>
         <AppContent />
       </ToastProvider>

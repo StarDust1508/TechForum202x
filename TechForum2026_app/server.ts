@@ -843,13 +843,12 @@ async function startServer(): Promise<void> {
   // снимок программы (TRACKS, SESSIONS, SPEAKERS, EVENT_META) как system-context.
   // Gemini ест ~6KB этого контекста легко (input до 1M токенов). Function-calling
   // не используем — простой prompt-injection даёт 95% эффекта.
-  // Кэш 60 секунд: правка программы в CMS попадает в ассистента без релиза APK.
-  let eventContextCache: { value: string; expiresAt: number } | null = null;
+  // Publication visibility is safety-sensitive: build a fresh DB context for
+  // every request so a just-hidden session cannot survive in a process cache.
   async function buildEventContext(): Promise<string> {
-    if (eventContextCache && eventContextCache.expiresAt > Date.now()) return eventContextCache.value;
     const [dayRows, trackRows, hallRows, speakerRows, sessionRows, links, partnerRows] = await Promise.all([
       db.select().from(days), db.select().from(tracks), db.select().from(halls),
-      db.select().from(speakers), db.select().from(sessionsEvent),
+      db.select().from(speakers), db.select().from(sessionsEvent).where(eq(sessionsEvent.isPublished, true)),
       db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder), db.select().from(partners),
     ]);
     const speakerById = new Map(speakerRows.map((s) => [s.id, s]));
@@ -890,9 +889,7 @@ async function startServer(): Promise<void> {
     lines.push('');
     lines.push('## ПАРТНЁРЫ:');
     for (const p of partnerRows) lines.push(`- ${p.name} (${p.tier}): ${p.description}`);
-    const value = lines.join('\n');
-    eventContextCache = { value, expiresAt: Date.now() + 60_000 };
-    return value;
+    return lines.join('\n');
   }
 
   function buildSystemInstruction(): string {
@@ -940,7 +937,7 @@ async function startServer(): Promise<void> {
   });
 
   api.post('/ai/chat', aiRateLimit, requireAuth, validateBody(aiChatSchema), async (req, res) => {
-    const { message, context: userContext } = req.body as import('./src/lib/validation.js').AiChatBody;
+    const { message } = req.body as import('./src/lib/validation.js').AiChatBody;
 
     if (!navyApiKey) {
       res.status(503).json({ error: 'ai_not_configured' });
@@ -959,9 +956,6 @@ async function startServer(): Promise<void> {
     const messages = [
       { role: 'system', content: systemPrompt },
     ];
-    if (userContext) {
-      messages.push({ role: 'system', content: `Дополнительный контекст: ${userContext}` });
-    }
     messages.push({ role: 'user', content: message });
 
     // Фолбэк-цепочка: пробуем модели по очереди (deepseek-v4-pro → фолбэки).
@@ -1750,6 +1744,55 @@ async function startServer(): Promise<void> {
     });
   });
 
+  // Public adapter for the main site. The admin aggregate above retains all
+  // historical rows and publication metadata; this adapter returns only rows
+  // explicitly marked public and does not disclose audit fields.
+  api.get('/internal/public-program', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
+      db.select().from(tracks),
+      db.select().from(halls),
+      db.select().from(days),
+      db.select().from(speakers),
+      db.select().from(sessionsEvent).where(eq(sessionsEvent.isPublished, true)),
+      db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
+    ]);
+    const publicIds = new Set(sessRows.map((session) => session.id));
+    const speakersBySession = new Map<string, string[]>();
+    for (const link of linkRows) {
+      if (!publicIds.has(link.sessionId)) continue;
+      const values = speakersBySession.get(link.sessionId) ?? [];
+      values.push(link.speakerId);
+      speakersBySession.set(link.sessionId, values);
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      tracks: trackRows,
+      halls: hallRows,
+      days: dayRows,
+      speakers: speakerRows.map((speaker) => ({
+        id: speaker.id,
+        name: speaker.name,
+        role: speaker.role,
+        company: speaker.company,
+      })),
+      sessions: sessRows.map((session) => ({
+        id: session.id,
+        title: session.title,
+        description: session.description,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        format: session.format,
+        hallId: session.hallId,
+        dayId: session.dayId,
+        trackId: session.trackId,
+        status: session.status,
+        isPublished: session.isPublished,
+        speakerIds: speakersBySession.get(session.id) ?? [],
+      })),
+    });
+  });
+
   // Справочники программы тоже являются частью CMS. Раньше администратор мог
   // менять только сессии, поэтому количество направлений и потоков оставалось
   // фактически зашито в БД. Удаление подчиняется внешним ключам: если объект
@@ -1910,7 +1953,20 @@ async function startServer(): Promise<void> {
       if (s.startTime && s.endTime && s.startTime >= s.endTime) issues.push(`Время окончания раньше начала: «${s.title}»`);
     }
     for (const l of linkRows) if (!speakerIds.has(l.speakerId)) issues.push(`В программе есть отсутствующий спикер ${l.speakerId}`);
-    res.json({ ok: issues.length === 0, issues, counts: { tracks: trackRows.length, halls: hallRows.length, days: dayRows.length, speakers: speakerRows.length, sessions: sessRows.length } });
+    const publicSessions = sessRows.filter((session) => session.isPublished).length;
+    res.json({
+      ok: issues.length === 0,
+      issues,
+      counts: {
+        tracks: trackRows.length,
+        halls: hallRows.length,
+        days: dayRows.length,
+        speakers: speakerRows.length,
+        sessions: sessRows.length,
+        sessionsTotal: sessRows.length,
+        sessionsPublic: publicSessions,
+      },
+    });
   });
 
   api.post('/internal/speakers/sync', cmsRateLimit, async (req, res) => {
@@ -1938,6 +1994,8 @@ async function startServer(): Promise<void> {
       dayId,
       trackId: str(b.trackId, 64),
       status: str(b.status, 32) || 'Soon',
+      // New programme rows are drafts. Publication is a separate audited CAS.
+      isPublished: false,
     };
     await db.insert(sessionsEvent).values(row);
     const speakerIds = Array.isArray(b.speakerIds) ? (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean) : [];
@@ -1951,6 +2009,14 @@ async function startServer(): Promise<void> {
     if (!cmsGuard(req, res)) return;
     const id = String(req.params.id);
     const b = (req.body ?? {}) as Record<string, unknown>;
+    const publicationKeys = [
+      'isPublished', 'publicationVersion', 'publicationReason', 'publicationChangedAt', 'publicationChangedBy', 'publicationReportedActor',
+      'is_published', 'publication_version', 'publication_reason', 'publication_changed_at', 'publication_changed_by', 'publication_reported_actor',
+    ];
+    if (publicationKeys.some((key) => Object.prototype.hasOwnProperty.call(b, key))) {
+      res.status(400).json({ error: 'use_publication_endpoint' });
+      return;
+    }
     const patch: Record<string, unknown> = {};
     if (b.title !== undefined) { const t = str(b.title, 500); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
     if (b.description !== undefined) patch.description = str(b.description, 8000) || '';
@@ -1961,25 +2027,88 @@ async function startServer(): Promise<void> {
     if (b.dayId !== undefined) { const d = str(b.dayId, 64); if (!d) { res.status(400).json({ error: 'dayId_required' }); return; } patch.dayId = d; }
     if (b.trackId !== undefined) patch.trackId = str(b.trackId, 64);
     if (b.status !== undefined) patch.status = str(b.status, 32) || 'Soon';
-    if (Object.keys(patch).length) {
-      const upd = await db.update(sessionsEvent).set(patch).where(eq(sessionsEvent.id, id)).returning();
-      if (!upd[0]) { res.status(404).json({ error: 'not_found' }); return; }
-    }
-    if (Array.isArray(b.speakerIds)) {
-      const speakerIds = (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean);
-      await db.delete(sessionSpeakers).where(eq(sessionSpeakers.sessionId, id));
-      if (speakerIds.length) {
-        await db.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
+    const speakerIds = Array.isArray(b.speakerIds)
+      ? (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean)
+      : null;
+    const updated = await db.transaction(async (tx) => {
+      if (Object.keys(patch).length) {
+        const rows = await tx.update(sessionsEvent).set(patch).where(eq(sessionsEvent.id, id)).returning({ id: sessionsEvent.id });
+        if (!rows[0]) return false;
+      } else if (speakerIds) {
+        const rows = await tx.select({ id: sessionsEvent.id }).from(sessionsEvent).where(eq(sessionsEvent.id, id)).limit(1);
+        if (!rows[0]) return false;
       }
-    }
+      if (speakerIds) {
+        await tx.delete(sessionSpeakers).where(eq(sessionSpeakers.sessionId, id));
+        if (speakerIds.length) {
+          await tx.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
+        }
+      }
+      return true;
+    });
+    if (!updated) { res.status(404).json({ error: 'not_found' }); return; }
     res.json({ ok: true });
+  });
+
+  api.patch('/internal/sessions/:id/publication', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    const id = String(req.params.id);
+    const expectedVersion = Number(req.body?.expectedVersion);
+    const isPublished = req.body?.isPublished;
+    const requestId = str(req.body?.requestId, 160);
+    // This value is operator-reported context only. The authenticated service
+    // identity is derived here and stored separately in the audit record.
+    const reportedActor = str(req.body?.actor, 200);
+    const actor = 'tech-pravo-admin-bridge';
+    const reason = str(req.body?.reason, 2000);
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) {
+      res.status(400).json({ error: 'invalid_expected_version' }); return;
+    }
+    if (typeof isPublished !== 'boolean') {
+      res.status(400).json({ error: 'invalid_publication_state' }); return;
+    }
+    if (!requestId || requestId.length < 8) {
+      res.status(400).json({ error: 'invalid_request_id' }); return;
+    }
+    if (!reason || reason.length < 5) {
+      res.status(400).json({ error: 'publication_reason_required' }); return;
+    }
+    try {
+      const result = await pool.query(
+        `SELECT (changed).* FROM change_session_publication_cas($1,$2,$3,$4,$5,$6,$7) AS changed`,
+        [id, expectedVersion, isPublished, requestId, actor, reportedActor, reason],
+      );
+      const row = result.rows[0];
+      res.json({
+        id: row.id,
+        isPublished: row.is_published,
+        publicationVersion: Number(row.publication_version),
+        publicationReason: row.publication_reason,
+        publicationChangedAt: row.publication_changed_at,
+        publicationChangedBy: row.publication_changed_by,
+        publicationReportedActor: row.publication_reported_actor,
+        requestId,
+      });
+    } catch (error) {
+      const message = String((error as { message?: string })?.message || 'publication_change_failed');
+      if (message.includes('session_not_found')) { res.status(404).json({ error: 'not_found' }); return; }
+      if (message.includes('publication_version_conflict')) {
+        const current = await db.select({
+          isPublished: sessionsEvent.isPublished,
+          publicationVersion: sessionsEvent.publicationVersion,
+        }).from(sessionsEvent).where(eq(sessionsEvent.id, id)).limit(1);
+        res.status(409).json({ error: 'publication_version_conflict', current: current[0] ?? null }); return;
+      }
+      if (message.includes('publication_noop')) { res.status(409).json({ error: 'publication_noop' }); return; }
+      if ((error as { code?: string })?.code === '23505') { res.status(409).json({ error: 'request_id_already_used' }); return; }
+      throw error;
+    }
   });
 
   api.delete('/internal/sessions/:id', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    const del = await db.delete(sessionsEvent).where(eq(sessionsEvent.id, String(req.params.id))).returning();
-    if (!del[0]) { res.status(404).json({ error: 'not_found' }); return; }
-    res.json({ ok: true });
+    res.status(405).setHeader('Allow', 'GET, PUT, PATCH');
+    res.json({ error: 'physical_session_delete_disabled', detail: 'Use the versioned publication endpoint.' });
   });
 
   function hashResetToken(token: string): string {
@@ -3222,7 +3351,7 @@ async function startServer(): Promise<void> {
     // которые ожидают v1 страницы (Schedule, MyRecords, SpeakerDetail).
     // Раньше эти поля заполнялись в src/data.ts вручную; теперь — при выдаче.
     const [sessRows, linkRows, hallRows, dayRows, trackRows, speakerRows] = await Promise.all([
-      db.select().from(sessionsEvent),
+      db.select().from(sessionsEvent).where(eq(sessionsEvent.isPublished, true)),
       db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
       db.select().from(halls),
       db.select().from(days),
@@ -3239,6 +3368,7 @@ async function startServer(): Promise<void> {
       arr.push(l.speakerId);
       speakerIdsByMsg.set(l.sessionId, arr);
     }
+    res.setHeader('Cache-Control', 'no-store');
     res.json(sessRows.map((s) => {
       const speakerIds = speakerIdsByMsg.get(s.id) ?? [];
       const firstSpeaker = speakerIds[0] ? speakerById.get(speakerIds[0]) : null;
@@ -3606,7 +3736,13 @@ async function startServer(): Promise<void> {
 
   api.get('/sessions/registered', requireAuth, async (req, res) => {
     const userId = getSessionUserId(req)!;
-    const rows = await db.select().from(registrations).where(eq(registrations.userId, userId));
+    const rows = await db.select({ sessionId: registrations.sessionId })
+      .from(registrations)
+      .innerJoin(sessionsEvent, and(
+        eq(registrations.sessionId, sessionsEvent.id),
+        eq(sessionsEvent.isPublished, true),
+      ))
+      .where(eq(registrations.userId, userId));
     res.json({ sessionIds: rows.map((r) => r.sessionId) });
   });
 
@@ -3614,7 +3750,10 @@ async function startServer(): Promise<void> {
     const userId = getSessionUserId(req)!;
     const sessionId = String(req.params.id);
 
-    const sess = (await db.select().from(sessionsEvent).where(eq(sessionsEvent.id, sessionId)).limit(1))[0];
+    const sess = (await db.select().from(sessionsEvent).where(and(
+      eq(sessionsEvent.id, sessionId),
+      eq(sessionsEvent.isPublished, true),
+    )).limit(1))[0];
     if (!sess) {
       res.status(404).json({ error: 'session_not_found' });
       return;
@@ -3646,7 +3785,10 @@ async function startServer(): Promise<void> {
     if (myRegs.length > 0) {
       const otherIds = myRegs.map((r) => r.sessionId).filter((id) => id !== sessionId);
       if (otherIds.length > 0) {
-        const others = await db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, otherIds));
+        const others = await db.select().from(sessionsEvent).where(and(
+          inArray(sessionsEvent.id, otherIds),
+          eq(sessionsEvent.isPublished, true),
+        ));
         for (const o of others) {
           if (o.dayId === sess.dayId && timeRangesOverlap(sess.startTime, sess.endTime, o.startTime, o.endTime)) {
             conflicts.push(o.id);
@@ -3657,7 +3799,10 @@ async function startServer(): Promise<void> {
 
     const replaceConflicts = req.body?.replaceConflicts === true;
     if (conflicts.length > 0 && !replaceConflicts) {
-      const conflictRows = await db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, conflicts));
+      const conflictRows = await db.select().from(sessionsEvent).where(and(
+        inArray(sessionsEvent.id, conflicts),
+        eq(sessionsEvent.isPublished, true),
+      ));
       res.status(409).json({
         error: 'schedule_conflict',
         sessionId,
@@ -3691,6 +3836,15 @@ async function startServer(): Promise<void> {
     const userId = getSessionUserId(req)!;
     const sessionId = String(req.params.id);
 
+    const visible = await db.select({ id: sessionsEvent.id }).from(sessionsEvent).where(and(
+      eq(sessionsEvent.id, sessionId),
+      eq(sessionsEvent.isPublished, true),
+    )).limit(1);
+    if (!visible[0]) {
+      res.status(404).json({ error: 'session_not_found' });
+      return;
+    }
+
     await db.delete(registrations)
       .where(and(eq(registrations.userId, userId), eq(registrations.sessionId, sessionId)));
 
@@ -3706,7 +3860,10 @@ async function startServer(): Promise<void> {
   //
   api.get('/sessions/:id/calendar', async (req, res) => {
     const sessionId = String(req.params.id);
-    const sess = (await db.select().from(sessionsEvent).where(eq(sessionsEvent.id, sessionId)).limit(1))[0];
+    const sess = (await db.select().from(sessionsEvent).where(and(
+      eq(sessionsEvent.id, sessionId),
+      eq(sessionsEvent.isPublished, true),
+    )).limit(1))[0];
     if (!sess) {
       res.status(404).json({ error: 'session_not_found' });
       return;
@@ -3757,7 +3914,10 @@ async function startServer(): Promise<void> {
       return;
     }
     const [userSessions, dayRows, hallRows, trackRows, links] = await Promise.all([
-      db.select().from(sessionsEvent).where(inArray(sessionsEvent.id, registeredIds)),
+      db.select().from(sessionsEvent).where(and(
+        inArray(sessionsEvent.id, registeredIds),
+        eq(sessionsEvent.isPublished, true),
+      )),
       db.select().from(days), db.select().from(halls), db.select().from(tracks),
       db.select({ sessionId: sessionSpeakers.sessionId, name: speakers.name })
         .from(sessionSpeakers).innerJoin(speakers, eq(sessionSpeakers.speakerId, speakers.id))
@@ -4121,7 +4281,10 @@ async function startServer(): Promise<void> {
           .from(registrations)
           .innerJoin(sessionsEvent, eq(registrations.sessionId, sessionsEvent.id))
           .innerJoin(days, eq(sessionsEvent.dayId, days.id))
-          .where(sql`${registrations.reminderSentAt} IS NULL`);
+          .where(and(
+            sql`${registrations.reminderSentAt} IS NULL`,
+            eq(sessionsEvent.isPublished, true),
+          ));
         for (const c of candidates) {
           // Парсим день+время в Date.
           const [hh, mm] = String(c.startTime).split(':').map((s) => parseInt(s, 10));
@@ -4167,11 +4330,10 @@ async function startServer(): Promise<void> {
     console.log(`FCM: ${fcm.disabled ? 'disabled (set FCM_SERVICE_ACCOUNT_PATH)' : 'live'}`);
   });
 
-  // ── Живой синк спикеров сайт → приложение (де-факто ОДНА БД спикеров) ──────
-  // На старте и раз в 10 мин тянем опубликованных спикеров сайта и апсертим в
-  // app.speakers С ФОТО. Совпадение по имени сохраняет существующий id (не рвём
-  // session_speakers), новых вставляем как ss_<id>, снятых с публикации ss_* —
-  // удаляем. sp_* (программные из seed) не удаляем никогда.
+  // ── Явный admin-only синк спикеров сайт → приложение ───────────────────────
+  // Автоматический startup/interval sync запрещён: рестарт publication-релиза
+  // не должен менять speakers или каскадно удалять session_speakers. Функция
+  // вызывается только защищённым POST /internal/speakers/sync выше.
   const SITE_SPEAKERS_URL = process.env.SITE_SPEAKERS_URL || 'http://127.0.0.1:3001/api/speakers?published=true';
   const initialsFrom = (fullName: string): string => {
     const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
@@ -4226,15 +4388,13 @@ async function startServer(): Promise<void> {
       }
       const stale = (await db.select({ id: speakers.id }).from(speakers))
         .map((r) => r.id).filter((id) => id.startsWith('ss_') && !keptSs.includes(id));
-      if (stale.length) await db.delete(speakers).where(inArray(speakers.id, stale));
-      console.log(`[speakers-sync] ok: ${site.length} from site (+${keptSs.length} new, -${stale.length} pruned)`);
+      // Missing source rows are never deletion authority. Preserve them and
+      // their session links for explicit identity reconciliation in admin.
+      console.log(`[speakers-sync] ok: ${site.length} from site (+${keptSs.length} matched, ${stale.length} stale preserved)`);
     } catch (err) {
       console.error('[speakers-sync] failed:', (err as Error).message);
     }
   }
-  void syncSpeakersFromSite();
-  setInterval(() => { void syncSpeakersFromSite(); }, 10 * 60 * 1000).unref?.();
-
   // BUG_FIX_CONTEXT: graceful shutdown — Postgres pool должен закрыться явно,
   // иначе остаются "висячие" idle connections, и при рестарте сервер не может
   // взять lock на migration (drizzle-kit migrate ругается).

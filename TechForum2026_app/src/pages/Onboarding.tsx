@@ -16,13 +16,11 @@
 //                       localStorage остаётся retry-буфером для App.tsx.]
 // END_CHANGE_SUMMARY
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Loader2, ArrowRight } from 'lucide-react';
 import { INTERESTS } from '../data';
-import { resolveApiUrl, authFetch, fetchWithTimeout } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl } from '@/src/lib/runtimeEndpoint';
 import { cn } from '@/src/lib/utils';
-
-interface InterestOpt { id: string; label: string; color: string }
 
 interface OnboardingProps {
   onDone: (interestsCount: number) => void;
@@ -37,26 +35,6 @@ export default function Onboarding({ onDone }: OnboardingProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
-  // Интересы берём с сервера (единый источник истины) — так выбор ВСЕГДА
-  // валиден при сохранении (никакого unknown_interest_ids из-за рассинхрона
-  // бандла и БД). Статический INTERESTS — фолбэк на случай оффлайна.
-  const [interests, setInterests] = useState<InterestOpt[]>(INTERESTS as InterestOpt[]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await fetchWithTimeout(resolveApiUrl('/interests'));
-        if (r.ok && !cancelled) {
-          const data = await r.json();
-          if (Array.isArray(data) && data.length) setInterests(data);
-        }
-      } catch {
-        /* оффлайн — остаётся статический фолбэк */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   function toggle(id: string): void {
     setSelected(prev => {
@@ -83,7 +61,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
     } catch { /* private mode / quota — ignore */ }
 
     try {
-      const res = await authFetch(resolveApiUrl('/me/interests'), {
+      const res = await fetch(resolveApiUrl('/me/interests'), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +78,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
       onDone(interestIds.length);
     } catch (err: unknown) {
       const raw = err instanceof Error ? err.message : String(err);
-      const isNetwork = /failed to fetch|networkerror|load failed|typeerror|timeout|timed out|abort/i.test(raw);
+      const isNetwork = /failed to fetch|networkerror|load failed|typeerror/i.test(raw);
       setError(isNetwork
         ? 'Нет соединения с сервером. Проверьте интернет и попробуйте ещё раз.'
         : `Не удалось сохранить выбор: ${raw}`);
@@ -113,28 +91,27 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
   return (
     <div
-      className="relative text-foreground overflow-y-auto"
+      className="relative bg-[#0a0e17] text-white overflow-y-auto"
       style={{
         minHeight: '100dvh',
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 32px)',
         paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)',
-        backgroundColor: 'var(--color-background)',
       }}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(0,255,255,0.12),transparent_55%),radial-gradient(circle_at_80%_80%,rgba(255,51,153,0.1),transparent_50%)] pointer-events-none" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_18%,rgba(0,255,255,0.18),transparent_55%)] pointer-events-none" />
 
       <div className="relative z-10 px-7 space-y-6">
         <div className="space-y-3 pt-4">
-          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-accent">
+          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#b0ffff]">
             Что тебе интересно?
           </h1>
-          <p className="text-[14px] text-foreground/65 leading-relaxed">
+          <p className="text-[14px] text-white/65 leading-relaxed">
             Отметь от {MIN_PICK} до {MAX_PICK} направлений — мы подсветим релевантные сессии в расписании. Минимум — {MIN_PICK}.
           </p>
         </div>
 
         <div className="flex flex-wrap gap-2 pt-2">
-          {interests.map((it) => {
+          {INTERESTS.map((it) => {
             const active = selected.has(it.id);
             return (
               <button
@@ -143,7 +120,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
                 onClick={() => toggle(it.id)}
                 className={cn(
                   'px-4 py-2.5 rounded-2xl text-[13px] font-semibold border transition-all active:scale-[0.97]',
-                  active ? 'text-primary-foreground' : 'bg-card border-border text-foreground/70 hover:border-foreground/25',
+                  active ? 'text-[#0a0e17]' : 'bg-white/[0.04] border-white/10 text-white/70 hover:border-white/25',
                 )}
                 style={
                   active
@@ -158,15 +135,15 @@ export default function Onboarding({ onDone }: OnboardingProps) {
         </div>
 
         <div className="flex items-center justify-between pt-2 text-[13px] font-medium">
-          <span className="text-foreground/55">
-            Выбрано: <span className="text-primary font-bold">{selected.size}</span> / {MAX_PICK}
+          <span className="text-white/55">
+            Выбрано: <span className="text-[#00ffff] font-bold">{selected.size}</span> / {MAX_PICK}
           </span>
           {remaining > 0 ? (
             <span className="text-amber-300/80 font-semibold">
               Нужно ещё {remaining}, чтобы продолжить
             </span>
           ) : (
-            <span className="text-primary font-semibold">Можно продолжать</span>
+            <span className="text-[#00ffff] font-semibold">Можно продолжать</span>
           )}
         </div>
 
@@ -179,7 +156,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
 
       {/* Sticky submit */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-20 px-7 pt-3 bg-gradient-to-t from-background via-background/95 to-transparent"
+        className="fixed bottom-0 left-0 right-0 z-20 px-7 pt-3 bg-gradient-to-t from-[#0a0e17] via-[#0a0e17]/95 to-transparent"
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
       >
         <div className="max-w-[420px] mx-auto">
@@ -187,7 +164,7 @@ export default function Onboarding({ onDone }: OnboardingProps) {
             type="button"
             onClick={submit}
             disabled={!canSubmit}
-            className="w-full bg-gradient-to-r from-primary to-[#ff3399] text-primary-foreground py-4 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40 shadow-[0_8px_28px_rgba(255,51,153,0.25)]"
+            className="w-full bg-gradient-to-r from-[#00ffff] to-[#ff3399] text-[#0a0e17] py-4 rounded-2xl text-[15px] font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform disabled:opacity-40 shadow-[0_8px_28px_rgba(0,255,255,0.25)]"
           >
             {loading ? (
               <Loader2 className="w-5 h-5 animate-spin" />

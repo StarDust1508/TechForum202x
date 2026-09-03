@@ -37,7 +37,7 @@ export default function AvatarImage({
         />
       )}
       {!showImg && (
-        <span className={`flex h-full w-full items-center justify-center font-display font-semibold text-primary select-none ${letterClassName}`}>
+        <span className={`flex h-full w-full items-center justify-center font-display-cyrl font-semibold text-[#4ec9c0] select-none ${letterClassName}`}>
           {letter}
         </span>
       )}

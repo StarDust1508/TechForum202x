@@ -1,11 +1,10 @@
-import { useRef, useState, useMemo, useEffect, useCallback, type ChangeEvent } from 'react';
-import { User, Mail, Phone, Building2, Briefcase, GraduationCap, LogOut, Check, FileText, Plus, Sparkles } from 'lucide-react';
+import { useRef, useState, type ChangeEvent } from 'react';
+import { User, Settings, Shield, LogOut, ChevronRight, X, Mail, Phone, Info, Check, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clearLocalSession, isLocalAuthFallbackEnabled, updateLocalUser } from '@/src/lib/localAuth';
-import { resolveApiUrl, resolveAssetUrl, authFetch, clearSessionToken } from '@/src/lib/runtimeEndpoint';
+import { resolveApiUrl, resolveAssetUrl } from '@/src/lib/runtimeEndpoint';
 import BackButton from '@/src/components/BackButton';
-import { INTERESTS } from '../data';
-import { clearPushRegistrationLocally, getStoredPushToken, unregisterPushNotifications } from '@/src/lib/push';
+import AppBackground from '@/src/components/AppBackground';
 
 interface UserData {
   id?: string;
@@ -15,141 +14,38 @@ interface UserData {
   bio?: string;
   role?: string;
   avatar?: string;
-  company?: string;
-  workplace?: string;
-  education?: string;
-  birthday?: string;
-  interestsCount?: number;
-  [key: string]: any;
 }
 
 interface ProfileProps {
   user: UserData;
-  onUpdate?: (user: UserData) => void;
 }
 
-const fields = [
-  { key: 'name', label: 'Имя', icon: User, type: 'text', autoComplete: 'name', placeholder: 'Иванов Иван Иванович' },
-  { key: 'email', label: 'Email', icon: Mail, type: 'email', autoComplete: 'email', placeholder: 'email@example.com' },
-  { key: 'phone', label: 'Телефон', icon: Phone, type: 'tel', autoComplete: 'tel', placeholder: '+7 (999) 123-45-67' },
-  { key: 'company', label: 'Компания', icon: Building2, type: 'text', autoComplete: 'organization', placeholder: 'ООО «Компания»' },
-  { key: 'workplace', label: 'Место работы', icon: Briefcase, type: 'text', autoComplete: 'organization-title', placeholder: 'Должность / отдел' },
-  { key: 'education', label: 'Место учёбы', icon: GraduationCap, type: 'text', autoComplete: 'off', placeholder: 'Университет / курс' },
-] as const;
-
-type FieldKey = (typeof fields)[number]['key'];
-
-export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
+export default function Profile({ user: initialUser }: ProfileProps) {
   const [user, setUser] = useState(initialUser);
-
-  const updateUser = (updated: UserData) => {
-    // Preserve interestsCount from current user if server response doesn't include it
-    const merged = { ...user, ...updated };
-    if (updated.interestsCount === undefined && user.interestsCount !== undefined) {
-      merged.interestsCount = user.interestsCount;
-    }
-    setUser(merged);
-    onUpdate?.(merged);
-  };
-
-  const buildForm = (u: UserData): Record<FieldKey, string> => ({
-    name: u.name || '',
-    email: u.email || '',
-    phone: u.phone || '',
-    company: u.company || '',
-    workplace: u.workplace || '',
-    education: u.education || '',
+  const [showEdit, setShowEdit] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: user.name,
+    email: user.email,
+    phone: user.phone || '',
+    bio: user.bio || ''
   });
-
-  const [editForm, setEditForm] = useState<Record<FieldKey, string>>(buildForm(user));
   const [saving, setSaving] = useState(false);
-  const [bio, setBio] = useState(user.bio || '');
-  const [bioSaving, setBioSaving] = useState(false);
-  const [bioSaved, setBioSaved] = useState(false);
-  const bioTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [interests, setInterests] = useState<Array<{ id: string; label: string; color: string }>>([]);
-
-  // Load user interests (API returns { interestIds: string[] }, map to INTERESTS data)
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await authFetch(resolveApiUrl('/me/interests'), { credentials: 'include' });
-        if (r.ok) {
-          const data = await r.json();
-          const ids: string[] = data?.interestIds || [];
-          const mapped = ids
-            .map(id => INTERESTS.find(it => it.id === id))
-            .filter(Boolean) as Array<{ id: string; label: string; color: string }>;
-          setInterests(mapped);
-        }
-      } catch { /* offline */ }
-    })();
-  }, []);
-
-  const saveBio = useCallback(async (value: string) => {
-    setBioSaving(true);
-    try {
-      const res = await authFetch(resolveApiUrl('/auth/me'), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ bio: value }),
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        updateUser(updated);
-        setBioSaved(true);
-        setTimeout(() => setBioSaved(false), 2000);
-      }
-    } catch { /* offline */ }
-    finally { setBioSaving(false); }
-  }, [user]);
-
-  const handleBioChange = (value: string) => {
-    setBio(value);
-    setBioSaved(false);
-    if (bioTimerRef.current) clearTimeout(bioTimerRef.current);
-    bioTimerRef.current = setTimeout(() => saveBio(value), 1200);
-  };
-
-  useEffect(() => () => { if (bioTimerRef.current) clearTimeout(bioTimerRef.current); }, []);
-
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const initialForm = useMemo(() => buildForm(user), [user]);
-
-  const hasChanges = useMemo(() => {
-    return fields.some(f => editForm[f.key] !== initialForm[f.key]);
-  }, [editForm, initialForm]);
-
-  const handleFieldChange = (key: FieldKey, value: string) => {
-    setEditForm(prev => ({ ...prev, [key]: value }));
-  };
-
   const handleLogout = async () => {
-    const pushToken = getStoredPushToken();
-    if (pushToken) {
-      // Сначала используем уже развёрнутый endpoint удаления. Если сеть/сервер
-      // недоступны, всё равно инвалидируем native token: старый аккаунт не
-      // должен продолжать получать сообщения на этом телефоне.
-      const removed = await unregisterPushNotifications();
-      if (!removed) await clearPushRegistrationLocally();
-    }
+    // BUG_FIX_CONTEXT: v1 чистил только локальную сессию в localStorage,
+    // но серверная cookie-сессия оставалась валидной до истечения maxAge=24h.
+    // При повторном /auth/me юзер всё ещё считался залогиненным.
+    // Сейчас явно бьём в /auth/logout (best-effort, без блокировки UI).
     try {
       const logoutUrl = resolveApiUrl('/auth/logout');
-      const response = await authFetch(logoutUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pushToken: pushToken || null }),
-      });
-      if (response.ok) await clearPushRegistrationLocally();
+      await fetch(logoutUrl, { method: 'POST', credentials: 'include' });
     } catch (e) {
       console.error('Backend logout failed (continuing with local cleanup)', e);
     }
-    clearSessionToken();
     clearLocalSession();
     window.location.reload();
   };
@@ -158,15 +54,16 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
     setSaving(true);
     try {
       const profileUrl = resolveApiUrl('/auth/me');
-      const res = await authFetch(profileUrl, {
+      const res = await fetch(profileUrl, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(editForm)
       });
       if (res.ok) {
         const updated = await res.json();
-        updateUser(updated);
+        setUser(updated);
+        setShowEdit(false);
         return;
       }
       throw new Error('Backend profile save failed');
@@ -175,7 +72,8 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
         try {
           const updatedLocal = updateLocalUser(String(user.id || ''), editForm);
           if (updatedLocal) {
-            updateUser(updatedLocal);
+            setUser(updatedLocal);
+            setShowEdit(false);
             return;
           }
         } catch (fallbackError) {
@@ -188,6 +86,9 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
     }
   };
 
+  // BUG_FIX_CONTEXT: FormData с файлом — без явного Content-Type, чтобы браузер
+  // сам выставил multipart/form-data с boundary. Если поставить вручную, boundary
+  // не добавится и multer на бэке не распарсит.
   const handleAvatarChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -196,7 +97,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await authFetch(resolveApiUrl('/me/avatar'), {
+      const res = await fetch(resolveApiUrl('/me/avatar'), {
         method: 'POST',
         credentials: 'include',
         body: fd,
@@ -206,8 +107,7 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
         throw new Error(errBody.error || `upload_failed_${res.status}`);
       }
       const data = await res.json();
-      const updated = { ...user, avatar: data.avatar };
-      updateUser(updated);
+      setUser((prev) => ({ ...prev, avatar: data.avatar }));
     } catch (err) {
       console.error('Avatar upload failed', err);
       setAvatarError(err instanceof Error ? err.message : 'upload_failed');
@@ -219,203 +119,340 @@ export default function Profile({ user: initialUser, onUpdate }: ProfileProps) {
 
   const avatarSrc = resolveAssetUrl(user.avatar);
 
-  // Preload avatar into browser cache so it renders instantly
-  const [avatarReady, setAvatarReady] = useState(!avatarSrc);
-  useEffect(() => {
-    if (!avatarSrc) { setAvatarReady(true); return; }
-    const img = new Image();
-    img.onload = () => setAvatarReady(true);
-    img.onerror = () => setAvatarReady(true);
-    img.src = avatarSrc;
-  }, [avatarSrc]);
-
   return (
-    <div className="flex-1 px-5 space-y-6 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 6px)', paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)' }}>
-      <div className="flex items-center gap-3">
-        <BackButton />
-        <h1
-          className="font-display text-[28px] leading-none font-bold"
-          style={{
-            background: 'linear-gradient(135deg, #ff3399 0%, #ff66b2 50%, #00ffff 100%)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-          }}
-        >Профиль</h1>
-      </div>
-
+    <div className="flex-1 pb-24 pt-12 px-5 space-y-8 relative" style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 64px)' }}>
+      <BackButton />
       <header className="space-y-4 text-center flex flex-col items-center">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleAvatarChange}
-        />
-        {/* Avatar with "+" button in bottom-right corner */}
-        <div className="relative">
-          <div
-            className="w-44 h-44 bg-primary/10 border-[4px] border-primary/40 rounded-full flex items-center justify-center text-4xl font-black text-primary shadow-xl shadow-primary/10 overflow-hidden"
-          >
-            {avatarSrc && avatarReady ? (
-              <img
-                src={avatarSrc}
-                alt={user.name || 'avatar'}
-                className="w-full h-full object-cover relative z-10"
-                referrerPolicy="no-referrer"
-              />
-            ) : avatarSrc && !avatarReady ? (
-              /* Shimmer placeholder while avatar image preloads */
-              <div className="w-full h-full bg-primary/10 animate-pulse" />
-            ) : (
-              <span className="text-5xl font-black text-primary select-none">
-                {String(user.name || '?').trim().charAt(0).toUpperCase()}
-              </span>
-            )}
-          </div>
-          {/* Small "+" button to change avatar */}
-          <button
-            type="button"
-            aria-label="Изменить фотографию профиля"
-            disabled={uploadingAvatar}
-            onClick={() => fileInputRef.current?.click()}
-            className="absolute bottom-1 right-1 w-9 h-9 rounded-full bg-primary border-[3px] border-background flex items-center justify-center text-primary-foreground shadow-lg active:scale-90 transition-transform disabled:opacity-50 z-10"
-          >
-            <Plus className="w-4 h-4" strokeWidth={3} />
-          </button>
+        <div className="w-24 h-24 bg-accent/10 border-2 border-accent/30 rounded-[2.5rem] flex items-center justify-center text-3xl font-black text-accent shadow-xl shadow-accent/5 relative overflow-hidden group">
+          {avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt={user.name || 'avatar'}
+              className="relative z-10 w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : null}
+          <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-accent select-none">
+            {String(user.name || '?').trim().charAt(0).toUpperCase()}
+          </span>
         </div>
-        {avatarError && (
-          <p className="text-[10px] text-red-400 font-medium">{avatarError}</p>
-        )}
         <div className="space-y-1">
-          <h2
-            className="font-display text-2xl font-bold text-foreground"
-          >{user.name || 'Пользователь'}</h2>
-          <p className="text-[10px] font-semibold text-primary uppercase tracking-[0.3em]">{user.role || 'Пользователь'}</p>
+          <h1 className="text-2xl font-black text-white">{user.name}</h1>
+          <p className="text-[10px] font-black text-accent uppercase tracking-[0.3em]">{user.role || 'Пользователь'}</p>
         </div>
       </header>
 
-      <div className="space-y-5">
-        {fields.map((field, i) => {
-          const Icon = field.icon;
-          return (
-            <motion.div
-              key={field.key}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04 }}
-              className="space-y-2"
+      <div className="space-y-4">
+        <div className="bg-[#111827]/40 backdrop-blur-md border border-card-border rounded-[2rem] p-6 space-y-6 shadow-xl circuit-border">
+          <h2 className="text-[10px] font-black text-white/40 uppercase tracking-[0.4em] mb-2 px-1">Настройки аккаунта</h2>
+
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowEdit(true)}
+              className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-all group"
             >
-              <label htmlFor={`profile-${field.key}`} className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
-                {field.label}
-              </label>
-              <div className="relative">
-                <Icon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
-                <input
-                  id={`profile-${field.key}`}
-                  name={field.key}
-                  type={field.type}
-                  autoComplete={field.autoComplete}
-                  value={editForm[field.key]}
-                  placeholder={field.placeholder}
-                  onChange={e => handleFieldChange(field.key, e.target.value)}
-                  className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-[16px] leading-6 text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
-                  style={{ fontSize: '16px' }}
-                />
+              <div className="flex items-center gap-4">
+                <Settings className="w-5 h-5 text-accent" />
+                <span className="text-xs font-black uppercase tracking-widest text-primary">Био и Профиль</span>
               </div>
-            </motion.div>
-          );
-        })}
+              <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-accent" />
+            </button>
+
+            <button
+              onClick={() => setShowSecurity(true)}
+              className="w-full flex items-center justify-between p-4 bg-white/5 rounded-2xl hover:bg-white/10 transition-all group"
+            >
+              <div className="flex items-center gap-4">
+                <Shield className="w-5 h-5 text-accent" />
+                <span className="text-xs font-black uppercase tracking-widest text-primary">Безопасность</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[8px] font-black text-accent border border-accent/20 px-1.5 py-0.5 rounded">HIGH</span>
+                <ChevronRight className="w-4 h-4 text-white/10 group-hover:text-accent" />
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center justify-between p-6 bg-red-500/5 border border-red-500/10 rounded-[2rem] hover:bg-red-500/10 transition-all group"
+        >
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-red-500/10 rounded-2xl flex items-center justify-center">
+              <LogOut className="w-5 h-5 text-red-500/60" />
+            </div>
+            <span className="text-sm font-black uppercase tracking-widest text-red-500/80">Выйти из системы</span>
+          </div>
+        </button>
       </div>
 
-      {/* Bio field */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25 }}
-        className="space-y-2"
-      >
-        <div className="flex items-center justify-between">
-          <label htmlFor="profile-bio" className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider ml-1">
-            О себе
-          </label>
-          {bioSaving && <span className="text-[9px] text-primary/60 animate-pulse">Сохраняю...</span>}
-          {bioSaved && <span className="text-[9px] text-green-400">Сохранено</span>}
-        </div>
-        <div className="relative">
-          <FileText className="absolute left-4 top-4 w-4 h-4 text-primary" />
-          <textarea
-            id="profile-bio"
-            name="bio"
-            value={bio}
-            onChange={e => handleBioChange(e.target.value)}
-            placeholder="Расскажите о себе — интересы, опыт, чем занимаетесь..."
-            maxLength={500}
-            rows={3}
-            className="w-full bg-card border border-border rounded-2xl py-4 pl-12 pr-4 text-[16px] leading-6 text-foreground placeholder:text-muted-foreground/55 focus:border-primary/60 focus:ring-2 focus:ring-primary/20 outline-none transition-colors resize-y"
-            style={{ fontSize: '16px' }}
-          />
-        </div>
-        <p className="text-[9px] text-muted-foreground/40 text-right mr-1">{bio.length}/500</p>
-      </motion.div>
-
-      {/* Interests section */}
-      {interests.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="space-y-3"
-        >
-          <div className="flex items-center gap-2 ml-1">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            <label className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider">
-              Интересы
-            </label>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {interests.map(it => (
-              <span
-                key={it.id}
-                className="px-3.5 py-2 rounded-2xl text-[12px] font-semibold border"
-                style={{
-                  color: it.color,
-                  borderColor: `${it.color}30`,
-                  backgroundColor: `${it.color}10`,
-                }}
-              >
-                {it.label}
-              </span>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
+      {/* Edit Profile Modal */}
       <AnimatePresence>
-        {hasChanges && (
+        {showEdit && (
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="pt-2"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="absolute inset-0 z-[100]"
           >
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="w-full bg-primary text-primary-foreground py-5 rounded-[2.5rem] font-black uppercase tracking-widest shadow-2xl shadow-primary/20 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
-            >
-              {saving ? <Check className="w-5 h-5 animate-pulse" /> : 'Сохранить'}
-            </button>
+            <AppBackground>
+              <div className="flex flex-col p-8 flex-1" style={{ minHeight: '100dvh' }}>
+                <div className="flex items-center justify-between mb-10">
+                  <h2 className="text-xl font-black text-primary uppercase tracking-tighter">Редактировать</h2>
+                  <button
+                    onClick={() => setShowEdit(false)}
+                    className="w-10 h-10 bg-card border border-card-border rounded-xl flex items-center justify-center text-muted"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="space-y-6 overflow-y-auto scrollbar-hide pb-20">
+                  {/* Avatar block */}
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="w-24 h-24 bg-accent/10 border-2 border-accent/30 rounded-full flex items-center justify-center text-3xl font-black text-accent shadow-xl shadow-accent/5 relative overflow-hidden">
+                      {avatarSrc ? (
+                        <img
+                          src={avatarSrc}
+                          alt={user.name || 'avatar'}
+                          className="relative z-10 w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : null}
+                      <span className="absolute inset-0 flex items-center justify-center text-3xl font-black text-accent select-none">
+                        {String(user.name || '?').trim().charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingAvatar}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-accent/10 border border-accent/30 text-accent text-[11px] font-black uppercase tracking-widest hover:bg-accent/20 transition-all disabled:opacity-50"
+                    >
+                      <Camera className="w-4 h-4" />
+                      {uploadingAvatar ? 'Загрузка...' : 'Изменить фото'}
+                    </button>
+                    {avatarError && (
+                      <p className="text-[10px] text-red-400 font-medium">{avatarError}</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">Полное имя</label>
+                    <div className="relative">
+                      <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
+                      <input
+                        value={editForm.name}
+                        onChange={e => setEditForm({...editForm, name: e.target.value})}
+                        className="w-full bg-card border border-card-border rounded-2xl py-4 pl-12 pr-4 text-sm focus:border-accent outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
+                      <input
+                        value={editForm.email}
+                        onChange={e => setEditForm({...editForm, email: e.target.value})}
+                        className="w-full bg-card border border-card-border rounded-2xl py-4 pl-12 pr-4 text-sm focus:border-accent outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">Телефон</label>
+                    <div className="relative">
+                      <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-accent" />
+                      <input
+                        value={editForm.phone}
+                        onChange={e => setEditForm({...editForm, phone: e.target.value})}
+                        className="w-full bg-card border border-card-border rounded-2xl py-4 pl-12 pr-4 text-sm focus:border-accent outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] text-muted font-black uppercase tracking-widest ml-1">О себе (Био)</label>
+                    <div className="relative">
+                      <Info className="absolute left-4 top-4 w-4 h-4 text-accent" />
+                      <textarea
+                        value={editForm.bio}
+                        onChange={e => setEditForm({...editForm, bio: e.target.value})}
+                        className="w-full h-32 bg-card border border-card-border rounded-2xl py-4 pl-12 pr-4 text-sm focus:border-accent outline-none resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="mt-auto bg-accent text-surface py-5 rounded-[2.5rem] font-black uppercase tracking-widest shadow-2xl shadow-accent/20 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {saving ? <Check className="w-5 h-5 animate-pulse" /> : 'СОХРАНИТЬ ИЗМЕНЕНИЯ'}
+                </button>
+              </div>
+            </AppBackground>
           </motion.div>
         )}
       </AnimatePresence>
 
-      <button
-        onClick={handleLogout}
-        className="w-full flex items-center justify-center gap-3 p-5 bg-red-500/5 border border-red-500/10 rounded-2xl hover:bg-red-500/10 transition-all active:scale-[0.98]"
-      >
-        <LogOut className="w-5 h-5 text-red-500/60" />
-        <span className="text-sm font-semibold uppercase tracking-wider text-red-500/80">Выйти</span>
-      </button>
+      {/* Security / User Agreement Modal */}
+      <AnimatePresence>
+        {showSecurity && (
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="absolute inset-0 z-[100]"
+          >
+            <AppBackground>
+              <div className="flex flex-col p-8 flex-1" style={{ minHeight: '100dvh' }}>
+                <div className="flex items-center justify-between mb-8">
+                  <h2 className="text-xl font-black text-primary uppercase tracking-tighter">Соглашение</h2>
+                  <button
+                    onClick={() => setShowSecurity(false)}
+                    className="w-10 h-10 bg-card border border-card-border rounded-xl flex items-center justify-center text-muted"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto scrollbar-hide pb-24 space-y-4 text-[13px] leading-relaxed text-white/80">
+                  <h3 className="text-sm font-black text-accent uppercase tracking-widest">
+                    Пользовательское соглашение и согласие на обработку персональных данных
+                  </h3>
+                  <p className="text-[10px] text-white/40 uppercase tracking-widest">Редакция от 2 мая 2026 г.</p>
+
+                  <p>
+                    Настоящее Пользовательское соглашение (далее — «Соглашение») регулирует отношения
+                    между ООО «Bubble Group» (далее — «Оператор», ИНН/ОГРН указаны на сайте техфорум.рф,
+                    адрес электронной почты оператора: <span className="text-accent">info@techforum.ru</span>)
+                    и физическим лицом — пользователем мобильного приложения TechForum 2026 (далее — «Пользователь»),
+                    в связи с использованием функций приложения и обработкой персональных данных в соответствии
+                    с Федеральным законом № 152-ФЗ «О персональных данных».
+                  </p>
+
+                  <p>
+                    <strong className="text-white">1. Предмет соглашения.</strong> Принимая настоящее Соглашение,
+                    Пользователь даёт согласие на обработку Оператором его персональных данных в целях:
+                    регистрации и аутентификации в приложении; организации участия в конференции TechForum 2026;
+                    направления уведомлений и сервисных сообщений; обеспечения работы личного кабинета,
+                    ленты, чата и иных функций приложения; формирования аналитики и улучшения сервиса.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">2. Перечень обрабатываемых персональных данных.</strong>
+                    Оператор обрабатывает: фамилию, имя, отчество (при наличии); адрес электронной почты;
+                    номер мобильного телефона; должность и место работы (при наличии, по желанию пользователя);
+                    биографическую информацию, указанную Пользователем добровольно; фотографию профиля;
+                    идентификаторы устройства, IP-адрес, технические сведения о сессии и журналы действий.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">3. Способы обработки.</strong> Обработка осуществляется
+                    как с использованием средств автоматизации, так и без таковых: сбор, запись, систематизация,
+                    накопление, хранение, уточнение, извлечение, использование, передача (предоставление,
+                    доступ), обезличивание, блокирование, удаление и уничтожение персональных данных.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">4. Передача данных третьим лицам.</strong> Оператор не передаёт
+                    персональные данные третьим лицам, за исключением случаев, прямо предусмотренных законом,
+                    а также привлечения процессоров (хостинг, доставка push-уведомлений, аналитика), которые
+                    обрабатывают данные исключительно по поручению Оператора и на условиях конфиденциальности.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">5. Срок хранения.</strong> Персональные данные хранятся в
+                    течение всего срока использования приложения и в течение 3 (трёх) лет после удаления
+                    учётной записи или отзыва согласия — для исполнения требований законодательства РФ
+                    о бухгалтерском учёте и противодействии неправомерным действиям. По истечении срока
+                    данные подлежат уничтожению либо обезличиванию.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">6. Cookies и аналогичные технологии.</strong> Принимая настоящее
+                    Соглашение, Пользователь соглашается на использование файлов cookie, локального хранилища
+                    и иных идентификаторов устройства, необходимых для аутентификации, поддержки сессии,
+                    запоминания предпочтений и сбора обезличенной аналитики посещений.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">7. Права Пользователя как субъекта персональных данных.</strong>
+                    Пользователь вправе: получать сведения об обработке своих данных; требовать уточнения,
+                    блокирования или уничтожения данных, если они являются неполными, устаревшими, неточными,
+                    незаконно полученными или не являются необходимыми для заявленной цели обработки;
+                    отозвать согласие в любой момент; обжаловать действия Оператора в Роскомнадзоре или суде.
+                    Запросы направляются по адресу <span className="text-accent">info@techforum.ru</span>;
+                    срок ответа — 10 рабочих дней.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">8. Безопасность.</strong> Оператор применяет организационные
+                    и технические меры защиты персональных данных, в том числе шифрование канала (TLS),
+                    хеширование паролей, разграничение доступа, журналирование действий, регулярное
+                    резервное копирование и контроль уязвимостей.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">9. Ответственность Пользователя.</strong> Пользователь обязуется
+                    не использовать приложение для размещения противоправного контента, оскорблений, спама,
+                    рекламы без согласования, а также не предпринимать действий, направленных на нарушение
+                    работы сервиса, обход систем безопасности и получение несанкционированного доступа
+                    к данным других пользователей.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">10. Изменения соглашения.</strong> Оператор вправе вносить
+                    изменения в настоящее Соглашение, публикуя новую редакцию в приложении. Продолжение
+                    использования приложения после изменений означает согласие Пользователя с новой редакцией.
+                  </p>
+
+                  <p>
+                    <strong className="text-white">11. Контакты оператора.</strong> ООО «Bubble Group»,
+                    ответственный за обработку персональных данных: <span className="text-accent">info@techforum.ru</span>.
+                    По любым вопросам, связанным с реализацией прав субъекта персональных данных, Пользователь
+                    может обратиться по указанному адресу. Оператор обязуется рассмотреть обращение в срок,
+                    установленный действующим законодательством Российской Федерации.
+                  </p>
+
+                  <p className="text-white/50 text-[11px]">
+                    Принимая настоящее Соглашение, Пользователь подтверждает, что ознакомлен с его условиями,
+                    согласен на обработку персональных данных в указанных целях и обладает дееспособностью,
+                    необходимой для заключения настоящего Соглашения.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setShowSecurity(false)}
+                  className="mt-auto bg-accent text-surface py-5 rounded-[2.5rem] font-black uppercase tracking-widest shadow-2xl shadow-accent/20 flex items-center justify-center gap-3 active:scale-95 transition-all"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </AppBackground>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
