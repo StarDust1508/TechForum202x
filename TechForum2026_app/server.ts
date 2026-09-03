@@ -1491,14 +1491,14 @@ async function startServer(): Promise<void> {
   }
 
   // GET все новости (включая черновики) — для списка в админке.
-  api.get('/internal/news', cmsRateLimit, async (req, res) => {
+  api.get('/internal/news', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const rows = await db.select().from(news).orderBy(news.sortOrder);
     res.json(rows);
-  });
+  }));
 
   // POST создать новость.
-  api.post('/internal/news', cmsRateLimit, async (req, res) => {
+  api.post('/internal/news', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const b = (req.body ?? {}) as Record<string, unknown>;
     const title = str(b.title, 500);
@@ -1507,25 +1507,28 @@ async function startServer(): Promise<void> {
       id: 'n_' + crypto.randomBytes(7).toString('hex'),
       type: str(b.type, 32) || 'Новость',
       title,
-      content: str(b.content, 2000),
+      content: str(b.content, 2000) || '',
       body: str(b.body, 20000) || str(b.content, 20000) || title,
-      time: str(b.time, 100),
+      time: str(b.time, 100) || '',
       isCritical: bool(b.isCritical),
       category: str(b.category, 64),
       imageUrl: str(b.imageUrl, 1000),
-      speakerId: str(b.speakerId, 64),
+      speakerId: str(b.speakerId, 64) || null,
       sortOrder: Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0,
       isPublished: b.isPublished === undefined ? false : bool(b.isPublished),
     };
+    if (row.speakerId && !(await db.select({id:speakers.id}).from(speakers).where(eq(speakers.id,row.speakerId)).limit(1)).length) {
+      res.status(400).json({ error: 'invalid_news_speaker', message: 'Спикер с таким ID не найден. Проверьте ID или оставьте поле пустым.' }); return;
+    }
     await db.insert(news).values(row);
     const pushDelivery = row.isPublished
       ? await broadcastPublishedNews(row)
       : { configured: fcmStatus().initialized && !fcmStatus().disabled, targetedUsers: 0, deliveredDevices: 0, skipped: true };
     res.status(201).json({ ...row, pushDelivery });
-  });
+  }));
 
   // PUT обновить (частично — только переданные поля).
-  api.put('/internal/news/:id', cmsRateLimit, async (req, res) => {
+  api.put('/internal/news/:id', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const id = String(req.params.id);
     const b = (req.body ?? {}) as Record<string, unknown>;
@@ -1533,13 +1536,18 @@ async function startServer(): Promise<void> {
     const patch: Record<string, unknown> = {};
     if (b.type !== undefined) patch.type = str(b.type, 32) || 'Новость';
     if (b.title !== undefined) { const t = str(b.title, 500); if (!t) { res.status(400).json({ error: 'title_required' }); return; } patch.title = t; }
-    if (b.content !== undefined) patch.content = str(b.content, 2000);
+    if (b.content !== undefined) patch.content = str(b.content, 2000) || '';
     if (b.body !== undefined) patch.body = str(b.body, 20000) || '';
-    if (b.time !== undefined) patch.time = str(b.time, 100);
+    if (b.time !== undefined) patch.time = str(b.time, 100) || '';
     if (b.isCritical !== undefined) patch.isCritical = bool(b.isCritical);
     if (b.category !== undefined) patch.category = str(b.category, 64);
     if (b.imageUrl !== undefined) patch.imageUrl = str(b.imageUrl, 1000);
-    if (b.speakerId !== undefined) patch.speakerId = str(b.speakerId, 64);
+    if (b.speakerId !== undefined) {
+      patch.speakerId = str(b.speakerId, 64) || null;
+      if (patch.speakerId && !(await db.select({id:speakers.id}).from(speakers).where(eq(speakers.id,String(patch.speakerId))).limit(1)).length) {
+        res.status(400).json({ error: 'invalid_news_speaker', message: 'Спикер с таким ID не найден. Проверьте ID или оставьте поле пустым.' }); return;
+      }
+    }
     if (b.sortOrder !== undefined) patch.sortOrder = Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0;
     if (b.isPublished !== undefined) patch.isPublished = bool(b.isPublished);
     if (Object.keys(patch).length === 0) { res.status(400).json({ error: 'no_fields' }); return; }
@@ -1550,15 +1558,15 @@ async function startServer(): Promise<void> {
       ? await broadcastPublishedNews(upd[0])
       : { configured: fcmStatus().initialized && !fcmStatus().disabled, targetedUsers: 0, deliveredDevices: 0, skipped: true };
     res.json({ ...upd[0], pushDelivery });
-  });
+  }));
 
   // DELETE удалить.
-  api.delete('/internal/news/:id', cmsRateLimit, async (req, res) => {
+  api.delete('/internal/news/:id', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const del = await db.delete(news).where(eq(news.id, String(req.params.id))).returning();
     if (!del[0]) { res.status(404).json({ error: 'not_found' }); return; }
     res.json({ ok: true });
-  });
+  }));
 
   // ======================= APP CMS — РОЗЫГРЫШИ =======================
   api.get('/internal/giveaways', cmsRateLimit, async (req, res) => {

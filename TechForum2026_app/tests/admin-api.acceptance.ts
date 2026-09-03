@@ -26,4 +26,11 @@ assert.equal((await call('/internal/sessions/'+id,'PUT',{isPublished:true})).sta
 assert.equal((await call('/internal/sessions/'+id,'DELETE')).status,405);
 assert.equal((await call('/internal/content-health')).status,200);
 assert.equal((await call('/internal/push-status')).body.verifiedUsers,0);
+const draftNews=await call('/internal/news','POST',{title:'Локальная новость без спикера',speakerId:''});
+assert.equal(draftNews.status,201); assert.equal(draftNews.body.isPublished,false);
+assert.equal(draftNews.body.speakerId,null); assert.equal(draftNews.body.pushDelivery.skipped,true);
+assert.equal((await call('/internal/news/'+draftNews.body.id,'PUT',{speakerId:'missing-speaker'})).status,400);
+assert.equal((await call('/internal/news/'+draftNews.body.id,'PUT',{speakerId:'test-speaker'})).status,200);
+assert.equal((await call('/internal/news/'+draftNews.body.id,'PUT',{speakerId:''})).body.speakerId,null);
+assert.equal((await call('/news')).body.some((n:{id:string})=>n.id===draftNews.body.id),false);
 console.log('PASS: auth guard, content save/read, stale save, legacy rejection, history, undo, moderator create/read/clear, atomic rollback, draft visibility, publication boundary, push diagnostics');
