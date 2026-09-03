@@ -231,6 +231,12 @@ export const sessionSpeakers = pgTable(
   }),
 );
 
+export const sessionModerators = pgTable('session_moderators', {
+  sessionId: text('session_id').notNull().references(() => sessionsEvent.id, { onDelete: 'cascade' }),
+  speakerId: text('speaker_id').notNull().references(() => speakers.id, { onDelete: 'restrict' }),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ pk: primaryKey({ columns: [t.sessionId, t.speakerId] }) }));
+
 export const partners = pgTable('partners', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),

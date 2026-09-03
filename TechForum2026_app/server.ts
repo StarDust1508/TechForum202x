@@ -58,6 +58,9 @@ import {
 } from './src/lib/validation.js';
 import { log } from './src/lib/log.js';
 import { initFcm, sendPushBatch, sendPushToToken, sendPushToUser, fcmStatus } from './src/lib/pushSender.js';
+import { AdminContentError, readContentSnapshot, saveContentPatch } from './src/lib/appAdminContent.js';
+import { contentIssues } from './src/lib/appContentHealth.js';
+import { SpeakerSyncError, syncSpeakers } from './src/lib/speakerSync.js';
 
 // Типизируем поле userId на сессии — убирает ad-hoc cast'ы по handler'ам.
 declare module 'express-session' {
@@ -118,7 +121,7 @@ const schemaModule = await import('./src/db/schema.js');
 const {
   users, posts, postLikes, postComments, statuses, registrations,
   sessionsEvent, userInterests, passwordResetTokens, directMessages, dmPins, notes,
-  tracks, halls, days, speakers, partners, sessionSpeakers, news, events, appContent,
+  tracks, halls, days, speakers, partners, sessionSpeakers, sessionModerators, news, events, appContent,
   pushTokens, giveaways, giveawayEntries, contactPins,
   faq, contactExchanges, aiChatMessages, userBlocks, contentReports,
 } = schemaModule;
@@ -1445,6 +1448,13 @@ async function startServer(): Promise<void> {
   // отдаёт только isPublished=true; здесь — полный CRUD, включая черновики.
   // ========================================================================
   const cmsRateLimit = createRateLimiter(240, 60_000);
+  const cmsAsync = (handler: (req: Request, res: Response) => Promise<unknown>) => async (req: Request, res: Response) => {
+    try { await handler(req, res); }
+    catch (error) {
+      log.error('app-cms', 'Request failed', { path: req.path, code: (error as { code?: string }).code || 'unavailable' });
+      if (!res.headersSent) res.status(503).json({ error: 'app_admin_unavailable', message: 'Данные приложения недоступны. Повторите запрос; отсутствие ответа не означает отсутствие данных.' });
+    }
+  };
   function internalSecretOk(provided: string): boolean {
     if (!internalBotSecret || provided.length !== internalBotSecret.length) return false;
     try { return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(internalBotSecret)); }
@@ -1505,7 +1515,7 @@ async function startServer(): Promise<void> {
       imageUrl: str(b.imageUrl, 1000),
       speakerId: str(b.speakerId, 64),
       sortOrder: Number.isFinite(Number(b.sortOrder)) ? Number(b.sortOrder) : 0,
-      isPublished: b.isPublished === undefined ? true : bool(b.isPublished),
+      isPublished: b.isPublished === undefined ? false : bool(b.isPublished),
     };
     await db.insert(news).values(row);
     const pushDelivery = row.isPublished
@@ -1631,7 +1641,7 @@ async function startServer(): Promise<void> {
 
   // ==================== APP CMS — УЧАСТНИКИ ПРИЛОЖЕНИЯ ====================
   // Все юзеры приложения = все, кто его скачал и зарегистрировался.
-  api.get('/internal/app-users', cmsRateLimit, async (req, res) => {
+  api.get('/internal/app-users', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const rows = await db.select().from(users).orderBy(desc(users.createdAt));
     const ic = await db.select({ uid: userInterests.userId, c: count() }).from(userInterests).groupBy(userInterests.userId);
@@ -1664,14 +1674,16 @@ async function startServer(): Promise<void> {
       devices: devicesByUser.get(u.id) || [],
       pushTestVerifiedAt: u.pushTestVerifiedAt,
     })));
-  });
+  }));
 
-  api.get('/internal/push-status', cmsRateLimit, async (req, res) => {
+  api.get('/internal/push-status', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const service = fcmStatus();
     const [totals] = await db.select({
       devices: sql<number>`count(*)::int`,
       users: sql<number>`count(distinct ${pushTokens.userId})::int`,
+      lastSeenAt: sql<string | null>`max(${pushTokens.lastSeenAt})`,
+      recentlySeenTokens: sql<number>`count(*) filter (where ${pushTokens.lastSeenAt} >= now() - interval '7 days')::int`,
     }).from(pushTokens);
     const [verificationTotals] = await db.select({
       users: sql<number>`count(${users.pushTestVerifiedAt})::int`,
@@ -1681,11 +1693,14 @@ async function startServer(): Promise<void> {
       registeredDevices: Number(totals?.devices || 0),
       registeredUsers: Number(totals?.users || 0),
       verifiedUsers: Number(verificationTotals?.users || 0),
+      lastTokenSeenAt: totals?.lastSeenAt ?? null,
+      recentlySeenTokens: Number(totals?.recentlySeenTokens || 0),
+      measuredAt: new Date().toISOString(),
     });
-  });
+  }));
 
   // Жалобы из личного чата — рабочая очередь модератора для App Review 1.2.
-  api.get('/internal/moderation/reports', cmsRateLimit, async (req, res) => {
+  api.get('/internal/moderation/reports', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const result = await pool.query(
       `SELECT report.id, report.reporter_id AS "reporterId",
@@ -1701,7 +1716,7 @@ async function startServer(): Promise<void> {
                  report.created_at DESC`,
     );
     res.json(result.rows);
-  });
+  }));
 
   api.patch('/internal/moderation/reports/:id', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
@@ -1719,15 +1734,16 @@ async function startServer(): Promise<void> {
 
   // ======================= APP CMS — ПРОГРАММА =======================
   // Агрегат для редактора: справочники + сессии со спикер-связями.
-  api.get('/internal/program', cmsRateLimit, async (req, res) => {
+  api.get('/internal/program', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
+    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows, moderatorRows] = await Promise.all([
       db.select().from(tracks),
       db.select().from(halls),
       db.select().from(days),
       db.select().from(speakers),
       db.select().from(sessionsEvent),
       db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
+      db.select().from(sessionModerators).orderBy(sessionModerators.sortOrder),
     ]);
     const speakersBySession = new Map<string, string[]>();
     for (const l of linkRows) {
@@ -1740,22 +1756,23 @@ async function startServer(): Promise<void> {
       halls: hallRows,
       days: dayRows,
       speakers: speakerRows.map((s) => ({ id: s.id, name: s.name, role: s.role, company: s.company })),
-      sessions: sessRows.map((s) => ({ ...s, speakerIds: speakersBySession.get(s.id) ?? [] })),
+      sessions: sessRows.map((s) => ({ ...s, speakerIds: speakersBySession.get(s.id) ?? [], moderatorIds: moderatorRows.filter(l => l.sessionId === s.id).map(l => l.speakerId) })),
     });
-  });
+  }));
 
   // Public adapter for the main site. The admin aggregate above retains all
   // historical rows and publication metadata; this adapter returns only rows
   // explicitly marked public and does not disclose audit fields.
   api.get('/internal/public-program', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
+    const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows, moderatorRows] = await Promise.all([
       db.select().from(tracks),
       db.select().from(halls),
       db.select().from(days),
       db.select().from(speakers),
       db.select().from(sessionsEvent).where(eq(sessionsEvent.isPublished, true)),
       db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
+      db.select().from(sessionModerators).orderBy(sessionModerators.sortOrder),
     ]);
     const publicIds = new Set(sessRows.map((session) => session.id));
     const speakersBySession = new Map<string, string[]>();
@@ -1789,6 +1806,7 @@ async function startServer(): Promise<void> {
         status: session.status,
         isPublished: session.isPublished,
         speakerIds: speakersBySession.get(session.id) ?? [],
+        moderatorIds: moderatorRows.filter(l => l.sessionId === session.id).map(l => l.speakerId),
       })),
     });
   });
@@ -1920,43 +1938,44 @@ async function startServer(): Promise<void> {
   // About/Map, теперь меняется из общей админки и вступает в силу сразу.
   api.get('/internal/app-content', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    res.json(await readAppContent());
+    res.setHeader('Cache-Control', 'no-store');
+    try { res.json(await readContentSnapshot(pool, APP_CONTENT_ID, DEFAULT_APP_CONTENT)); }
+    catch { res.status(503).json({ error: 'content_unavailable', message: 'Не удалось загрузить настройки. Повторите запрос.' }); }
   });
 
   api.put('/internal/app-content', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    const current = await readAppContent();
-    const next: Record<string, string> = { ...current };
-    for (const key of Object.keys(DEFAULT_APP_CONTENT)) {
-      if (Object.prototype.hasOwnProperty.call(req.body ?? {}, key)) next[key] = str((req.body as Record<string, unknown>)[key], 4000);
+    try { res.json(await saveContentPatch(pool, APP_CONTENT_ID, DEFAULT_APP_CONTENT, req.body ?? {}, str(req.body?.actor, 200) || 'tech-pravo-admin-bridge')); }
+    catch (error) {
+      if (error instanceof AdminContentError) { res.status(error.status).json({ error: error.code, message: error.message }); return; }
+      res.status(503).json({ error: 'content_save_failed', message: 'Сохранение не подтверждено. Обновите данные и проверьте историю перед повтором.' });
     }
-    if (!next.name || !next.dateLabel || !next.venueName || !next.address) {
-      res.status(400).json({ error: 'name_date_venue_address_required' }); return;
-    }
-    await db.insert(appContent).values({ id: APP_CONTENT_ID, payload: next, updatedAt: new Date() })
-      .onConflictDoUpdate({ target: appContent.id, set: { payload: next, updatedAt: new Date() } });
-    res.json(next);
   });
 
-  api.get('/internal/content-health', cmsRateLimit, async (req, res) => {
+  api.get('/internal/app-content/history', cmsRateLimit, async (req, res) => {
+    if (!cmsGuard(req, res)) return;
+    try {
+      const result = await pool.query(`SELECT id::text, version, before_payload AS "before", after_payload AS "after",
+        changed_keys AS "changedKeys", actor, reason, created_at AS "createdAt" FROM app_content_revisions
+        WHERE content_id=$1 ORDER BY version DESC LIMIT 50`, [APP_CONTENT_ID]);
+      res.setHeader('Cache-Control', 'no-store').json(result.rows);
+    } catch { res.status(503).json({ error: 'content_history_unavailable', message: 'Не удалось загрузить историю изменений.' }); }
+  });
+
+  api.get('/internal/content-health', cmsRateLimit, cmsAsync(async (req, res) => {
     if (!cmsGuard(req, res)) return;
     const [trackRows, hallRows, dayRows, speakerRows, sessRows, linkRows] = await Promise.all([
       db.select().from(tracks), db.select().from(halls), db.select().from(days),
       db.select().from(speakers), db.select().from(sessionsEvent), db.select().from(sessionSpeakers),
     ]);
-    const dayIds = new Set(dayRows.map((x) => x.id));
-    const speakerIds = new Set(speakerRows.map((x) => x.id));
-    const issues: string[] = [];
-    for (const s of sessRows) {
-      if (!dayIds.has(s.dayId)) issues.push(`Сессия «${s.title}» ссылается на отсутствующий день`);
-      if (!/^\d{2}:\d{2}$/.test(s.startTime) || !/^\d{2}:\d{2}$/.test(s.endTime)) issues.push(`Проверьте время сессии «${s.title}»`);
-      if (s.startTime && s.endTime && s.startTime >= s.endTime) issues.push(`Время окончания раньше начала: «${s.title}»`);
-    }
-    for (const l of linkRows) if (!speakerIds.has(l.speakerId)) issues.push(`В программе есть отсутствующий спикер ${l.speakerId}`);
+    const moderatorRows = await db.select().from(sessionModerators);
+    const issues = contentIssues({ sessions: sessRows, speakers: speakerRows, tracks: trackRows, halls: hallRows, days: dayRows, links: linkRows, moderators: moderatorRows });
     const publicSessions = sessRows.filter((session) => session.isPublished).length;
     res.json({
       ok: issues.length === 0,
       issues,
+      measuredAt: new Date().toISOString(),
+      scope: 'Структура программы, связи, наличие адреса фотографии и пересечения в одном зале. Доступность файлов, личность спикера и соответствие утверждённой программе требуют отдельной проверки.',
       counts: {
         tracks: trackRows.length,
         halls: hallRows.length,
@@ -1967,13 +1986,14 @@ async function startServer(): Promise<void> {
         sessionsPublic: publicSessions,
       },
     });
-  });
+  }));
 
   api.post('/internal/speakers/sync', cmsRateLimit, async (req, res) => {
     if (!cmsGuard(req, res)) return;
-    await syncSpeakersFromSite();
-    const rows = await db.select({ id: speakers.id }).from(speakers);
-    res.json({ ok: true, speakers: rows.length, syncedAt: new Date().toISOString() });
+    try { res.json(await syncSpeakers(pool, SITE_SPEAKERS_URL, req.body?.dryRun === true)); }
+    catch (error) {
+      res.status(502).json({ error: 'speaker_sync_failed', message: error instanceof SpeakerSyncError ? error.message : 'Синхронизация отменена. Ни одна карточка не изменена; проверьте связи и повторите.' });
+    }
   });
 
   api.post('/internal/sessions', cmsRateLimit, async (req, res) => {
@@ -1997,12 +2017,19 @@ async function startServer(): Promise<void> {
       // New programme rows are drafts. Publication is a separate audited CAS.
       isPublished: false,
     };
-    await db.insert(sessionsEvent).values(row);
-    const speakerIds = Array.isArray(b.speakerIds) ? (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean) : [];
-    if (speakerIds.length) {
-      await db.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
+    if ([b.speakerIds, b.moderatorIds].some(ids => ids !== undefined && (!Array.isArray(ids) || ids.some(x => typeof x !== 'string' || !x.trim())))) {
+      res.status(400).json({ error: 'invalid_participant_ids', message: 'Выберите спикеров и модераторов из списка.' }); return;
     }
-    res.status(201).json({ ...row, speakerIds });
+    const speakerIds = [...new Set((b.speakerIds ?? []) as string[])];
+    const moderatorIds = [...new Set((b.moderatorIds ?? []) as string[])];
+    try {
+      await db.transaction(async tx => {
+        await tx.insert(sessionsEvent).values(row);
+        if (speakerIds.length) await tx.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i })));
+        if (moderatorIds.length) await tx.insert(sessionModerators).values(moderatorIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i })));
+      });
+      res.status(201).json({ ...row, speakerIds, moderatorIds });
+    } catch { res.status(409).json({ error: 'session_create_failed', message: 'Сессия не создана. Проверьте день, зал, направление и выбранных участников.' }); }
   });
 
   api.put('/internal/sessions/:id', cmsRateLimit, async (req, res) => {
@@ -2027,10 +2054,15 @@ async function startServer(): Promise<void> {
     if (b.dayId !== undefined) { const d = str(b.dayId, 64); if (!d) { res.status(400).json({ error: 'dayId_required' }); return; } patch.dayId = d; }
     if (b.trackId !== undefined) patch.trackId = str(b.trackId, 64);
     if (b.status !== undefined) patch.status = str(b.status, 32) || 'Soon';
-    const speakerIds = Array.isArray(b.speakerIds)
-      ? (b.speakerIds as unknown[]).map((x) => String(x)).filter(Boolean)
-      : null;
+    if ([b.speakerIds, b.moderatorIds].some(ids => ids !== undefined && (!Array.isArray(ids) || ids.some(x => typeof x !== 'string' || !x.trim())))) {
+      res.status(400).json({ error: 'invalid_participant_ids', message: 'Выберите спикеров и модераторов из списка.' }); return;
+    }
+    const speakerIds = b.speakerIds === undefined ? null : [...new Set(b.speakerIds as string[])];
+    const moderatorIds = b.moderatorIds === undefined ? null : [...new Set(b.moderatorIds as string[])];
+    try {
     const updated = await db.transaction(async (tx) => {
+      const locked = await tx.execute(sql`SELECT id FROM sessions_event WHERE id = ${id} FOR UPDATE`);
+      if (!locked.rows.length) return false;
       if (Object.keys(patch).length) {
         const rows = await tx.update(sessionsEvent).set(patch).where(eq(sessionsEvent.id, id)).returning({ id: sessionsEvent.id });
         if (!rows[0]) return false;
@@ -2044,10 +2076,15 @@ async function startServer(): Promise<void> {
           await tx.insert(sessionSpeakers).values(speakerIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i }))).onConflictDoNothing();
         }
       }
+      if (moderatorIds) {
+        await tx.delete(sessionModerators).where(eq(sessionModerators.sessionId, id));
+        if (moderatorIds.length) await tx.insert(sessionModerators).values(moderatorIds.map((sid, i) => ({ sessionId: id, speakerId: sid, sortOrder: i })));
+      }
       return true;
     });
     if (!updated) { res.status(404).json({ error: 'not_found' }); return; }
     res.json({ ok: true });
+    } catch { res.status(409).json({ error: 'session_update_failed', message: 'Изменения не сохранены. Проверьте день, зал, направление и выбранных участников.' }); }
   });
 
   api.patch('/internal/sessions/:id/publication', cmsRateLimit, async (req, res) => {
@@ -3350,13 +3387,14 @@ async function startServer(): Promise<void> {
     // Один большой fetch с computed-полями (location/speakerName/track/day),
     // которые ожидают v1 страницы (Schedule, MyRecords, SpeakerDetail).
     // Раньше эти поля заполнялись в src/data.ts вручную; теперь — при выдаче.
-    const [sessRows, linkRows, hallRows, dayRows, trackRows, speakerRows] = await Promise.all([
+    const [sessRows, linkRows, hallRows, dayRows, trackRows, speakerRows, moderatorRows] = await Promise.all([
       db.select().from(sessionsEvent).where(eq(sessionsEvent.isPublished, true)),
       db.select().from(sessionSpeakers).orderBy(sessionSpeakers.sortOrder),
       db.select().from(halls),
       db.select().from(days),
       db.select().from(tracks),
       db.select().from(speakers),
+      db.select().from(sessionModerators).orderBy(sessionModerators.sortOrder),
     ]);
     const hallById = new Map(hallRows.map((h) => [h.id, h]));
     const dayById = new Map(dayRows.map((d) => [d.id, d]));
@@ -3384,6 +3422,7 @@ async function startServer(): Promise<void> {
         trackId: s.trackId,
         status: s.status,
         speakerIds,
+        moderatorIds: moderatorRows.filter(l => l.sessionId === s.id).map(l => l.speakerId),
         // Backwards-compat computed для v1 страниц.
         location: s.hallId ? (hallById.get(s.hallId)?.name ?? '') : 'Главный зал',
         speakerName: firstSpeaker?.name ?? '—',
@@ -4335,66 +4374,6 @@ async function startServer(): Promise<void> {
   // не должен менять speakers или каскадно удалять session_speakers. Функция
   // вызывается только защищённым POST /internal/speakers/sync выше.
   const SITE_SPEAKERS_URL = process.env.SITE_SPEAKERS_URL || 'http://127.0.0.1:3001/api/speakers?published=true';
-  const initialsFrom = (fullName: string): string => {
-    const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
-    return parts.slice(0, 2).map((p) => (p[0] || '').toUpperCase()).join('') || '—';
-  };
-  const mapStreamToTrack = (stream: unknown): string => {
-    const s = String(stream || '').toLowerCase();
-    if (/банкрот|бфл|должник/.test(s)) return 't_bfl';
-    if (/масштаб|рост|маркетинг/.test(s)) return 't_growth';
-    if (/данн|безопас|пдн|152/.test(s)) return 't_data';
-    if (/legaltech|legal tech|сервис|инструмент/.test(s)) return 't_legaltech';
-    if (/автоматиз|арбитраж|документооборот|crm/.test(s)) return 't_automation';
-    return 't_ai';
-  };
-  const absPhoto = (url: unknown): string | null => {
-    const u = String(url || '').trim();
-    if (!u) return null;
-    if (/^https?:\/\//i.test(u)) return u;
-    return `https://tech-pravo.ru${u.startsWith('/') ? '' : '/'}${u}`;
-  };
-  async function syncSpeakersFromSite(): Promise<void> {
-    try {
-      const resp = await fetch(SITE_SPEAKERS_URL, { signal: AbortSignal.timeout(15000) });
-      if (!resp.ok) { console.error(`[speakers-sync] site ${resp.status}`); return; }
-      const raw: any = await resp.json();
-      const site: any[] = Array.isArray(raw) ? raw : (raw?.speakers || raw?.data || []);
-      if (!Array.isArray(site) || !site.length) { console.error('[speakers-sync] empty site list'); return; }
-      const existing = await db.select({ id: speakers.id, name: speakers.name }).from(speakers);
-      const idByName = new Map(existing.map((e) => [e.name.trim().toLowerCase(), e.id]));
-      const keptSs: string[] = [];
-      for (const s of site) {
-        const fullName = String(s.full_name || s.name || '').trim();
-        if (!fullName) continue;
-        const matchId = idByName.get(fullName.toLowerCase());
-        const id = matchId || ('ss_' + String(s.id || fullName).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
-        // Сохраняем не только новые, но и уже известные ss_*: иначе следующий
-        // цикл ошибочно считает все совпавшие записи устаревшими и каскадно
-        // удаляет их связи с программой.
-        if (id.startsWith('ss_')) keptSs.push(id);
-        const set = {
-          name: fullName,
-          role: String(s.position || 'Спикер').slice(0, 200),
-          company: String(s.company || '—').slice(0, 200),
-          bio: String(s.bio || '—').slice(0, 4000),
-          avatarLetter: initialsFrom(fullName),
-          avatarUrl: absPhoto(s.photo_url),
-          topic: s.talk_title ? String(s.talk_title).slice(0, 500) : null,
-          trackId: mapStreamToTrack(s.stream),
-        };
-        await db.insert(speakers).values({ id, interestIds: [], ...set })
-          .onConflictDoUpdate({ target: speakers.id, set });
-      }
-      const stale = (await db.select({ id: speakers.id }).from(speakers))
-        .map((r) => r.id).filter((id) => id.startsWith('ss_') && !keptSs.includes(id));
-      // Missing source rows are never deletion authority. Preserve them and
-      // their session links for explicit identity reconciliation in admin.
-      console.log(`[speakers-sync] ok: ${site.length} from site (+${keptSs.length} matched, ${stale.length} stale preserved)`);
-    } catch (err) {
-      console.error('[speakers-sync] failed:', (err as Error).message);
-    }
-  }
   // BUG_FIX_CONTEXT: graceful shutdown — Postgres pool должен закрыться явно,
   // иначе остаются "висячие" idle connections, и при рестарте сервер не может
   // взять lock на migration (drizzle-kit migrate ругается).
